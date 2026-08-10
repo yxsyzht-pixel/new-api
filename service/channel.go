@@ -99,6 +99,21 @@ func IsUpstreamOverloadedError(err *types.NewAPIError) bool {
 	return false
 }
 
+// IsUpstreamTransientFailure reports whether err came from the provider failing to
+// serve this attempt rather than from anything wrong with the request or the
+// account. Channel affinity exists to keep a session on one account for prompt
+// cache locality, which is worth nothing once the attempt has failed outright, so
+// these failures must not let affinity suppress the retry.
+func IsUpstreamTransientFailure(err *types.NewAPIError) bool {
+	if err == nil {
+		return false
+	}
+	if IsUpstreamOverloadedError(err) {
+		return true
+	}
+	return err.StatusCode >= http.StatusInternalServerError && err.StatusCode <= 599
+}
+
 // SuspendChannelOnUsageLimit parks a channel that just reported an upstream usage
 // limit and reports whether it did so. Selection then skips the channel until the
 // cooldown lapses, and the next request lands on a sibling account instead of

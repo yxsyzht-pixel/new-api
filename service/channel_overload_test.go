@@ -70,3 +70,28 @@ func TestOverloadAndUsageLimitDoNotOverlap(t *testing.T) {
 	assert.True(t, IsUpstreamUsageLimitError(usageLimit))
 	assert.False(t, IsUpstreamOverloadedError(usageLimit))
 }
+
+func TestIsUpstreamTransientFailure(t *testing.T) {
+	cases := []struct {
+		name       string
+		message    string
+		statusCode int
+		want       bool
+	}{
+		{"provider 500", "bad response status code 500", http.StatusInternalServerError, true},
+		{"gateway reset before headers", "upstream connect error or disconnect/reset before headers", http.StatusBadGateway, true},
+		{"in-stream overload reported as 503", "Our servers are currently overloaded.", http.StatusServiceUnavailable, true},
+		{"bad request stays with the caller", "Input must be a list", http.StatusBadRequest, false},
+		{"invalid credential is the channel's problem", "Your authentication token has been invalidated", http.StatusUnauthorized, false},
+		{"usage limit is handled by suspension", "The usage limit has been reached", http.StatusTooManyRequests, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := types.NewErrorWithStatusCode(errors.New(tc.message), types.ErrorCodeBadResponse, tc.statusCode)
+			assert.Equal(t, tc.want, IsUpstreamTransientFailure(err))
+		})
+	}
+
+	assert.False(t, IsUpstreamTransientFailure(nil))
+}

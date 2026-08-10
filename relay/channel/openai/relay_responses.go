@@ -147,7 +147,10 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		if !contentStarted && upstreamStreamErr == nil {
 			if streamErr := responsesStreamFailure(streamResponse.Type, data); streamErr != nil {
 				upstreamStreamErr = streamErr
-				logger.LogError(c, fmt.Sprintf("upstream reported failure in stream before any output: %s", common.LocalLogPreview(streamErr.Error())))
+				// Warn, not error: the relay layer still gets to retry this on another
+				// channel, and only a failure that survives every attempt is worth
+				// putting in front of an operator.
+				logger.LogWarn(c, fmt.Sprintf("upstream reported failure in stream before any output, will retry: %s", common.LocalLogPreview(streamErr.Error())))
 			}
 		}
 		if upstreamStreamErr != nil {

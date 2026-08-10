@@ -367,10 +367,11 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	// disabled. Releasing the affinity binding lets this request — and the session
 	// behind it — move to a sibling account instead of failing until the limit lifts.
 	//
-	// Provider-side overload is not the channel's fault, so the channel keeps serving;
-	// only the affinity binding is released so this request can retry on an account
-	// that is likely backed by a different pool.
-	if service.SuspendChannelOnUsageLimit(channelError, err) || service.IsUpstreamOverloadedError(err) {
+	// A provider-side failure is not the channel's fault, so the channel keeps
+	// serving; only the affinity binding is released, otherwise the rule's
+	// skip-retry setting would hand the caller a failure that another account
+	// could have served.
+	if service.SuspendChannelOnUsageLimit(channelError, err) || service.IsUpstreamTransientFailure(err) {
 		service.ClearCurrentChannelAffinityCache(c)
 	}
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
