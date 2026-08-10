@@ -214,6 +214,7 @@ export function Dashboard() {
         selectedRange: getDefaultDays(granularity),
         topUserLimit: 10,
         metric: 'quota',
+        dimension: 'user',
       }
     }
   )

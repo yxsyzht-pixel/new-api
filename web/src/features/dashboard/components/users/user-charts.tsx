@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { VChart } from '@visactor/react-vchart'
-import { Users, Loader2 } from 'lucide-react'
+import { Users, KeyRound, Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -26,7 +26,10 @@ import { IconBadge } from '@/components/ui/icon-badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTheme } from '@/context/theme-provider'
-import { getUserQuotaDataByUsers } from '@/features/dashboard/api'
+import {
+  getQuotaDataByTokens,
+  getUserQuotaDataByUsers,
+} from '@/features/dashboard/api'
 import {
   TIME_GRANULARITY_OPTIONS,
   TIME_RANGE_PRESETS,
@@ -38,13 +41,14 @@ import {
 } from '@/features/dashboard/lib'
 import type {
   ProcessedUserChartData,
+  UserAnalyticsDimension,
   UserAnalyticsMetric,
   UserChartsFilters,
 } from '@/features/dashboard/types'
 import { getRollingDateRange, type TimeGranularity } from '@/lib/time'
 import { VCHART_OPTION } from '@/lib/vchart'
 
-import { UserMetricTabs } from './user-metric-tabs'
+import { UserDimensionTabs, UserMetricTabs } from './user-metric-tabs'
 
 let themeManagerPromise: Promise<
   (typeof import('@visactor/vchart'))['ThemeManager']
@@ -53,16 +57,19 @@ let themeManagerPromise: Promise<
 const USER_CHARTS: {
   value: string
   labelKey: string
+  tokenLabelKey: string
   specKey: keyof ProcessedUserChartData
 }[] = [
   {
     value: 'rank',
     labelKey: 'User Consumption Ranking',
+    tokenLabelKey: 'Key Consumption Ranking',
     specKey: 'spec_user_rank',
   },
   {
     value: 'trend',
     labelKey: 'User Consumption Trend',
+    tokenLabelKey: 'Key Consumption Trend',
     specKey: 'spec_user_trend',
   },
 ]
@@ -88,6 +95,7 @@ export function UserCharts(props: UserChartsProps) {
   const selectedRange = props.filters.selectedRange
   const topUserLimit = props.filters.topUserLimit
   const metric = props.filters.metric
+  const dimension = props.filters.dimension
   const onFiltersChange = props.onFiltersChange
 
   const timeRange = useMemo(() => {
@@ -131,6 +139,13 @@ export function UserCharts(props: UserChartsProps) {
     [onFiltersChange, props.filters]
   )
 
+  const handleDimensionChange = useCallback(
+    (value: UserAnalyticsDimension) => {
+      onFiltersChange({ ...props.filters, dimension: value })
+    },
+    [onFiltersChange, props.filters]
+  )
+
   useEffect(() => {
     const updateTheme = async () => {
       setThemeReady(false)
@@ -148,8 +163,11 @@ export function UserCharts(props: UserChartsProps) {
   }, [resolvedTheme])
 
   const { data: userData, isLoading } = useQuery({
-    queryKey: ['dashboard', 'user-quota', timeRange],
-    queryFn: () => getUserQuotaDataByUsers(timeRange),
+    queryKey: ['dashboard', 'user-quota', dimension, timeRange],
+    queryFn: () =>
+      dimension === 'token'
+        ? getQuotaDataByTokens(timeRange)
+        : getUserQuotaDataByUsers(timeRange),
     select: (res) => (res.success ? res.data : []),
     staleTime: 60_000,
   })
@@ -161,9 +179,10 @@ export function UserCharts(props: UserChartsProps) {
         timeGranularity,
         t,
         topUserLimit,
-        metric
+        metric,
+        dimension
       ),
-    [userData, isLoading, timeGranularity, t, topUserLimit, metric]
+    [userData, isLoading, timeGranularity, t, topUserLimit, metric, dimension]
   )
 
   return (
@@ -214,7 +233,7 @@ export function UserCharts(props: UserChartsProps) {
         >
           <TabsList>
             <span className='text-muted-foreground px-2 text-xs font-medium whitespace-nowrap'>
-              {t('Top Users')}
+              {dimension === 'token' ? t('Top Keys') : t('Top Users')}
             </span>
             {TOP_USER_LIMIT_OPTIONS.map((limit) => (
               <TabsTrigger
@@ -227,6 +246,11 @@ export function UserCharts(props: UserChartsProps) {
             ))}
           </TabsList>
         </Tabs>
+
+        <UserDimensionTabs
+          value={dimension}
+          onValueChange={handleDimensionChange}
+        />
 
         <UserMetricTabs value={metric} onValueChange={handleMetricChange} />
 
@@ -246,9 +270,13 @@ export function UserCharts(props: UserChartsProps) {
             >
               <div className='flex w-full items-center gap-2 border-b px-3 py-2 sm:px-5 sm:py-3'>
                 <IconBadge tone='info' size='sm'>
-                  <Users />
+                  {dimension === 'token' ? <KeyRound /> : <Users />}
                 </IconBadge>
-                <div className='text-sm font-semibold'>{t(chart.labelKey)}</div>
+                <div className='text-sm font-semibold'>
+                  {t(
+                    dimension === 'token' ? chart.tokenLabelKey : chart.labelKey
+                  )}
+                </div>
               </div>
 
               <div className='h-[300px] p-1.5 sm:h-96 sm:p-2'>
@@ -258,7 +286,7 @@ export function UserCharts(props: UserChartsProps) {
                   themeReady &&
                   spec && (
                     <VChart
-                      key={`user-${chart.value}-${topUserLimit}-${metric}-${resolvedTheme}`}
+                      key={`user-${chart.value}-${dimension}-${topUserLimit}-${metric}-${resolvedTheme}`}
                       spec={{
                         ...spec,
                         theme: resolvedTheme === 'dark' ? 'dark' : 'light',

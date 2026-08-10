@@ -23,6 +23,8 @@ type QuotaData struct {
 	TokenUsed int    `json:"token_used" gorm:"default:0"`
 	Count     int    `json:"count" gorm:"default:0"`
 	Quota     int    `json:"quota" gorm:"default:0"`
+	// TokenName is resolved on demand for token-grouped statistics and is not persisted.
+	TokenName string `json:"token_name,omitempty" gorm:"-"`
 }
 
 type QuotaDataLogParams struct {
@@ -168,6 +170,48 @@ func GetQuotaDataGroupByUser(startTime int64, endTime int64) (quotaData []*Quota
 		Group("username, created_at").
 		Find(&quotaDatas).Error
 	return quotaDatas, err
+}
+
+// GetQuotaDataGroupByToken aggregates usage per API key (token) rather than per
+// user, so that several keys owned by the same account are reported separately.
+func GetQuotaDataGroupByToken(startTime int64, endTime int64) (quotaData []*QuotaData, err error) {
+	var quotaDatas []*QuotaData
+	err = DB.Table("quota_data").
+		Select("username, token_id, created_at, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used").
+		Where("created_at >= ? and created_at <= ?", startTime, endTime).
+		Group("username, token_id, created_at").
+		Find(&quotaDatas).Error
+	if err != nil {
+		return nil, err
+	}
+	return quotaDatas, fillQuotaTokenNames(quotaDatas)
+}
+
+// fillQuotaTokenNames resolves key names for token-grouped rows. Deleted tokens
+// are left empty so the frontend can render its own placeholder label.
+func fillQuotaTokenNames(rows []*QuotaData) error {
+	tokenIDs := make([]int, 0)
+	seen := make(map[int]struct{})
+	for _, row := range rows {
+		if row.TokenID == 0 {
+			continue
+		}
+		if _, ok := seen[row.TokenID]; ok {
+			continue
+		}
+		seen[row.TokenID] = struct{}{}
+		tokenIDs = append(tokenIDs, row.TokenID)
+	}
+	tokenNameByID, err := resolveTokenNames(tokenIDs)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if name := tokenNameByID[row.TokenID]; name != "" {
+			row.TokenName = name
+		}
+	}
+	return nil
 }
 
 func GetAllQuotaDates(startTime int64, endTime int64, username string) (quotaData []*QuotaData, err error) {

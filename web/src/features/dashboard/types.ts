@@ -31,6 +31,9 @@ export interface QuotaDataItem {
   token_used?: number
   count?: number
   quota?: number
+  // Only present when the data is grouped by key (token) instead of by user.
+  token_id?: number
+  token_name?: string
 }
 
 export interface FlowQuotaDataItem {
@@ -51,6 +54,9 @@ export interface FlowQuotaDataItem {
 export type FlowMetric = 'quota' | 'tokens' | 'requests'
 
 export type UserAnalyticsMetric = 'quota' | 'tokens'
+
+/** Whether consumption charts aggregate per account or per API key. */
+export type UserAnalyticsDimension = 'user' | 'token'
 
 export type FlowOverflowMode = 'aggregate' | 'hide'
 
@@ -211,6 +217,7 @@ export interface UserChartsFilters {
   selectedRange: number
   topUserLimit: number
   metric: UserAnalyticsMetric
+  dimension: UserAnalyticsDimension
 }
 
 // ============================================================================

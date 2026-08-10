@@ -104,20 +104,9 @@ func fillFlowTokenNames(rows []*FlowQuotaData) error {
 		tokenIDSet[row.TokenID] = struct{}{}
 		tokenIDs = append(tokenIDs, row.TokenID)
 	}
-	if len(tokenIDs) == 0 {
-		return nil
-	}
-
-	var tokens []struct {
-		Id   int    `gorm:"column:id"`
-		Name string `gorm:"column:name"`
-	}
-	if err := DB.Model(&Token{}).Select("id, name").Where("id IN ?", tokenIDs).Find(&tokens).Error; err != nil {
+	tokenNameByID, err := resolveTokenNames(tokenIDs)
+	if err != nil {
 		return err
-	}
-	tokenNameByID := make(map[int]string, len(tokens))
-	for _, token := range tokens {
-		tokenNameByID[token.Id] = token.Name
 	}
 	// Deleted tokens are intentionally not resolved here: leave TokenName empty
 	// so the frontend can render a localized "deleted (id)" label instead.
@@ -127,6 +116,26 @@ func fillFlowTokenNames(rows []*FlowQuotaData) error {
 		}
 	}
 	return nil
+}
+
+// resolveTokenNames maps token IDs to their current names. IDs with no matching
+// row (deleted tokens) are simply absent from the returned map.
+func resolveTokenNames(tokenIDs []int) (map[int]string, error) {
+	if len(tokenIDs) == 0 {
+		return map[int]string{}, nil
+	}
+	var tokens []struct {
+		Id   int    `gorm:"column:id"`
+		Name string `gorm:"column:name"`
+	}
+	if err := DB.Model(&Token{}).Select("id, name").Where("id IN ?", tokenIDs).Find(&tokens).Error; err != nil {
+		return nil, err
+	}
+	tokenNameByID := make(map[int]string, len(tokens))
+	for _, token := range tokens {
+		tokenNameByID[token.Id] = token.Name
+	}
+	return tokenNameByID, nil
 }
 
 func fillFlowChannelNames(rows []*FlowQuotaData) error {

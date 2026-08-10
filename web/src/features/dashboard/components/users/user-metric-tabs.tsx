@@ -19,11 +19,46 @@ For commercial licensing, please contact support@quantumnous.com
 import { useTranslation } from 'react-i18next'
 
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { UserAnalyticsMetric } from '@/features/dashboard/types'
+import type {
+  UserAnalyticsDimension,
+  UserAnalyticsMetric,
+} from '@/features/dashboard/types'
 
 interface UserMetricTabsProps {
   value: UserAnalyticsMetric
   onValueChange: (value: UserAnalyticsMetric) => void
+}
+
+interface UserDimensionTabsProps {
+  value: UserAnalyticsDimension
+  onValueChange: (value: UserAnalyticsDimension) => void
+}
+
+/** Switches the consumption charts between per-account and per-key totals. */
+export function UserDimensionTabs(props: UserDimensionTabsProps) {
+  const { t } = useTranslation()
+
+  return (
+    <Tabs
+      value={props.value}
+      onValueChange={(value) =>
+        props.onValueChange(value as UserAnalyticsDimension)
+      }
+      className='shrink-0'
+    >
+      <TabsList aria-label={t('Group by')}>
+        <span className='text-muted-foreground px-2 text-xs font-medium whitespace-nowrap'>
+          {t('Group by')}
+        </span>
+        <TabsTrigger value='user' className='px-2.5 text-xs'>
+          {t('User')}
+        </TabsTrigger>
+        <TabsTrigger value='token' className='px-2.5 text-xs'>
+          {t('Key')}
+        </TabsTrigger>
+      </TabsList>
+    </Tabs>
+  )
 }
 
 export function UserMetricTabs(props: UserMetricTabsProps) {

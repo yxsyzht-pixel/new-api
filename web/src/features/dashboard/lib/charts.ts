@@ -23,6 +23,7 @@ import type {
   QuotaDataItem,
   ProcessedChartData,
   ProcessedUserChartData,
+  UserAnalyticsDimension,
   UserAnalyticsMetric,
 } from '@/features/dashboard/types'
 import { getCurrencyDisplay } from '@/lib/currency'
@@ -731,9 +732,27 @@ export function processUserChartData(
   timeGranularity: TimeGranularity = 'day',
   t?: TFunction,
   limit = 10,
-  metric: UserAnalyticsMetric = 'quota'
+  metric: UserAnalyticsMetric = 'quota',
+  dimension: UserAnalyticsDimension = 'user'
 ): ProcessedUserChartData {
   const tt: TFunction = t ?? ((x) => x)
+  const isTokenDimension = dimension === 'token'
+  // Keys are qualified with their owner because the same key name may exist
+  // under several accounts.
+  const getSeriesLabel = (item: QuotaDataItem) => {
+    const username = item.username || tt('unknown')
+    if (!isTokenDimension) return username
+    const keyName =
+      item.token_name ||
+      (item.token_id ? `${tt('Deleted key')} (${item.token_id})` : tt('No key'))
+    return `${username} / ${keyName}`
+  }
+  const rankTitle = isTokenDimension
+    ? tt('Key Consumption Ranking')
+    : tt('User Consumption Ranking')
+  const trendTitle = isTokenDimension
+    ? tt('Key Consumption Trend')
+    : tt('User Consumption Trend')
   const isTokenMetric = metric === 'tokens'
   const metricField = isTokenMetric ? 'token_used' : 'quota'
   const formatVal = (raw: number) => {
@@ -761,7 +780,7 @@ export function processUserChartData(
       direction: 'horizontal',
       title: {
         visible: true,
-        text: tt('User Consumption Ranking'),
+        text: rankTitle,
         subtext: tt('No data available'),
       },
       legends: { visible: false },
@@ -776,7 +795,7 @@ export function processUserChartData(
       seriesField: 'User',
       title: {
         visible: true,
-        text: tt('User Consumption Trend'),
+        text: trendTitle,
         subtext: tt('No data available'),
       },
       legends: { visible: true, selectMode: 'single' },
@@ -790,9 +809,9 @@ export function processUserChartData(
 
   const userMetricTotal = new Map<string, number>()
   data.forEach((item) => {
-    const username = item.username || 'unknown'
-    const prev = userMetricTotal.get(username) || 0
-    userMetricTotal.set(username, prev + getMetricValue(item))
+    const label = getSeriesLabel(item)
+    const prev = userMetricTotal.get(label) || 0
+    userMetricTotal.set(label, prev + getMetricValue(item))
   })
 
   const sorted = [...userMetricTotal.entries()].sort((a, b) => b[1] - a[1])
@@ -822,14 +841,14 @@ export function processUserChartData(
     const ts = Number(item.created_at)
     const timeKey = formatChartTime(ts, timeGranularity)
     allTimePoints.add(timeKey)
-    const user = item.username || 'unknown'
-    if (!topUserSet.has(user)) return
+    const label = getSeriesLabel(item)
+    if (!topUserSet.has(label)) return
     let map = timeUserMap.get(timeKey)
     if (!map) {
       map = new Map()
       timeUserMap.set(timeKey, map)
     }
-    map.set(user, (map.get(user) || 0) + getMetricValue(item))
+    map.set(label, (map.get(label) || 0) + getMetricValue(item))
   })
 
   const sortedTimePoints = [...allTimePoints].sort()
@@ -860,7 +879,7 @@ export function processUserChartData(
       direction: 'horizontal',
       title: {
         visible: true,
-        text: tt('User Consumption Ranking'),
+        text: rankTitle,
         subtext: `${tt('Total:')} ${formatValWithUnit(totalMetric)}`,
       },
       legends: { visible: false },
@@ -916,7 +935,7 @@ export function processUserChartData(
       stack: false,
       title: {
         visible: true,
-        text: tt('User Consumption Trend'),
+        text: trendTitle,
         subtext: `${tt('Total:')} ${formatValWithUnit(totalMetric)}`,
       },
       legends: { visible: true, selectMode: 'single' },
