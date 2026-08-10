@@ -2,7 +2,9 @@ package service
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -40,6 +42,46 @@ func EnableChannel(channelId int, usingKey string, channelName string) {
 		content := fmt.Sprintf("通道「%s」（#%d）已被启用", channelName, channelId)
 		NotifyRootUser(formatNotifyType(channelId, common.ChannelStatusEnabled), subject, content)
 	}
+}
+
+// upstreamUsageLimitKeywords match the 429 bodies providers send when an account
+// has exhausted a quota window rather than tripped a short burst limit. Both kinds
+// arrive as 429, but only the former is worth parking a channel over.
+var upstreamUsageLimitKeywords = []string{
+	"usage limit",
+	"quota exceeded",
+	"insufficient_quota",
+	"exceeded your current quota",
+	"billing hard limit",
+}
+
+// IsUpstreamUsageLimitError reports whether err means the upstream account behind
+// a channel is out of quota for now, so the channel should be parked until the
+// provider's window rolls over.
+func IsUpstreamUsageLimitError(err *types.NewAPIError) bool {
+	if err == nil || err.StatusCode != http.StatusTooManyRequests {
+		return false
+	}
+	lowerMessage := strings.ToLower(err.Error())
+	for _, keyword := range upstreamUsageLimitKeywords {
+		if strings.Contains(lowerMessage, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// SuspendChannelOnUsageLimit parks a channel that just reported an upstream usage
+// limit and reports whether it did so. Selection then skips the channel until the
+// cooldown lapses, and the next request lands on a sibling account instead of
+// failing.
+func SuspendChannelOnUsageLimit(channelError types.ChannelError, err *types.NewAPIError) bool {
+	if !IsUpstreamUsageLimitError(err) {
+		return false
+	}
+	cooldown := time.Duration(operation_setting.GetGeneralSetting().ChannelUsageLimitCooldownSeconds) * time.Second
+	model.SuspendChannel(channelError.ChannelId, cooldown, common.LocalLogPreview(err.Error()))
+	return true
 }
 
 func ShouldDisableChannel(err *types.NewAPIError) bool {
