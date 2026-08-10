@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 
 	"github.com/abema/go-mp4"
 	"github.com/go-audio/aiff"
@@ -272,39 +273,345 @@ func getAIFFDuration(r io.ReadSeeker) (float64, error) {
 	return d.Seconds(), nil
 }
 
-// getWebMDuration 解析 WebM 文件以获取时长。
-// WebM 使用 Matroska 容器格式
+// WebM/Matroska EBML element IDs needed to derive a duration.
+const (
+	ebmlIDHeader        = 0x1A45DFA3
+	ebmlIDSegment       = 0x18538067
+	ebmlIDInfo          = 0x1549A966
+	ebmlIDTimecodeScale = 0x2AD7B1
+	ebmlIDDuration      = 0x4489
+	ebmlIDCluster       = 0x1F43B675
+	ebmlIDTimecode      = 0xE7
+
+	// defaultTimecodeScale is Matroska's default of 1ms expressed in nanoseconds.
+	defaultTimecodeScale = 1_000_000.0
+
+	// ebmlUnknownSize marks an element whose length was not known when written.
+	// Browser MediaRecorder output uses it for the Segment, so its children must
+	// be walked rather than skipped.
+	ebmlUnknownSize = int64(-1)
+
+	// webmClusterScanLimit bounds the cluster walk used when a file carries no
+	// Duration element. Recordings long enough to exceed it are already past any
+	// realistic transcription length.
+	webmClusterScanLimit = 200_000
+)
+
+// getWebMDuration derives the playing time of a WebM/Matroska stream.
+//
+// Files written in one pass (ffmpeg, most encoders) carry Info > Duration and are
+// answered from it directly. Files captured live — notably browser MediaRecorder
+// output, which writes an unknown-size Segment and omits Duration — are answered
+// from the timecode of the last cluster instead, which tracks the real length to
+// within one cluster.
 func getWebMDuration(r io.ReadSeeker) (float64, error) {
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
 		return 0, errors.Wrap(err, "failed to seek webm file")
 	}
 
-	// WebM/Matroska 文件的解析比较复杂
-	// 这里提供一个简化的实现，读取 EBML 头部
-	// 对于完整的 WebM 解析，可能需要使用专门的库
-
-	// 简单实现：查找 Duration 元素
-	// WebM Duration 的 Element ID 是 0x4489
-	// 这是一个简化版本，可能不适用于所有 WebM 文件
-	buf := make([]byte, 8192)
-	n, err := r.Read(buf)
-	if err != nil && err != io.EOF {
-		return 0, errors.Wrap(err, "failed to read webm file")
+	id, size, err := readEBMLElementHeader(r)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to read webm header")
+	}
+	if id != ebmlIDHeader {
+		return 0, errors.New("not a webm file: missing EBML header")
+	}
+	if err := skipEBMLElement(r, size); err != nil {
+		return 0, errors.Wrap(err, "failed to skip webm header")
 	}
 
-	// 尝试查找 Duration 元素（这是一个简化的方法）
-	// 实际的 WebM 解析需要完整的 EBML 解析器
-	// 这里返回错误，建议使用专门的库
-	if n > 0 {
-		// 检查 EBML 标识
-		if len(buf) >= 4 && binary.BigEndian.Uint32(buf[0:4]) == 0x1A45DFA3 {
-			// 这是一个有效的 EBML 文件
-			// 但完整解析需要更复杂的逻辑
-			return 0, errors.New("webm duration parsing requires full EBML parser (consider using ffprobe for webm files)")
+	for {
+		id, size, err := readEBMLElementHeader(r)
+		if err == io.EOF {
+			return 0, errors.New("webm file has no segment")
+		}
+		if err != nil {
+			return 0, errors.Wrap(err, "failed to scan webm top level")
+		}
+		if id == ebmlIDSegment {
+			return readWebMSegmentDuration(r)
+		}
+		if err := skipEBMLElement(r, size); err != nil {
+			return 0, errors.Wrap(err, "failed to skip webm element")
+		}
+	}
+}
+
+// readWebMSegmentDuration walks the children of a Segment, preferring the declared
+// Duration and falling back to the last cluster timecode.
+func readWebMSegmentDuration(r io.ReadSeeker) (float64, error) {
+	timecodeScale := defaultTimecodeScale
+	declaredDuration := 0.0
+	lastClusterTimecode := 0.0
+	clustersSeen := 0
+
+	for clustersSeen < webmClusterScanLimit {
+		id, size, err := readEBMLElementHeader(r)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, errors.Wrap(err, "failed to scan webm segment")
+		}
+
+		switch id {
+		case ebmlIDInfo:
+			scale, duration, err := readWebMInfo(r, size)
+			if err != nil {
+				return 0, err
+			}
+			if scale > 0 {
+				timecodeScale = scale
+			}
+			if duration > 0 {
+				declaredDuration = duration
+			}
+		case ebmlIDCluster:
+			clustersSeen++
+			// Cluster > Timecode is always the first child, so reading one element
+			// is enough; the rest of the cluster is skipped.
+			childID, childSize, err := readEBMLElementHeader(r)
+			if err != nil {
+				return 0, errors.Wrap(err, "failed to read webm cluster")
+			}
+			if childID == ebmlIDTimecode {
+				value, err := readEBMLUint(r, childSize)
+				if err != nil {
+					return 0, errors.Wrap(err, "failed to read webm cluster timecode")
+				}
+				if float64(value) > lastClusterTimecode {
+					lastClusterTimecode = float64(value)
+				}
+			} else if err := skipEBMLElement(r, childSize); err != nil {
+				return 0, errors.Wrap(err, "failed to skip webm cluster child")
+			}
+			if size != ebmlUnknownSize {
+				// Jump past the remainder of this cluster.
+				if err := skipEBMLElement(r, size-elementBytesConsumed(childID, childSize)); err != nil {
+					return 0, errors.Wrap(err, "failed to skip webm cluster")
+				}
+			}
+		default:
+			if err := skipEBMLElement(r, size); err != nil {
+				return 0, errors.Wrap(err, "failed to skip webm segment child")
+			}
+		}
+
+		if declaredDuration > 0 {
+			break
 		}
 	}
 
-	return 0, errors.New("failed to parse webm file")
+	if declaredDuration > 0 {
+		return declaredDuration * timecodeScale / 1e9, nil
+	}
+	if lastClusterTimecode > 0 {
+		return lastClusterTimecode * timecodeScale / 1e9, nil
+	}
+	return 0, errors.New("webm file carries neither a duration nor any cluster timecode")
+}
+
+// readWebMInfo reads TimecodeScale and Duration out of a Segment Info element.
+func readWebMInfo(r io.ReadSeeker, size int64) (scale float64, duration float64, err error) {
+	end := int64(-1)
+	if size != ebmlUnknownSize {
+		pos, err := r.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return 0, 0, errors.Wrap(err, "failed to locate webm info")
+		}
+		end = pos + size
+	}
+
+	for {
+		if end >= 0 {
+			pos, err := r.Seek(0, io.SeekCurrent)
+			if err != nil {
+				return 0, 0, errors.Wrap(err, "failed to track webm info")
+			}
+			if pos >= end {
+				break
+			}
+		}
+
+		id, childSize, err := readEBMLElementHeader(r)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return 0, 0, errors.Wrap(err, "failed to read webm info child")
+		}
+
+		switch id {
+		case ebmlIDTimecodeScale:
+			value, err := readEBMLUint(r, childSize)
+			if err != nil {
+				return 0, 0, errors.Wrap(err, "failed to read webm timecode scale")
+			}
+			scale = float64(value)
+		case ebmlIDDuration:
+			value, err := readEBMLFloat(r, childSize)
+			if err != nil {
+				return 0, 0, errors.Wrap(err, "failed to read webm duration")
+			}
+			duration = value
+		default:
+			if err := skipEBMLElement(r, childSize); err != nil {
+				return 0, 0, errors.Wrap(err, "failed to skip webm info child")
+			}
+		}
+	}
+
+	return scale, duration, nil
+}
+
+// readEBMLElementHeader reads one element ID and its declared size. A size of
+// ebmlUnknownSize means the writer left the length open.
+func readEBMLElementHeader(r io.ReadSeeker) (id uint32, size int64, err error) {
+	id, err = readEBMLID(r)
+	if err != nil {
+		return 0, 0, err
+	}
+	size, err = readEBMLSize(r)
+	if err != nil {
+		return 0, 0, err
+	}
+	return id, size, nil
+}
+
+// readEBMLID reads a variable-length element ID, keeping its length marker: IDs
+// are compared as the raw bytes that appear in the file.
+func readEBMLID(r io.Reader) (uint32, error) {
+	var first [1]byte
+	if _, err := io.ReadFull(r, first[:]); err != nil {
+		return 0, err
+	}
+
+	length := ebmlVIntLength(first[0])
+	if length == 0 || length > 4 {
+		return 0, errors.Errorf("invalid ebml element id at leading byte 0x%02x", first[0])
+	}
+
+	id := uint32(first[0])
+	for i := 1; i < length; i++ {
+		var b [1]byte
+		if _, err := io.ReadFull(r, b[:]); err != nil {
+			return 0, err
+		}
+		id = id<<8 | uint32(b[0])
+	}
+	return id, nil
+}
+
+// readEBMLSize reads a variable-length size, stripping the length marker.
+func readEBMLSize(r io.Reader) (int64, error) {
+	var first [1]byte
+	if _, err := io.ReadFull(r, first[:]); err != nil {
+		return 0, err
+	}
+
+	length := ebmlVIntLength(first[0])
+	if length == 0 || length > 8 {
+		return 0, errors.Errorf("invalid ebml size at leading byte 0x%02x", first[0])
+	}
+
+	value := uint64(first[0]) & (1<<(8-uint(length)) - 1)
+	allOnes := value == 1<<(8-uint(length))-1
+	for i := 1; i < length; i++ {
+		var b [1]byte
+		if _, err := io.ReadFull(r, b[:]); err != nil {
+			return 0, err
+		}
+		if b[0] != 0xFF {
+			allOnes = false
+		}
+		value = value<<8 | uint64(b[0])
+	}
+
+	if allOnes {
+		return ebmlUnknownSize, nil
+	}
+	if value > uint64(math.MaxInt64) {
+		return 0, errors.New("ebml size out of range")
+	}
+	return int64(value), nil
+}
+
+// ebmlVIntLength reports how many bytes a variable-length integer occupies, read
+// from the position of the highest set bit of its first byte.
+func ebmlVIntLength(first byte) int {
+	for i := 0; i < 8; i++ {
+		if first&(0x80>>uint(i)) != 0 {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// elementBytesConsumed reports how many bytes an already-read child element
+// occupied, so the remainder of its parent can be skipped.
+func elementBytesConsumed(id uint32, size int64) int64 {
+	idLength := int64(1)
+	for shifted := id >> 8; shifted > 0; shifted >>= 8 {
+		idLength++
+	}
+	sizeLength := int64(1)
+	for limit := int64(1) << 7; size >= limit-1 && sizeLength < 8; limit <<= 7 {
+		sizeLength++
+	}
+	body := size
+	if size == ebmlUnknownSize {
+		body = 0
+	}
+	return idLength + sizeLength + body
+}
+
+func readEBMLUint(r io.Reader, size int64) (uint64, error) {
+	// EBML encodes an unsigned integer of value 0 as a zero-length body, which is
+	// exactly what a recording's first cluster timecode looks like.
+	if size == 0 {
+		return 0, nil
+	}
+	if size < 0 || size > 8 {
+		return 0, errors.Errorf("invalid ebml uint size %d", size)
+	}
+	buf := make([]byte, size)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return 0, err
+	}
+	var value uint64
+	for _, b := range buf {
+		value = value<<8 | uint64(b)
+	}
+	return value, nil
+}
+
+func readEBMLFloat(r io.Reader, size int64) (float64, error) {
+	switch size {
+	case 4:
+		var buf [4]byte
+		if _, err := io.ReadFull(r, buf[:]); err != nil {
+			return 0, err
+		}
+		return float64(math.Float32frombits(binary.BigEndian.Uint32(buf[:]))), nil
+	case 8:
+		var buf [8]byte
+		if _, err := io.ReadFull(r, buf[:]); err != nil {
+			return 0, err
+		}
+		return math.Float64frombits(binary.BigEndian.Uint64(buf[:])), nil
+	default:
+		return 0, errors.Errorf("invalid ebml float size %d", size)
+	}
+}
+
+// skipEBMLElement advances past an element body. An unknown-size element cannot
+// be skipped, so its children are walked by the caller instead.
+func skipEBMLElement(r io.ReadSeeker, size int64) error {
+	if size <= 0 {
+		return nil
+	}
+	_, err := r.Seek(size, io.SeekCurrent)
+	return err
 }
 
 // getAACDuration 解析 AAC (ADTS格式) 文件以获取时长。
