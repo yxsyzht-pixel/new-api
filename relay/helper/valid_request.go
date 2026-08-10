@@ -59,9 +59,30 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 
 func GetAndValidAudioRequest(c *gin.Context, relayMode int) (*dto.AudioRequest, error) {
 	audioRequest := &dto.AudioRequest{}
-	err := common.UnmarshalBodyReusable(c, audioRequest)
-	if err != nil {
-		return nil, err
+	if strings.Contains(c.Request.Header.Get("Content-Type"), "multipart/form-data") {
+		form, err := common.ParseMultipartFormReusable(c)
+		if err != nil {
+			return nil, err
+		}
+		formValues := url.Values(form.Value)
+		audioRequest.Model = formValues.Get("model")
+		audioRequest.Input = formValues.Get("input")
+		audioRequest.Voice = formValues.Get("voice")
+		audioRequest.Instructions = formValues.Get("instructions")
+		audioRequest.ResponseFormat = formValues.Get("response_format")
+		audioRequest.StreamFormat = formValues.Get("stream_format")
+		if speedValue := strings.TrimSpace(formValues.Get("speed")); speedValue != "" {
+			speed, err := strconv.ParseFloat(speedValue, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid speed value: %w", err)
+			}
+			audioRequest.Speed = common.GetPointer(speed)
+		}
+	} else {
+		err := common.UnmarshalBodyReusable(c, audioRequest)
+		if err != nil {
+			return nil, err
+		}
 	}
 	switch relayMode {
 	case relayconstant.RelayModeAudioSpeech:

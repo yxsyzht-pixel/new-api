@@ -377,6 +377,58 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.AudioRequest) (io.Reader, error) {
 	a.ResponseFormat = request.ResponseFormat
 	if info.RelayMode == relayconstant.RelayModeAudioSpeech {
+		if strings.Contains(c.Request.Header.Get("Content-Type"), "multipart/form-data") {
+			formData, err := common.ParseMultipartFormReusable(c)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing multipart speech form: %w", err)
+			}
+
+			var requestBody bytes.Buffer
+			writer := multipart.NewWriter(&requestBody)
+			if err := writer.WriteField("model", request.Model); err != nil {
+				return nil, fmt.Errorf("error writing speech model: %w", err)
+			}
+			for key, values := range formData.Value {
+				if key == "model" {
+					continue
+				}
+				for _, value := range values {
+					if err := writer.WriteField(key, value); err != nil {
+						return nil, fmt.Errorf("error writing speech field %s: %w", key, err)
+					}
+				}
+			}
+			for fieldName, files := range formData.File {
+				for _, fileHeader := range files {
+					file, err := fileHeader.Open()
+					if err != nil {
+						return nil, fmt.Errorf("error opening speech file %s: %w", fieldName, err)
+					}
+
+					header := make(textproto.MIMEHeader)
+					header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldName, fileHeader.Filename))
+					if contentType := fileHeader.Header.Get("Content-Type"); contentType != "" {
+						header.Set("Content-Type", contentType)
+					}
+					part, createErr := writer.CreatePart(header)
+					if createErr != nil {
+						_ = file.Close()
+						return nil, fmt.Errorf("error creating speech file part %s: %w", fieldName, createErr)
+					}
+					_, copyErr := io.Copy(part, file)
+					_ = file.Close()
+					if copyErr != nil {
+						return nil, fmt.Errorf("error copying speech file %s: %w", fieldName, copyErr)
+					}
+				}
+			}
+			if err := writer.Close(); err != nil {
+				return nil, fmt.Errorf("error finalizing multipart speech request: %w", err)
+			}
+			c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+			return &requestBody, nil
+		}
+
 		jsonData, err := common.Marshal(request)
 		if err != nil {
 			return nil, fmt.Errorf("error marshalling object: %w", err)
