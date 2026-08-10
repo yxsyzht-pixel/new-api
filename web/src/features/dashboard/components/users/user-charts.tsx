@@ -38,10 +38,13 @@ import {
 } from '@/features/dashboard/lib'
 import type {
   ProcessedUserChartData,
+  UserAnalyticsMetric,
   UserChartsFilters,
 } from '@/features/dashboard/types'
 import { getRollingDateRange, type TimeGranularity } from '@/lib/time'
 import { VCHART_OPTION } from '@/lib/vchart'
+
+import { UserMetricTabs } from './user-metric-tabs'
 
 let themeManagerPromise: Promise<
   (typeof import('@visactor/vchart'))['ThemeManager']
@@ -84,6 +87,7 @@ export function UserCharts(props: UserChartsProps) {
   const timeGranularity = props.filters.timeGranularity
   const selectedRange = props.filters.selectedRange
   const topUserLimit = props.filters.topUserLimit
+  const metric = props.filters.metric
   const onFiltersChange = props.onFiltersChange
 
   const timeRange = useMemo(() => {
@@ -120,6 +124,13 @@ export function UserCharts(props: UserChartsProps) {
     [onFiltersChange, props.filters]
   )
 
+  const handleMetricChange = useCallback(
+    (value: UserAnalyticsMetric) => {
+      onFiltersChange({ ...props.filters, metric: value })
+    },
+    [onFiltersChange, props.filters]
+  )
+
   useEffect(() => {
     const updateTheme = async () => {
       setThemeReady(false)
@@ -149,9 +160,10 @@ export function UserCharts(props: UserChartsProps) {
         isLoading ? [] : (userData ?? []),
         timeGranularity,
         t,
-        topUserLimit
+        topUserLimit,
+        metric
       ),
-    [userData, isLoading, timeGranularity, t, topUserLimit]
+    [userData, isLoading, timeGranularity, t, topUserLimit, metric]
   )
 
   return (
@@ -216,6 +228,8 @@ export function UserCharts(props: UserChartsProps) {
           </TabsList>
         </Tabs>
 
+        <UserMetricTabs value={metric} onValueChange={handleMetricChange} />
+
         {isLoading && (
           <Loader2 className='text-muted-foreground size-4 animate-spin' />
         )}
@@ -244,7 +258,7 @@ export function UserCharts(props: UserChartsProps) {
                   themeReady &&
                   spec && (
                     <VChart
-                      key={`user-${chart.value}-${topUserLimit}-${resolvedTheme}`}
+                      key={`user-${chart.value}-${topUserLimit}-${metric}-${resolvedTheme}`}
                       spec={{
                         ...spec,
                         theme: resolvedTheme === 'dark' ? 'dark' : 'light',

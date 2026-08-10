@@ -50,6 +50,8 @@ export interface FlowQuotaDataItem {
 
 export type FlowMetric = 'quota' | 'tokens' | 'requests'
 
+export type UserAnalyticsMetric = 'quota' | 'tokens'
+
 export type FlowOverflowMode = 'aggregate' | 'hide'
 
 export type FlowRole = 'user' | 'admin' | 'root'
@@ -208,6 +210,7 @@ export interface UserChartsFilters {
   timeGranularity: TimeGranularity
   selectedRange: number
   topUserLimit: number
+  metric: UserAnalyticsMetric
 }
 
 // ============================================================================

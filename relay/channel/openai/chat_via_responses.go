@@ -152,7 +152,7 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 
 	chatResult, err := relayconvert.ConvertResponse(c, info, types.RelayFormatOpenAI, finalResponse)
 	if err != nil {
-		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+		return nil, types.NewOpenAIError(fmt.Errorf("convert buffered Responses response to Chat Completions: %w", err), types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 	chatResp, ok := chatResult.Value.(*dto.OpenAITextResponse)
 	if !ok {
@@ -178,7 +178,7 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 	}
 	responseBody, err := common.Marshal(responseValue)
 	if err != nil {
-		return nil, types.NewOpenAIError(err, types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
+		return nil, types.NewOpenAIError(fmt.Errorf("marshal buffered Chat Completions response (%T, relay_format=%q): %w", responseValue, info.RelayFormat, err), types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
 	}
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
