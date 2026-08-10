@@ -187,6 +187,22 @@ func GetQuotaDataGroupByToken(startTime int64, endTime int64) (quotaData []*Quot
 	return quotaDatas, fillQuotaTokenNames(quotaDatas)
 }
 
+// GetQuotaDataGroupByTokenOfUser is the self-service counterpart of
+// GetQuotaDataGroupByToken, restricted to a single user's own keys.
+func GetQuotaDataGroupByTokenOfUser(userID int, startTime int64, endTime int64) (quotaData []*QuotaData, err error) {
+	var quotaDatas []*QuotaData
+	err = DB.Table("quota_data").
+		Select("token_id, created_at, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used").
+		Where("user_id = ?", userID).
+		Where("created_at >= ? and created_at <= ?", startTime, endTime).
+		Group("token_id, created_at").
+		Find(&quotaDatas).Error
+	if err != nil {
+		return nil, err
+	}
+	return quotaDatas, fillQuotaTokenNames(quotaDatas)
+}
+
 // fillQuotaTokenNames resolves key names for token-grouped rows. Deleted tokens
 // are left empty so the frontend can render its own placeholder label.
 func fillQuotaTokenNames(rows []*QuotaData) error {

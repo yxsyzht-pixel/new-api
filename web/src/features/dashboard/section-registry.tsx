@@ -42,14 +42,15 @@ const DASHBOARD_SECTIONS = [
   {
     id: 'users',
     titleKey: 'User Analytics',
-    adminOnly: true,
     build: () => null,
   },
 ] as const
 
 export type DashboardSectionId = (typeof DASHBOARD_SECTIONS)[number]['id']
 
-const ADMIN_ONLY_SECTIONS = new Set<string>(['users'])
+// Non-admins reach the same section, but it is scoped to their own keys and
+// labelled accordingly.
+const ADMIN_ONLY_SECTIONS = new Set<string>([])
 
 const dashboardRegistry = createSectionRegistry<
   DashboardSectionId,
@@ -65,13 +66,28 @@ const dashboardRegistry = createSectionRegistry<
 export const DASHBOARD_SECTION_IDS = dashboardRegistry.sectionIds
 export const DASHBOARD_DEFAULT_SECTION = dashboardRegistry.defaultSection
 
+/** Section title, which differs for the self-scoped (non-admin) view. */
+export function getDashboardSectionTitleKey(
+  sectionId: DashboardSectionId,
+  isAdmin: boolean
+) {
+  if (sectionId === 'users' && !isAdmin) return 'Key Analytics'
+  const section = DASHBOARD_SECTIONS.find((item) => item.id === sectionId)
+  return section?.titleKey ?? 'Overview'
+}
+
 export function getDashboardSectionNavItems(
   t: TFunction,
   options?: { isAdmin?: boolean }
 ) {
+  const isAdmin = Boolean(options?.isAdmin)
   const all = dashboardRegistry.getSectionNavItems(t)
-  if (options?.isAdmin) return all
-  return all.filter(
+  const titled = all.map((item, idx) => ({
+    ...item,
+    title: t(getDashboardSectionTitleKey(DASHBOARD_SECTIONS[idx].id, isAdmin)),
+  }))
+  if (isAdmin) return titled
+  return titled.filter(
     (_, idx) => !ADMIN_ONLY_SECTIONS.has(DASHBOARD_SECTIONS[idx].id)
   )
 }

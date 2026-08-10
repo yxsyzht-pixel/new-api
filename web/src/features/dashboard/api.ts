@@ -77,6 +77,17 @@ export async function getQuotaDataByTokens(params: {
   return res.data
 }
 
+export async function getSelfQuotaDataByTokens(params: {
+  start_timestamp: number
+  end_timestamp: number
+}) {
+  const res = await api.get<{ success: boolean; data: QuotaDataItem[] }>(
+    '/api/data/tokens/self',
+    { params }
+  )
+  return res.data
+}
+
 export async function getFlowQuotaDates(
   params: {
     start_timestamp: number

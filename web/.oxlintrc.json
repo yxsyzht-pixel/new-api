@@ -114,6 +114,7 @@
           "getContentSectionContent",
           "getContentSectionMeta",
           "getDashboardSectionNavItems",
+          "getDashboardSectionTitleKey",
           "getModelsSectionNavItems",
           "getModelsSectionContent",
           "getModelsSectionMeta",

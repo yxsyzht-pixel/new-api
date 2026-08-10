@@ -50,6 +50,7 @@ import {
   type DashboardSectionId,
   DASHBOARD_DEFAULT_SECTION,
   DASHBOARD_SECTION_IDS,
+  getDashboardSectionTitleKey,
 } from './section-registry'
 import type {
   DashboardChartPreferences,
@@ -176,21 +177,6 @@ function PerformanceOverviewFallback() {
   )
 }
 
-const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
-  overview: {
-    titleKey: 'Overview',
-  },
-  models: {
-    titleKey: 'Model Call Analytics',
-  },
-  flow: {
-    titleKey: 'Flow',
-  },
-  users: {
-    titleKey: 'User Analytics',
-  },
-}
-
 export function Dashboard() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -245,14 +231,11 @@ export function Dashboard() {
     []
   )
 
-  const meta = SECTION_META[activeSection] ?? SECTION_META.overview
   const isAdmin = Boolean(userRole && userRole >= ROLE.ADMIN)
+  const sectionTitleKey = getDashboardSectionTitleKey(activeSection, isAdmin)
   const visibleSections = useMemo(
-    () =>
-      DASHBOARD_SECTION_IDS.filter(
-        (section) => section !== 'overview' && (section !== 'users' || isAdmin)
-      ),
-    [isAdmin]
+    () => DASHBOARD_SECTION_IDS.filter((section) => section !== 'overview'),
+    []
   )
   const handleSectionChange = useCallback(
     (section: string) => {
@@ -321,7 +304,7 @@ export function Dashboard() {
 
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t(meta.titleKey)}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>{t(sectionTitleKey)}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='space-y-3 sm:space-y-4'>
           {activeSection !== 'overview' && (
@@ -331,7 +314,7 @@ export function Dashboard() {
                   <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
                     {visibleSections.map((section) => (
                       <TabsTrigger key={section} value={section}>
-                        {t(SECTION_META[section].titleKey)}
+                        {t(getDashboardSectionTitleKey(section, isAdmin))}
                       </TabsTrigger>
                     ))}
                   </TabsList>
@@ -398,6 +381,7 @@ export function Dashboard() {
                 <LazyUserCharts
                   filters={userChartsFilters}
                   onFiltersChange={setUserChartsFilters}
+                  scope={isAdmin ? 'admin' : 'self'}
                 />
               </Suspense>
             </FadeIn>

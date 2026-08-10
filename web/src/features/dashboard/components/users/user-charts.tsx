@@ -28,6 +28,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTheme } from '@/context/theme-provider'
 import {
   getQuotaDataByTokens,
+  getSelfQuotaDataByTokens,
   getUserQuotaDataByUsers,
 } from '@/features/dashboard/api'
 import {
@@ -79,6 +80,11 @@ const TOP_USER_LIMIT_OPTIONS = [5, 10, 20, 50]
 interface UserChartsProps {
   filters: UserChartsFilters
   onFiltersChange: (filters: UserChartsFilters) => void
+  /**
+   * 'self' restricts the charts to the viewer's own keys, which is the only
+   * meaningful breakdown for a non-admin account.
+   */
+  scope?: 'admin' | 'self'
 }
 
 export function UserCharts(props: UserChartsProps) {
@@ -95,7 +101,10 @@ export function UserCharts(props: UserChartsProps) {
   const selectedRange = props.filters.selectedRange
   const topUserLimit = props.filters.topUserLimit
   const metric = props.filters.metric
-  const dimension = props.filters.dimension
+  const isSelfScope = props.scope === 'self'
+  // A single account has nothing to compare across users, so the self view is
+  // always broken down by key.
+  const dimension = isSelfScope ? 'token' : props.filters.dimension
   const onFiltersChange = props.onFiltersChange
 
   const timeRange = useMemo(() => {
@@ -163,11 +172,19 @@ export function UserCharts(props: UserChartsProps) {
   }, [resolvedTheme])
 
   const { data: userData, isLoading } = useQuery({
-    queryKey: ['dashboard', 'user-quota', dimension, timeRange],
-    queryFn: () =>
-      dimension === 'token'
+    queryKey: [
+      'dashboard',
+      'user-quota',
+      props.scope ?? 'admin',
+      dimension,
+      timeRange,
+    ],
+    queryFn: () => {
+      if (isSelfScope) return getSelfQuotaDataByTokens(timeRange)
+      return dimension === 'token'
         ? getQuotaDataByTokens(timeRange)
-        : getUserQuotaDataByUsers(timeRange),
+        : getUserQuotaDataByUsers(timeRange)
+    },
     select: (res) => (res.success ? res.data : []),
     staleTime: 60_000,
   })
@@ -247,10 +264,12 @@ export function UserCharts(props: UserChartsProps) {
           </TabsList>
         </Tabs>
 
-        <UserDimensionTabs
-          value={dimension}
-          onValueChange={handleDimensionChange}
-        />
+        {!isSelfScope && (
+          <UserDimensionTabs
+            value={dimension}
+            onValueChange={handleDimensionChange}
+          />
+        )}
 
         <UserMetricTabs value={metric} onValueChange={handleMetricChange} />
 

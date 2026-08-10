@@ -737,15 +737,16 @@ export function processUserChartData(
 ): ProcessedUserChartData {
   const tt: TFunction = t ?? ((x) => x)
   const isTokenDimension = dimension === 'token'
-  // Keys are qualified with their owner because the same key name may exist
-  // under several accounts.
   const getSeriesLabel = (item: QuotaDataItem) => {
     const username = item.username || tt('unknown')
     if (!isTokenDimension) return username
     const keyName =
       item.token_name ||
       (item.token_id ? `${tt('Deleted key')} (${item.token_id})` : tt('No key'))
-    return `${username} / ${keyName}`
+    // Self-service data carries no username: every key already belongs to the
+    // viewer. Elsewhere the owner qualifies the key, because the same key name
+    // may exist under several accounts.
+    return item.username ? `${username} / ${keyName}` : keyName
   }
   const rankTitle = isTokenDimension
     ? tt('Key Consumption Ranking')
