@@ -105,7 +105,11 @@ func Distribute() func(c *gin.Context) {
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					affinityUsable := false
 					preferred, err := model.CacheGetChannel(preferredChannelID)
+					// A channel parked for an upstream usage limit counts as unusable here,
+					// so the binding is released and the session moves to a sibling account
+					// instead of queueing behind a limit that has not lifted yet.
 					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
+						!model.IsChannelSuspended(preferred.Id) &&
 						channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) {
 						if usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
@@ -380,7 +384,14 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/audio") {
 		relayMode := relayconstant.RelayModeAudioSpeech
 		if strings.HasPrefix(c.Request.URL.Path, "/v1/audio/speech") {
-
+			// Speech requests are normally JSON, but some OpenAI-compatible TTS
+			// providers accept reference audio through multipart/form-data.
+			// Read the model from the form before falling back to OpenAI's
+			// default so the distributor selects the channel requested by the
+			// client instead of incorrectly looking for tts-1.
+			if req, err := getModelFromRequest(c); err == nil && req.Model != "" {
+				modelRequest.Model = req.Model
+			}
 			modelRequest.Model = common.GetStringIfEmpty(modelRequest.Model, "tts-1")
 		} else if strings.HasPrefix(c.Request.URL.Path, "/v1/audio/translations") {
 			// 先尝试从请求读取

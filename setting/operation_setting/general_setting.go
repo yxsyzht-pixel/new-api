@@ -20,6 +20,8 @@ type GeneralSetting struct {
 	CustomCurrencySymbol string `json:"custom_currency_symbol"`
 	// 自定义货币与美元汇率（1 USD = X Custom）
 	CustomCurrencyExchangeRate float64 `json:"custom_currency_exchange_rate"`
+	// 上游返回用量超限（429）后，该渠道暂停参与选择的秒数，到期自动恢复
+	ChannelUsageLimitCooldownSeconds int `json:"channel_usage_limit_cooldown_seconds"`
 }
 
 // 默认配置
@@ -30,6 +32,8 @@ var generalSetting = GeneralSetting{
 	QuotaDisplayType:           QuotaDisplayTypeUSD,
 	CustomCurrencySymbol:       "¤",
 	CustomCurrencyExchangeRate: 1.0,
+	// 3 分钟足够跨过大多数上游滚动窗口的抖动，又不会让恢复后的额度长时间闲置
+	ChannelUsageLimitCooldownSeconds: 180,
 }
 
 func init() {

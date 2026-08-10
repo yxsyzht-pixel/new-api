@@ -133,6 +133,8 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		return nil, nil
 	}
 
+	channels = dropSuspendedChannels(channels)
+
 	if len(channels) == 1 {
 		if channel, ok := channelsIDM[channels[0]]; ok {
 			return channel, nil
@@ -234,6 +236,22 @@ func filterChannelsByRequestPathAndModel(channels []int, requestPath string, mod
 		}
 	}
 	return filtered
+}
+
+// dropSuspendedChannels removes channels currently parked for an upstream usage
+// limit. When every candidate is parked the full list is kept: refusing to serve
+// is worse than probing a channel whose limit may already have lifted.
+func dropSuspendedChannels(channels []int) []int {
+	available := make([]int, 0, len(channels))
+	for _, channelId := range channels {
+		if !IsChannelSuspended(channelId) {
+			available = append(available, channelId)
+		}
+	}
+	if len(available) == 0 {
+		return channels
+	}
+	return available
 }
 
 func CacheGetChannel(id int) (*Channel, error) {

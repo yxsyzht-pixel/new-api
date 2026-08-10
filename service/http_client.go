@@ -92,6 +92,14 @@ func newRelayHTTPTransport() *http.Transport {
 	transport.MaxIdleConnsPerHost = common.RelayMaxIdleConnsPerHost
 	transport.IdleConnTimeout = time.Duration(common.RelayIdleConnTimeout) * time.Second
 	transport.ForceAttemptHTTP2 = true
+	// Without health checks an HTTP/2 connection that dies mid-flight (proxy restart,
+	// network blip) stays in the pool looking healthy, and every later request for
+	// that host queues on it until its own timeout. Idle pings detect the corpse and
+	// evict it, so recovery no longer needs a process restart.
+	transport.HTTP2 = &http.HTTP2Config{
+		SendPingTimeout: 15 * time.Second,
+		PingTimeout:     15 * time.Second,
+	}
 	if common.TLSInsecureSkipVerify {
 		transport.TLSClientConfig = common.InsecureTLSConfig
 	}
