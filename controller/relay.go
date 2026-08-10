@@ -366,7 +366,11 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	// An upstream usage limit is temporary, so the channel is parked rather than
 	// disabled. Releasing the affinity binding lets this request — and the session
 	// behind it — move to a sibling account instead of failing until the limit lifts.
-	if service.SuspendChannelOnUsageLimit(channelError, err) {
+	//
+	// Provider-side overload is not the channel's fault, so the channel keeps serving;
+	// only the affinity binding is released so this request can retry on an account
+	// that is likely backed by a different pool.
+	if service.SuspendChannelOnUsageLimit(channelError, err) || service.IsUpstreamOverloadedError(err) {
 		service.ClearCurrentChannelAffinityCache(c)
 	}
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况

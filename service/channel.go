@@ -71,6 +71,34 @@ func IsUpstreamUsageLimitError(err *types.NewAPIError) bool {
 	return false
 }
 
+// upstreamOverloadKeywords match the bodies providers send when their own serving
+// capacity — not the account's quota — is exhausted. A sibling account often sits
+// on a different pool, so these are worth retrying elsewhere immediately.
+var upstreamOverloadKeywords = []string{
+	"server_is_overloaded",
+	"servers are currently overloaded",
+	"service_unavailable",
+	"at capacity",
+	"currently overloaded",
+	"engine is currently overloaded",
+}
+
+// IsUpstreamOverloadedError reports whether err means the provider is out of
+// serving capacity right now. Unlike a usage limit this says nothing about the
+// account, so the channel stays in rotation and only this request moves on.
+func IsUpstreamOverloadedError(err *types.NewAPIError) bool {
+	if err == nil {
+		return false
+	}
+	lowerMessage := strings.ToLower(err.Error())
+	for _, keyword := range upstreamOverloadKeywords {
+		if strings.Contains(lowerMessage, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
 // SuspendChannelOnUsageLimit parks a channel that just reported an upstream usage
 // limit and reports whether it did so. Selection then skips the channel until the
 // cooldown lapses, and the next request lands on a sibling account instead of

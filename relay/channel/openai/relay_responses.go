@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,7 +16,50 @@ import (
 	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
+
+const (
+	responsesStreamTypeError      = "error"
+	responsesStreamTypeFailed     = "response.failed"
+	responsesStreamTypeCreated    = "response.created"
+	responsesStreamTypeInProgress = "response.in_progress"
+)
+
+// responsesStreamTypeIsPreamble reports whether an event only announces that the
+// upstream accepted the request. Those events carry no model output, so a failure
+// arriving while only they have been seen is still recoverable on another channel.
+func responsesStreamTypeIsPreamble(eventType string) bool {
+	return eventType == responsesStreamTypeCreated || eventType == responsesStreamTypeInProgress
+}
+
+// responsesStreamFailure turns an in-stream failure event into a relay error.
+// Upstream signals capacity and service problems this way — HTTP 200 with an
+// `error` event — which would otherwise be billed and logged as a success.
+func responsesStreamFailure(eventType string, data string) *types.NewAPIError {
+	if eventType != responsesStreamTypeError && eventType != responsesStreamTypeFailed {
+		return nil
+	}
+
+	errNode := gjson.Get(data, "error")
+	if !errNode.Exists() {
+		errNode = gjson.Get(data, "response.error")
+	}
+	message := strings.TrimSpace(errNode.Get("message").String())
+	if message == "" {
+		message = "upstream reported a stream failure without a message"
+	}
+	code := strings.TrimSpace(errNode.Get("code").String())
+	if code == "" {
+		code = strings.TrimSpace(errNode.Get("type").String())
+	}
+	if code != "" {
+		message = fmt.Sprintf("%s (%s)", message, code)
+	}
+
+	// 503 keeps the failure inside the retryable range so another channel is tried.
+	return types.NewErrorWithStatusCode(errors.New(message), types.ErrorCodeBadResponse, http.StatusServiceUnavailable)
+}
 
 func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	defer service.CloseResponseBodyGracefully(resp)
@@ -84,6 +128,12 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	var responseTextBuilder strings.Builder
 	imageCounter := &relaycommon.ImageGenerationCallCounter{}
 	imageCommitted := false
+	// An upstream that is out of capacity answers 200 and reports the failure as an
+	// in-stream `error` event. Nothing useful has been produced at that point, so the
+	// failure is withheld from the client and surfaced as a relay error instead,
+	// letting the retry loop reach a channel that can actually serve the request.
+	var upstreamStreamErr *types.NewAPIError
+	contentStarted := false
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
@@ -93,6 +143,23 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			logger.LogError(c, "failed to unmarshal stream response: "+err.Error())
 			sr.Error(err)
 			return
+		}
+		if !contentStarted && upstreamStreamErr == nil {
+			if streamErr := responsesStreamFailure(streamResponse.Type, data); streamErr != nil {
+				upstreamStreamErr = streamErr
+				logger.LogError(c, fmt.Sprintf("upstream reported failure in stream before any output: %s", common.LocalLogPreview(streamErr.Error())))
+			}
+		}
+		if upstreamStreamErr != nil {
+			// Withhold the upstream failure events; the relay layer decides what the
+			// client finally sees.
+			if streamResponse.Type == responsesStreamTypeFailed {
+				sr.Stop(upstreamStreamErr.Err)
+			}
+			return
+		}
+		if !responsesStreamTypeIsPreamble(streamResponse.Type) {
+			contentStarted = true
 		}
 		sendResponsesStreamData(c, streamResponse, data)
 		switch streamResponse.Type {
@@ -157,6 +224,10 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 		}
 	})
+
+	if upstreamStreamErr != nil {
+		return nil, upstreamStreamErr
+	}
 
 	if usage.CompletionTokens == 0 {
 		// 计算输出文本的 token 数量
