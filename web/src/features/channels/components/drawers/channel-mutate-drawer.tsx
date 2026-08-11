@@ -25,6 +25,7 @@ import {
   CheckCircle2,
   Circle,
   ClipboardPaste,
+  ExternalLink,
   HelpCircle,
   KeyRound,
   Loader2,
@@ -128,13 +129,16 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
+  completeAntigravityAuth,
   fetchModels,
   getAllModels,
   getChannel,
   getChannelKey,
   getGroups,
   getPrefillGroups,
+  refreshAntigravityCredential,
   refreshCodexCredential,
+  startAntigravityAuth,
 } from '../../api'
 import {
   ADD_MODE_OPTIONS,
@@ -623,6 +627,16 @@ export function ChannelMutateDrawer({
   const [isChannelKeyLoading, setIsChannelKeyLoading] = useState(false)
   const [isCodexCredentialRefreshing, setIsCodexCredentialRefreshing] =
     useState(false)
+  // Antigravity sign-in runs in two steps: the consent URL is opened here, and
+  // the code the browser is left holding is pasted back to finish.
+  const [antigravityAuthUrl, setAntigravityAuthUrl] = useState('')
+  const [antigravityAuthState, setAntigravityAuthState] = useState('')
+  const [antigravityAuthCode, setAntigravityAuthCode] = useState('')
+  const [isAntigravityAuthStarting, setIsAntigravityAuthStarting] =
+    useState(false)
+  const [isAntigravityAuthCompleting, setIsAntigravityAuthCompleting] =
+    useState(false)
+  const [isAntigravityRefreshing, setIsAntigravityRefreshing] = useState(false)
   const initialModelsRef = useRef<string[]>([])
   const initialModelMappingRef = useRef<string>('')
   const initialStatusCodeMappingRef = useRef<string>('')
@@ -1410,6 +1424,98 @@ export function ChannelMutateDrawer({
       toast.error(error instanceof Error ? error.message : t('Refresh failed'))
     } finally {
       setIsCodexCredentialRefreshing(false)
+    }
+  }, [channelId, queryClient, t])
+
+  const handleStartAntigravityAuth = useCallback(async () => {
+    setIsAntigravityAuthStarting(true)
+    try {
+      const res = await startAntigravityAuth(form.getValues('proxy'))
+      if (!res.success || !res.data?.auth_url) {
+        throw new Error(res.message || t('Failed to start sign-in'))
+      }
+      setAntigravityAuthUrl(res.data.auth_url)
+      setAntigravityAuthState(res.data.state)
+      setAntigravityAuthCode('')
+      window.open(res.data.auth_url, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t('Failed to start sign-in')
+      )
+    } finally {
+      setIsAntigravityAuthStarting(false)
+    }
+  }, [form, t])
+
+  const handleCompleteAntigravityAuth = useCallback(async () => {
+    if (!antigravityAuthState || !antigravityAuthCode.trim()) return
+    setIsAntigravityAuthCompleting(true)
+    try {
+      const res = await completeAntigravityAuth({
+        state: antigravityAuthState,
+        code: antigravityAuthCode.trim(),
+        // On an existing channel the credential is written straight to it; on a
+        // new one it comes back so it can fill the key field before saving.
+        channelId: isEditing && channelId ? channelId : undefined,
+        proxy: form.getValues('proxy'),
+      })
+      if (!res.success) {
+        throw new Error(res.message || t('Sign-in failed'))
+      }
+      if (res.data?.key) {
+        form.setValue('key', res.data.key, { shouldDirty: true })
+      }
+      if (!res.data?.project_id) {
+        // Sign-in succeeded but the account owns no project, and every request
+        // needs one — say so rather than leaving a channel that fails later.
+        toast.warning(
+          res.message ||
+            t('Signed in, but no Antigravity project was resolved for this account')
+        )
+      } else {
+        toast.success(
+          `${t('Signed in')}: ${res.data.email ?? ''} (${res.data.project_id})`
+        )
+      }
+      setAntigravityAuthUrl('')
+      setAntigravityAuthState('')
+      setAntigravityAuthCode('')
+      if (isEditing && channelId) {
+        queryClient.invalidateQueries({
+          queryKey: channelsQueryKeys.detail(channelId),
+        })
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('Sign-in failed'))
+    } finally {
+      setIsAntigravityAuthCompleting(false)
+    }
+  }, [
+    antigravityAuthCode,
+    antigravityAuthState,
+    channelId,
+    form,
+    isEditing,
+    queryClient,
+    t,
+  ])
+
+  const handleRefreshAntigravityCredential = useCallback(async () => {
+    if (!channelId) return
+    setIsAntigravityRefreshing(true)
+    try {
+      const res = await refreshAntigravityCredential(channelId)
+      if (!res.success) {
+        throw new Error(res.message || t('Failed to refresh credential'))
+      }
+      toast.success(t('Credential refreshed'))
+      queryClient.invalidateQueries({
+        queryKey: channelsQueryKeys.detail(channelId),
+      })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('Refresh failed'))
+    } finally {
+      setIsAntigravityRefreshing(false)
     }
   }, [channelId, queryClient, t])
 
@@ -3113,6 +3219,121 @@ export function ChannelMutateDrawer({
                                     <AlertDescription>
                                       {t(
                                         "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel has prerequisites and requires prior setup; use it only if you understand the flow and risks, and comply with OpenAI's terms and policies. Credentials and configuration are for Codex CLI integration only, and are not intended for any other client, platform, or channel."
+                                      )}
+                                    </AlertDescription>
+                                  </Alert>
+                                </div>
+                              )}
+
+                              {currentType === 61 && (
+                                <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
+                                  <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                                    <div className='text-muted-foreground text-xs'>
+                                      {t(
+                                        'Sign in with Google to obtain the credential; do not fill the key by hand.'
+                                      )}
+                                    </div>
+                                    <div className='flex flex-wrap items-center gap-2'>
+                                      <Button
+                                        type='button'
+                                        variant='outline'
+                                        size='sm'
+                                        onClick={handleStartAntigravityAuth}
+                                        disabled={
+                                          sensitiveLocked ||
+                                          isAntigravityAuthStarting
+                                        }
+                                      >
+                                        {isAntigravityAuthStarting ? (
+                                          <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                                        ) : (
+                                          <ExternalLink className='mr-2 h-4 w-4' />
+                                        )}
+                                        {t('Sign in with Google')}
+                                      </Button>
+                                      {isEditing && channelId && (
+                                        <Button
+                                          type='button'
+                                          variant='outline'
+                                          size='sm'
+                                          onClick={
+                                            handleRefreshAntigravityCredential
+                                          }
+                                          disabled={
+                                            sensitiveLocked ||
+                                            isAntigravityRefreshing
+                                          }
+                                        >
+                                          {isAntigravityRefreshing ? (
+                                            <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                                          ) : (
+                                            <RefreshCw className='mr-2 h-4 w-4' />
+                                          )}
+                                          {isAntigravityRefreshing
+                                            ? t('Refreshing...')
+                                            : t('Refresh credential')}
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {antigravityAuthState && (
+                                    <div className='flex flex-col gap-2'>
+                                      <div className='text-muted-foreground text-xs'>
+                                        {t(
+                                          'After consenting, the browser lands on a localhost address that cannot load. Copy that whole address here — the authorization code is in it.'
+                                        )}
+                                      </div>
+                                      {antigravityAuthUrl && (
+                                        <a
+                                          href={antigravityAuthUrl}
+                                          target='_blank'
+                                          rel='noopener noreferrer'
+                                          className='text-primary text-xs underline underline-offset-2'
+                                        >
+                                          {t(
+                                            'Sign-in page did not open? Open it here'
+                                          )}
+                                        </a>
+                                      )}
+                                      <div className='flex flex-col gap-2 sm:flex-row'>
+                                        <Input
+                                          value={antigravityAuthCode}
+                                          onChange={(e) =>
+                                            setAntigravityAuthCode(
+                                              e.target.value
+                                            )
+                                          }
+                                          placeholder='http://localhost:51121/oauth-callback?...&code=...'
+                                          className='font-mono'
+                                          disabled={
+                                            isAntigravityAuthCompleting
+                                          }
+                                        />
+                                        <Button
+                                          type='button'
+                                          size='sm'
+                                          onClick={
+                                            handleCompleteAntigravityAuth
+                                          }
+                                          disabled={
+                                            isAntigravityAuthCompleting ||
+                                            !antigravityAuthCode.trim()
+                                          }
+                                        >
+                                          {isAntigravityAuthCompleting && (
+                                            <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                                          )}
+                                          {t('Finish sign-in')}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
+                                    <AlertDescription>
+                                      {t(
+                                        'Disclaimer: Personal use only. This channel serves Gemini and Claude models on a Google account, and is subject to that account’s quota and to Google’s terms. Do not distribute or share any credentials.'
                                       )}
                                     </AlertDescription>
                                   </Alert>

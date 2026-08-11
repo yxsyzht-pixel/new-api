@@ -73,6 +73,39 @@ export type CodexCredentialRefreshResponse = {
   }
 }
 
+export type AntigravityAuthStartResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    auth_url: string
+    state: string
+    hint?: string
+  }
+}
+
+export type AntigravityAuthCompleteResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    email?: string
+    project_id?: string
+    expired?: string
+    channel_id?: number
+    /** Returned only when no channel was given, to fill the key field with. */
+    key?: string
+  }
+}
+
+export type AntigravityCredentialRefreshResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    expired?: string
+    email?: string
+    project_id?: string
+  }
+}
+
 // ============================================================================
 // Base Channel CRUD Operations
 // ============================================================================
@@ -316,6 +349,58 @@ export async function refreshCodexCredential(
 ): Promise<CodexCredentialRefreshResponse> {
   const res = await api.post(
     `/api/channel/${channelId}/codex/refresh`,
+    {},
+    channelActionConfig()
+  )
+  return res.data
+}
+
+// ============================================================================
+// Antigravity Channel Operations
+// ============================================================================
+
+/**
+ * Begin an Antigravity sign-in. The returned URL is opened in the operator's
+ * browser; because the OAuth client only accepts a loopback redirect, the
+ * browser ends up on an address that cannot load, and the code in it is what
+ * completes the flow.
+ */
+export async function startAntigravityAuth(
+  proxy?: string
+): Promise<AntigravityAuthStartResponse> {
+  const res = await api.post(
+    '/api/channel/antigravity/auth/start',
+    { proxy: proxy ?? '' },
+    channelActionConfig()
+  )
+  return res.data
+}
+
+/** Exchange the code for a credential, writing it to the channel when given one. */
+export async function completeAntigravityAuth(params: {
+  state: string
+  code: string
+  channelId?: number
+  proxy?: string
+}): Promise<AntigravityAuthCompleteResponse> {
+  const res = await api.post(
+    '/api/channel/antigravity/auth/complete',
+    {
+      state: params.state,
+      code: params.code,
+      channel_id: params.channelId ?? 0,
+      proxy: params.proxy ?? '',
+    },
+    channelActionConfig()
+  )
+  return res.data
+}
+
+export async function refreshAntigravityCredential(
+  channelId: number
+): Promise<AntigravityCredentialRefreshResponse> {
+  const res = await api.post(
+    `/api/channel/${channelId}/antigravity/refresh`,
     {},
     channelActionConfig()
   )
