@@ -1,7 +1,9 @@
 package oairesponses
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"context"
@@ -254,6 +256,9 @@ func responsesFunctionCallItemToGeminiPart(item map[string]any) (dto.GeminiPart,
 		FunctionCall: &dto.FunctionCall{
 			FunctionName: name,
 			Arguments:    ObjectValue(item["arguments"], "arguments"),
+			// Carried through rather than dropped: a channel that relays on to
+			// Anthropic needs it to rebuild the tool_use block.
+			ID: callID,
 		},
 	}, callID, nil
 }
@@ -264,12 +269,16 @@ func responsesFunctionOutputItemToGeminiPart(item map[string]any, callNames map[
 	if name == "" {
 		name = callNames[callID]
 	}
-	return dto.GeminiPart{
-		FunctionResponse: &dto.GeminiFunctionResponse{
-			Name:     name,
-			Response: GeminiResponseMap(item["output"]),
-		},
+	response := &dto.GeminiFunctionResponse{
+		Name:     name,
+		Response: GeminiResponseMap(item["output"]),
 	}
+	// The result has to name the call it answers, or the pairing is lost the
+	// same way the call's own id was.
+	if callID != "" {
+		response.ID = json.RawMessage(strconv.Quote(callID))
+	}
+	return dto.GeminiPart{FunctionResponse: response}
 }
 
 func appendGeminiContentPart(req *dto.GeminiChatRequest, role string, part dto.GeminiPart) {

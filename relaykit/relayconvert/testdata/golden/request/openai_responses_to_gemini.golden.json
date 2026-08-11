@@ -22,7 +22,8 @@
             "name": "get_weather",
             "args": {
               "city": "Paris"
-            }
+            },
+            "id": "call_abc"
           },
           "thoughtSignature": "context_engineering_is_the_way_to_go"
         }
@@ -36,7 +37,8 @@
             "name": "get_weather",
             "response": {
               "content": "15 degrees"
-            }
+            },
+            "id": "call_abc"
           }
         }
       ]

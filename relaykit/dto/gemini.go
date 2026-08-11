@@ -241,6 +241,10 @@ func (g *GeminiInlineData) UnmarshalJSON(data []byte) error {
 type FunctionCall struct {
 	FunctionName string `json:"name"`
 	Arguments    any    `json:"args"`
+	// ID pairs a call with its response. Gemini can match them positionally and
+	// so leaves it optional, but a channel that relays on to Anthropic cannot:
+	// Anthropic rejects the request with "content.0.tool_use.id: Field required".
+	ID string `json:"id,omitempty"`
 }
 
 type GeminiFunctionResponse struct {

@@ -96,6 +96,9 @@ func (a *Adaptor) wrapRequest(info *relaycommon.RelayInfo, request any) (any, er
 	if a.projectID == "" {
 		return nil, errors.New("antigravity channel: project_id is required in the key; sign in with Antigravity to obtain it")
 	}
+	// Every protocol funnels through here, so the Anthropic tool-schema repair
+	// only needs applying once — see tools.go.
+	restoreToolSchemasForAnthropic(request, info.UpstreamModelName)
 	return &requestEnvelope{
 		Project: a.projectID,
 		Model:   info.UpstreamModelName,
