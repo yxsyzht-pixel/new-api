@@ -67,3 +67,21 @@ func TestOrdinaryItemsStillConvert(t *testing.T) {
 	assert.Equal(t, "tool", messages[0].Role)
 	assert.Equal(t, "call_1", messages[0].ToolCallId)
 }
+
+// Chat Completions has no freeform tool type, and passing one through makes the
+// upstream refuse the request: "tools[1].type: unknown variant `custom`,
+// expected `function`". Vendor extensions that some upstreams do accept must
+// still travel.
+func TestCustomToolsAreDroppedButVendorTypesSurvive(t *testing.T) {
+	tools, err := responsesRequestToolsToChat([]byte(`[
+		{"type":"function","name":"get_weather","description":"w","parameters":{"type":"object"}},
+		{"type":"custom","name":"apply_patch","description":"freeform"},
+		{"type":"plugin","name":"vendor_thing"}
+	]`))
+
+	require.NoError(t, err)
+	require.Len(t, tools, 2)
+	assert.Equal(t, "function", tools[0].Type)
+	assert.Equal(t, "get_weather", tools[0].Function.Name)
+	assert.Equal(t, "plugin", tools[1].Type)
+}

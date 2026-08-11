@@ -19,6 +19,9 @@ const (
 	// turn, which clients replay verbatim. Chat Completions has nowhere to put
 	// it — see dropReasoningInput.
 	responsesInputTypeReasoning = "reasoning"
+	// responsesToolTypeCustom is the freeform tool type, which the Responses
+	// protocol has and Chat Completions does not.
+	responsesToolTypeCustom = "custom"
 )
 
 const (
@@ -360,6 +363,17 @@ func responsesRequestToolsToChat(raw json.RawMessage) ([]dto.ToolCallRequest, er
 			continue
 		}
 
+		if toolType == responsesToolTypeCustom {
+			// A freeform custom tool exists only in the Responses protocol; Chat
+			// Completions accepts no such type and upstreams reject the whole
+			// request over it ("tools[1].type: unknown variant `custom`,
+			// expected `function`"). Codex already falls back to its shell tool
+			// on gateways that cannot take it, so dropping beats failing.
+			continue
+		}
+
+		// Other non-function types are vendor extensions some upstreams do
+		// accept (Kimi's `plugin`, for one), so they keep travelling.
 		rawTool, err := kitutil.Marshal(tool)
 		if err != nil {
 			return nil, err
