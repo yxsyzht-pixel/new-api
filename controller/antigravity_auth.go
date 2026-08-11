@@ -121,57 +121,25 @@ func RefreshAntigravityChannelCredential(c *gin.Context) {
 		return
 	}
 
-	channel, err := model.GetChannelById(channelID, true)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if channel.Type != constant.ChannelTypeAntigravity {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "channel type is not Antigravity"})
-		return
-	}
-
-	var credential service.AntigravityCredential
-	if err := common.Unmarshal([]byte(strings.TrimSpace(channel.Key)), &credential); err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "解析凭证失败，请重新登录"})
-		return
-	}
-	if strings.TrimSpace(credential.RefreshToken) == "" {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "凭证中没有 refresh_token，请重新登录"})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
 	defer cancel()
 
-	token, err := service.RefreshAntigravityToken(ctx, credential.RefreshToken, channel.GetSetting().Proxy)
+	// Shared with the background task, so an operator pressing the button and the
+	// scheduled renewal cannot drift apart.
+	credential, _, err := service.RefreshAntigravityChannelCredential(ctx, channelID,
+		service.AntigravityCredentialRefreshOptions{ResetCaches: true})
 	if err != nil {
 		common.SysError("failed to refresh antigravity credential: " + err.Error())
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "续期失败，请稍后重试或重新登录"})
 		return
 	}
 
-	credential.AccessToken = token.AccessToken
-	if strings.TrimSpace(token.RefreshToken) != "" {
-		credential.RefreshToken = token.RefreshToken
-	}
-	credential.LastRefresh = time.Now().Format(time.RFC3339)
-	credential.Expired = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second).Format(time.RFC3339)
-
-	encoded, err := common.Marshal(credential)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).
-		Update("key", string(encoded)).Error; err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	model.InitChannelCache()
-
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    gin.H{"expired": credential.Expired, "email": credential.Email},
+		"data": gin.H{
+			"expired":    credential.Expired,
+			"email":      credential.Email,
+			"project_id": credential.ProjectID,
+		},
 	})
 }
