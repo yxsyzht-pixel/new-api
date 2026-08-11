@@ -15,6 +15,10 @@ const (
 	responsesInputTypeFunctionCallOutput = "function_call_output"
 	responsesInputTypeCustomToolCall     = "custom_tool_call"
 	responsesInputTypeCustomToolOutput   = "custom_tool_call_output"
+	// responsesInputTypeReasoning is a model's own thinking from an earlier
+	// turn, which clients replay verbatim. Chat Completions has nowhere to put
+	// it — see dropReasoningInput.
+	responsesInputTypeReasoning = "reasoning"
 )
 
 const (
@@ -183,6 +187,13 @@ func responsesInputItemToChatMessages(item map[string]any, messages []dto.Messag
 		callID := strings.TrimSpace(kitutil.Interface2String(item["call_id"]))
 		content := responseToolOutputToChatContent(item["output"])
 		return append(messages, dto.Message{Role: "tool", ToolCallId: callID, Content: content}), nil
+	case responsesInputTypeReasoning:
+		// A reasoning item carries no role, so the fallback below would file it
+		// as a user message full of reasoning_text parts — which upstreams
+		// reject outright ("the message at position 32 with role 'user'
+		// contains an invalid part type: reasoning_text"). Chat Completions has
+		// no representation for another turn's thinking, so it is dropped.
+		return messages, nil
 	}
 
 	role := strings.TrimSpace(kitutil.Interface2String(item["role"]))
@@ -263,6 +274,11 @@ func responsesContentPartsToChatContent(parts []any) (any, error) {
 				"type":      dto.ContentTypeVideoUrl,
 				"video_url": responsesVideoPartToChatVideoURL(part),
 			})
+		case "reasoning_text", "summary_text":
+			// Thinking from an earlier turn, which Chat Completions has no part
+			// type for. Passing it through makes the upstream reject the whole
+			// request; it carries nothing the model needs to continue.
+			continue
 		default:
 			onlyText = false
 			chatParts = append(chatParts, part)
