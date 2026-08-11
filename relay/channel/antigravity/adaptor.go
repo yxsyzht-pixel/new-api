@@ -130,8 +130,16 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 	return a.wrapRequest(info, converted)
 }
 
+// ConvertOpenAIResponsesRequest lets Codex-style clients reach this channel.
+// Antigravity speaks Gemini, so the Responses request is converted the same way
+// the native Gemini channel converts it, then wrapped in the envelope.
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	return nil, errors.New("antigravity channel: /v1/responses endpoint not supported")
+	geminiAdaptor := &gemini.Adaptor{}
+	converted, err := geminiAdaptor.ConvertOpenAIResponsesRequest(c, info, request)
+	if err != nil {
+		return nil, err
+	}
+	return a.wrapRequest(info, converted)
 }
 
 func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.AudioRequest) (io.Reader, error) {
@@ -164,6 +172,12 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
 
+	if info.RelayMode == relayconstant.RelayModeResponses {
+		if info.IsStream {
+			return gemini.GeminiResponsesStreamHandler(c, info, resp)
+		}
+		return gemini.GeminiResponsesHandler(c, info, resp)
+	}
 	if info.RelayMode == relayconstant.RelayModeGemini {
 		if info.IsStream {
 			return gemini.GeminiTextGenerationStreamHandler(c, info, resp)
