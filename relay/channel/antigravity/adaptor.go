@@ -21,10 +21,14 @@ type Adaptor struct {
 	// projectID is resolved once per request from the channel credential and then
 	// carried in the request envelope.
 	projectID string
+	// reasoningEffort is what the caller asked for, kept from whichever protocol
+	// it arrived on so wrapRequest can translate it once — see thinking.go.
+	reasoningEffort string
 }
 
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 	a.projectID = ""
+	a.reasoningEffort = ""
 }
 
 func (a *Adaptor) GetChannelName() string {
@@ -96,9 +100,10 @@ func (a *Adaptor) wrapRequest(info *relaycommon.RelayInfo, request any) (any, er
 	if a.projectID == "" {
 		return nil, errors.New("antigravity channel: project_id is required in the key; sign in with Antigravity to obtain it")
 	}
-	// Every protocol funnels through here, so the Anthropic tool-schema repair
-	// only needs applying once — see tools.go.
+	// Every protocol funnels through here, so the per-family repairs only need
+	// applying once — see tools.go and thinking.go.
 	restoreToolSchemasForAnthropic(request, info.UpstreamModelName)
+	applyThinkingEffort(request, info.UpstreamModelName, a.reasoningEffort)
 	return &requestEnvelope{
 		Project: a.projectID,
 		Model:   info.UpstreamModelName,
@@ -116,6 +121,7 @@ func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayIn
 }
 
 func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
+	a.reasoningEffort = request.ReasoningEffort
 	geminiAdaptor := &gemini.Adaptor{}
 	converted, err := geminiAdaptor.ConvertOpenAIRequest(c, info, request)
 	if err != nil {
@@ -125,6 +131,9 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 }
 
 func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.ClaudeRequest) (any, error) {
+	// Anthropic clients ask for thinking as a token budget rather than a level,
+	// and it already travels through the Gemini conversion, so nothing is
+	// captured here.
 	geminiAdaptor := &gemini.Adaptor{}
 	converted, err := geminiAdaptor.ConvertClaudeRequest(c, info, request)
 	if err != nil {
@@ -137,6 +146,9 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 // Antigravity speaks Gemini, so the Responses request is converted the same way
 // the native Gemini channel converts it, then wrapped in the envelope.
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
+	if request.Reasoning != nil {
+		a.reasoningEffort = request.Reasoning.Effort
+	}
 	geminiAdaptor := &gemini.Adaptor{}
 	converted, err := geminiAdaptor.ConvertOpenAIResponsesRequest(c, info, request)
 	if err != nil {
