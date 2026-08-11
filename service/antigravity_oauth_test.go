@@ -76,12 +76,12 @@ func TestCompleteAntigravityAuthRequiresCode(t *testing.T) {
 func TestExtractAntigravityAuthCode(t *testing.T) {
 	const code = "4/0AVGzR1B-example"
 
-	assert.Equal(t, code, extractAntigravityAuthCode(code))
-	assert.Equal(t, code, extractAntigravityAuthCode("  "+code+"  "))
-	assert.Equal(t, code, extractAntigravityAuthCode(
+	assert.Equal(t, code, extractOAuthCallbackCode(code))
+	assert.Equal(t, code, extractOAuthCallbackCode("  "+code+"  "))
+	assert.Equal(t, code, extractOAuthCallbackCode(
 		"http://localhost:51121/oauth-callback?state=abc&code="+code+"&scope=email"))
-	assert.Equal(t, code, extractAntigravityAuthCode("?state=abc&code="+code))
-	assert.Equal(t, "", extractAntigravityAuthCode(""))
+	assert.Equal(t, code, extractOAuthCallbackCode("?state=abc&code="+code))
+	assert.Equal(t, "", extractOAuthCallbackCode(""))
 }
 
 func TestAntigravityLoadCodeAssistURL(t *testing.T) {

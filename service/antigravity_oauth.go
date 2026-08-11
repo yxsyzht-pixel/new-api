@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -101,7 +99,7 @@ func StartAntigravityAuth(proxyURL string) (authURL string, state string, err er
 // CompleteAntigravityAuth exchanges the pasted code for a credential and resolves
 // the project every later request must carry.
 func CompleteAntigravityAuth(ctx context.Context, state string, code string) (*AntigravityCredential, error) {
-	code = extractAntigravityAuthCode(code)
+	code = extractOAuthCallbackCode(code)
 	if code == "" {
 		return nil, fmt.Errorf("authorization code is required")
 	}
@@ -338,31 +336,6 @@ func callAntigravity(ctx context.Context, client *http.Client, accessToken strin
 	return decoded, nil
 }
 
-// extractAntigravityAuthCode accepts either the bare code or the whole redirect
-// URL the browser was left on, because copying the address bar is easier than
-// picking the parameter out of it.
-func extractAntigravityAuthCode(input string) string {
-	input = strings.TrimSpace(input)
-	if input == "" {
-		return ""
-	}
-	if !strings.Contains(input, "?") && !strings.Contains(input, "&") {
-		return input
-	}
-	if parsed, err := url.Parse(input); err == nil {
-		if code := parsed.Query().Get("code"); code != "" {
-			return code
-		}
-	}
-	// A pasted query fragment without a scheme still parses as raw values.
-	if values, err := url.ParseQuery(strings.TrimPrefix(input, "?")); err == nil {
-		if code := values.Get("code"); code != "" {
-			return code
-		}
-	}
-	return input
-}
-
 func pruneExpiredAntigravityAuthStates() {
 	cutoff := time.Now().Add(-antigravityAuthStateTTL)
 	for state, pending := range antigravityAuthStates {
@@ -370,12 +343,4 @@ func pruneExpiredAntigravityAuthStates() {
 			delete(antigravityAuthStates, state)
 		}
 	}
-}
-
-func randomURLSafeString(n int) string {
-	buf := make([]byte, n)
-	if _, err := rand.Read(buf); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
-	}
-	return base64.RawURLEncoding.EncodeToString(buf)
 }

@@ -73,6 +73,29 @@ export type CodexCredentialRefreshResponse = {
   }
 }
 
+export type CodexAuthStartResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    auth_url: string
+    state: string
+    hint?: string
+  }
+}
+
+export type CodexAuthCompleteResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    email?: string
+    account_id?: string
+    expired?: string
+    channel_id?: number
+    /** Returned only when no channel was given, to fill the key field with. */
+    key?: string
+  }
+}
+
 export type AntigravityAuthStartResponse = {
   success: boolean
   message?: string
@@ -350,6 +373,40 @@ export async function refreshCodexCredential(
   const res = await api.post(
     `/api/channel/${channelId}/codex/refresh`,
     {},
+    channelActionConfig()
+  )
+  return res.data
+}
+
+/**
+ * Begin a Codex sign-in. The returned URL is opened in the operator's browser;
+ * because the OAuth client only accepts a loopback redirect, the browser ends up
+ * on an address that cannot load, and the code in it is what completes the flow.
+ */
+export async function startCodexAuth(
+  proxy?: string
+): Promise<CodexAuthStartResponse> {
+  const res = await api.post(
+    '/api/channel/codex/auth/start',
+    { proxy: proxy ?? '' },
+    channelActionConfig()
+  )
+  return res.data
+}
+
+/** Exchange the code for a credential, writing it to the channel when given one. */
+export async function completeCodexAuth(params: {
+  state: string
+  code: string
+  channelId?: number
+}): Promise<CodexAuthCompleteResponse> {
+  const res = await api.post(
+    '/api/channel/codex/auth/complete',
+    {
+      state: params.state,
+      code: params.code,
+      channel_id: params.channelId ?? 0,
+    },
     channelActionConfig()
   )
   return res.data

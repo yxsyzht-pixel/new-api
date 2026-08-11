@@ -61,6 +61,8 @@ var channelPermissionRoutes = []permissionRoute{
 	{method: http.MethodGet, path: "/fetch_models/:id", permission: authz.ChannelOperate, handler: controller.FetchUpstreamModels},
 	{method: http.MethodPost, path: "/fetch_models", permission: authz.ChannelSensitiveWrite, handler: controller.FetchModels},
 	{method: http.MethodPost, path: "/:id/codex/refresh", permission: authz.ChannelSensitiveWrite, handler: controller.RefreshCodexChannelCredential},
+	{method: http.MethodPost, path: "/codex/auth/start", permission: authz.ChannelSensitiveWrite, handler: controller.StartCodexAuth},
+	{method: http.MethodPost, path: "/codex/auth/complete", permission: authz.ChannelSensitiveWrite, handler: controller.CompleteCodexAuth},
 	{method: http.MethodPost, path: "/antigravity/auth/start", permission: authz.ChannelSensitiveWrite, handler: controller.StartAntigravityAuth},
 	{method: http.MethodPost, path: "/antigravity/auth/complete", permission: authz.ChannelSensitiveWrite, handler: controller.CompleteAntigravityAuth},
 	{method: http.MethodPost, path: "/:id/antigravity/refresh", permission: authz.ChannelSensitiveWrite, handler: controller.RefreshAntigravityChannelCredential},
