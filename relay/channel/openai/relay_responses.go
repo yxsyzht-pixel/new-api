@@ -20,10 +20,11 @@ import (
 )
 
 const (
-	responsesStreamTypeError      = "error"
-	responsesStreamTypeFailed     = "response.failed"
-	responsesStreamTypeCreated    = "response.created"
-	responsesStreamTypeInProgress = "response.in_progress"
+	responsesStreamTypeError         = "error"
+	responsesStreamTypeFailed        = "response.failed"
+	responsesStreamTypeResponseError = "response.error"
+	responsesStreamTypeCreated       = "response.created"
+	responsesStreamTypeInProgress    = "response.in_progress"
 )
 
 // responsesStreamTypeIsPreamble reports whether an event only announces that the
@@ -39,7 +40,9 @@ func responsesStreamTypeIsPreamble(eventType string) bool {
 // exported because every channel reusing the Responses event stream must classify
 // such a failure identically.
 func ResponsesStreamFailure(eventType string, data string) *types.NewAPIError {
-	if eventType != responsesStreamTypeError && eventType != responsesStreamTypeFailed {
+	switch eventType {
+	case responsesStreamTypeError, responsesStreamTypeFailed, responsesStreamTypeResponseError:
+	default:
 		return nil
 	}
 

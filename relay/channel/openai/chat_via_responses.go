@@ -20,6 +20,37 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// responsesChatStreamFailure turns a failure event into a relay error while a
+// chat/completions request is being served over the Responses API upstream.
+//
+// It defers to the native Responses classifier for the status code, so the same
+// upstream failure is treated the same way whichever endpoint the caller used.
+// This path used to report only the event type — "responses stream error:
+// response.failed" — which told the caller nothing about what went wrong, and it
+// always used 500, so a request the upstream had rejected on its own merits (an
+// oversized context, say) was retried across every remaining channel before
+// failing anyway.
+func responsesChatStreamFailure(streamResp *dto.ResponsesStreamResponse, data string) *types.NewAPIError {
+	failure := ResponsesStreamFailure(streamResp.Type, data)
+
+	status := http.StatusInternalServerError
+	if failure != nil {
+		status = failure.StatusCode
+	}
+	// A typed upstream error carries the type and param a caller can act on, so
+	// it is preferred as the payload — but reported with the status decided
+	// above rather than an unconditional 500.
+	if streamResp.Response != nil {
+		if oaiErr := streamResp.Response.GetOpenAIError(); oaiErr != nil && oaiErr.Type != "" {
+			return types.WithOpenAIError(*oaiErr, status)
+		}
+	}
+	if failure != nil {
+		return failure
+	}
+	return types.NewOpenAIError(fmt.Errorf("responses stream error: %s", streamResp.Type), types.ErrorCodeBadResponse, status)
+}
+
 func OaiResponsesToChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
 		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
@@ -122,13 +153,7 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 				}
 			}
 		case "response.failed", "response.error":
-			if streamResp.Response != nil {
-				if oaiErr := streamResp.Response.GetOpenAIError(); oaiErr != nil && oaiErr.Type != "" {
-					streamErr = types.WithOpenAIError(*oaiErr, http.StatusInternalServerError)
-					break
-				}
-			}
-			streamErr = types.NewOpenAIError(fmt.Errorf("responses stream error: %s", streamResp.Type), types.ErrorCodeBadResponse, http.StatusInternalServerError)
+			streamErr = responsesChatStreamFailure(&streamResp, data)
 		}
 		if streamErr != nil || finalResponse != nil {
 			break
@@ -281,14 +306,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		}
 
 		if streamResp.Type == "response.error" || streamResp.Type == "response.failed" {
-			if streamResp.Response != nil {
-				if oaiErr := streamResp.Response.GetOpenAIError(); oaiErr != nil && oaiErr.Type != "" {
-					streamErr = types.WithOpenAIError(*oaiErr, http.StatusInternalServerError)
-					sr.Stop(streamErr)
-					return
-				}
-			}
-			streamErr = types.NewOpenAIError(fmt.Errorf("responses stream error: %s", streamResp.Type), types.ErrorCodeBadResponse, http.StatusInternalServerError)
+			streamErr = responsesChatStreamFailure(&streamResp, data)
 			sr.Stop(streamErr)
 			return
 		}
