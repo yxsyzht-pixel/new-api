@@ -34,6 +34,36 @@ func TestResponsesStreamFailure(t *testing.T) {
 		assert.NotEmpty(t, err.Error())
 	})
 
+	// Observed 555 times in one day on this deployment: a client sending more
+	// context than the model accepts. No sibling account can serve the same
+	// request, so retrying only spends two more upstream calls and logs two more
+	// channel errors against healthy channels before failing anyway.
+	t.Run("context overflow is fatal to the request, not the channel", func(t *testing.T) {
+		const overflowEvent = `{"type":"response.failed","response":{"id":"resp_1","status":"failed","error":{"code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again."}},"sequence_number":9}`
+
+		err := ResponsesStreamFailure(responsesStreamTypeFailed, overflowEvent)
+		require.NotNil(t, err)
+		assert.Equal(t, http.StatusBadRequest, err.StatusCode, "400 sits outside the retryable range")
+		assert.True(t, IsRequestFatalResponsesFailure(err))
+		assert.Contains(t, err.Error(), "exceeds the context window")
+	})
+
+	t.Run("capacity failures stay retryable", func(t *testing.T) {
+		err := ResponsesStreamFailure(responsesStreamTypeError, overloadedEvent)
+		require.NotNil(t, err)
+		assert.False(t, IsRequestFatalResponsesFailure(err),
+			"an overloaded account is exactly the case a sibling account can serve")
+	})
+
+	// The code arrives under "type" rather than "code" on some payloads.
+	t.Run("fatal classification also reads the error type", func(t *testing.T) {
+		const invalidEvent = `{"type":"error","error":{"type":"invalid_request_error","message":"Unknown parameter: foo."},"sequence_number":2}`
+
+		err := ResponsesStreamFailure(responsesStreamTypeError, invalidEvent)
+		require.NotNil(t, err)
+		assert.True(t, IsRequestFatalResponsesFailure(err))
+	})
+
 	t.Run("normal events are not failures", func(t *testing.T) {
 		for _, eventType := range []string{
 			responsesStreamTypeCreated,

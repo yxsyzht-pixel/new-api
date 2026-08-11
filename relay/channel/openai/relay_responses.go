@@ -52,15 +52,41 @@ func ResponsesStreamFailure(eventType string, data string) *types.NewAPIError {
 		message = "upstream reported a stream failure without a message"
 	}
 	code := strings.TrimSpace(errNode.Get("code").String())
+	rawType := strings.TrimSpace(errNode.Get("type").String())
 	if code == "" {
-		code = strings.TrimSpace(errNode.Get("type").String())
+		code = rawType
 	}
 	if code != "" {
 		message = fmt.Sprintf("%s (%s)", message, code)
 	}
 
+	if requestFatalResponsesFailureCodes[code] || requestFatalResponsesFailureCodes[rawType] {
+		// The request itself is the problem, so no channel can serve it. 400 sits
+		// outside the retryable range, which stops the relay from spending two more
+		// upstream calls — and two more logged channel errors — on a certain failure.
+		return types.NewErrorWithStatusCode(errors.New(message), types.ErrorCodeBadResponse, http.StatusBadRequest)
+	}
 	// 503 keeps the failure inside the retryable range so another channel is tried.
 	return types.NewErrorWithStatusCode(errors.New(message), types.ErrorCodeBadResponse, http.StatusServiceUnavailable)
+}
+
+// requestFatalResponsesFailureCodes describe the request rather than the channel
+// serving it. The list is deliberately narrow: misreading a transient upstream
+// problem as fatal would throw away a retry that would have succeeded, so a code
+// only belongs here when no other account could possibly accept the same request.
+var requestFatalResponsesFailureCodes = map[string]bool{
+	"context_length_exceeded": true,
+	"invalid_request_error":   true,
+	"invalid_prompt":          true,
+	"string_above_max_length": true,
+	"unsupported_parameter":   true,
+	"unsupported_value":       true,
+}
+
+// IsRequestFatalResponsesFailure reports whether a failure from
+// ResponsesStreamFailure is one that retrying cannot fix.
+func IsRequestFatalResponsesFailure(err *types.NewAPIError) bool {
+	return err != nil && err.StatusCode == http.StatusBadRequest
 }
 
 func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
@@ -152,10 +178,25 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				// Warn, not error: the relay layer still gets to retry this on another
 				// channel, and only a failure that survives every attempt is worth
 				// putting in front of an operator.
-				logger.LogWarn(c, fmt.Sprintf("upstream reported failure in stream before any output, will retry: %s", common.LocalLogPreview(streamErr.Error())))
+				if IsRequestFatalResponsesFailure(streamErr) {
+					logger.LogWarn(c, fmt.Sprintf("upstream rejected the request itself, not retrying: %s", common.LocalLogPreview(streamErr.Error())))
+				} else {
+					logger.LogWarn(c, fmt.Sprintf("upstream reported failure in stream before any output, will retry: %s", common.LocalLogPreview(streamErr.Error())))
+				}
 			}
 		}
 		if upstreamStreamErr != nil {
+			if IsRequestFatalResponsesFailure(upstreamStreamErr) {
+				// The preamble has already gone to the client, so the response is
+				// committed and a relay error can no longer replace it. Withholding
+				// here would end the stream with no terminal event at all, which is
+				// what a client reports as "stream did not emit a terminal response"
+				// — an unhelpful message for a request that was simply too large.
+				// Forwarding the upstream failure gives the caller the real reason.
+				sendResponsesStreamData(c, streamResponse, data)
+				sr.Stop(upstreamStreamErr.Err)
+				return
+			}
 			// Withhold the upstream failure events; the relay layer decides what the
 			// client finally sees.
 			if streamResponse.Type == responsesStreamTypeFailed {
