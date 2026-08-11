@@ -33,10 +33,12 @@ func responsesStreamTypeIsPreamble(eventType string) bool {
 	return eventType == responsesStreamTypeCreated || eventType == responsesStreamTypeInProgress
 }
 
-// responsesStreamFailure turns an in-stream failure event into a relay error.
+// ResponsesStreamFailure turns an in-stream failure event into a relay error.
 // Upstream signals capacity and service problems this way — HTTP 200 with an
-// `error` event — which would otherwise be billed and logged as a success.
-func responsesStreamFailure(eventType string, data string) *types.NewAPIError {
+// `error` event — which would otherwise be billed and logged as a success. It is
+// exported because every channel reusing the Responses event stream must classify
+// such a failure identically.
+func ResponsesStreamFailure(eventType string, data string) *types.NewAPIError {
 	if eventType != responsesStreamTypeError && eventType != responsesStreamTypeFailed {
 		return nil
 	}
@@ -145,7 +147,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			return
 		}
 		if !contentStarted && upstreamStreamErr == nil {
-			if streamErr := responsesStreamFailure(streamResponse.Type, data); streamErr != nil {
+			if streamErr := ResponsesStreamFailure(streamResponse.Type, data); streamErr != nil {
 				upstreamStreamErr = streamErr
 				// Warn, not error: the relay layer still gets to retry this on another
 				// channel, and only a failure that survives every attempt is worth

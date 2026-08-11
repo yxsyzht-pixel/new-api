@@ -14,7 +14,7 @@ func TestResponsesStreamFailure(t *testing.T) {
 	const overloadedEvent = `{"type":"error","error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later.","param":null},"sequence_number":2}`
 
 	t.Run("error event becomes a retryable relay error", func(t *testing.T) {
-		err := responsesStreamFailure(responsesStreamTypeError, overloadedEvent)
+		err := ResponsesStreamFailure(responsesStreamTypeError, overloadedEvent)
 		require.NotNil(t, err, "an in-stream error must not be reported as success")
 		assert.Equal(t, http.StatusServiceUnavailable, err.StatusCode, "status must stay in the retryable range")
 		assert.Contains(t, err.Error(), "Our servers are currently overloaded")
@@ -23,13 +23,13 @@ func TestResponsesStreamFailure(t *testing.T) {
 
 	t.Run("response.failed carries the nested error", func(t *testing.T) {
 		const failedEvent = `{"type":"response.failed","response":{"id":"resp_1","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded."}},"sequence_number":3}`
-		err := responsesStreamFailure(responsesStreamTypeFailed, failedEvent)
+		err := ResponsesStreamFailure(responsesStreamTypeFailed, failedEvent)
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "Our servers are currently overloaded")
 	})
 
 	t.Run("failure without a message still reports", func(t *testing.T) {
-		err := responsesStreamFailure(responsesStreamTypeFailed, `{"type":"response.failed","sequence_number":3}`)
+		err := ResponsesStreamFailure(responsesStreamTypeFailed, `{"type":"response.failed","sequence_number":3}`)
 		require.NotNil(t, err)
 		assert.NotEmpty(t, err.Error())
 	})
@@ -41,7 +41,7 @@ func TestResponsesStreamFailure(t *testing.T) {
 			"response.output_text.delta",
 			"response.completed",
 		} {
-			assert.Nil(t, responsesStreamFailure(eventType, `{"type":"`+eventType+`"}`), eventType)
+			assert.Nil(t, ResponsesStreamFailure(eventType, `{"type":"`+eventType+`"}`), eventType)
 		}
 	})
 }
