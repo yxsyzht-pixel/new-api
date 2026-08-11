@@ -154,9 +154,16 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	return channel.DoApiRequest(a, c, info, requestBody)
 }
 
-// DoResponse reuses the Gemini handlers: the payload inside the envelope is an
-// ordinary Gemini response, and the upstream returns it unwrapped.
+// DoResponse reuses the Gemini handlers. The payload inside the envelope is an
+// ordinary Gemini response, but upstream nests it under "response", so the body
+// is unwrapped first — see response.go.
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (any, *types.NewAPIError) {
+	if info.IsStream {
+		unwrapStream(resp)
+	} else if err := unwrapBody(resp); err != nil {
+		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+
 	if info.RelayMode == relayconstant.RelayModeGemini {
 		if info.IsStream {
 			return gemini.GeminiTextGenerationStreamHandler(c, info, resp)

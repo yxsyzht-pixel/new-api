@@ -23,12 +23,18 @@ const (
 
 // ModelList is what the channel serves. Antigravity fronts both Google's own
 // models and Anthropic's, so a single subscription covers both families.
+//
+// These names were verified against the live surface; the ones it rejects are
+// left out deliberately, because an advertised model that 404s upstream only
+// produces failing requests. Notably `gemini-3-pro` is retired (upstream answers
+// with a message telling the caller to move to 3.1), plain `claude-opus-4-6` is
+// not served — only the `-thinking` variant is — and the reasoning level is part
+// of the Gemini 3.1 model name rather than a parameter.
 var ModelList = []string{
-	"gemini-3-pro",
+	"gemini-3.1-pro-low",
 	"gemini-3-flash",
 	"gemini-2.5-pro",
 	"gemini-2.5-flash",
-	"claude-opus-4-6",
-	"claude-opus-4-6-thinking",
 	"claude-sonnet-4-6",
+	"claude-opus-4-6-thinking",
 }

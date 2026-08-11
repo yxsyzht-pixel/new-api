@@ -142,6 +142,9 @@ var defaultModelRatio = map[string]float64{
 	"claude-opus-4-6-high":                      2.5,
 	"claude-opus-4-6-medium":                    2.5,
 	"claude-opus-4-6-low":                       2.5,
+	// Served by the Antigravity channel, which only offers the thinking variant.
+	"claude-opus-4-6-thinking":                  2.5,
+	"claude-sonnet-4-6":                         1.5,
 	"claude-opus-4-7":                           2.5,
 	"claude-opus-4-7-max":                       2.5,
 	"claude-opus-4-7-xhigh":                     2.5,
@@ -191,6 +194,12 @@ var defaultModelRatio = map[string]float64{
 	"gemini-2.5-flash-lite-preview-thinking-*":  0.05,
 	"gemini-2.5-flash-lite-preview-06-17":       0.05,
 	"gemini-2.5-flash":                          0.15,
+	// Gemini 3 family, at the published API rates: 3.1 Pro is $2/$12 per 1M and
+	// 3 Flash is $0.25/$1.50. The reasoning level is part of the 3.1 model name
+	// rather than a parameter, and does not change the price.
+	"gemini-3.1-pro-low":                        1.0,
+	"gemini-3.1-pro-high":                       1.0,
+	"gemini-3-flash":                            0.125,
 	"gemini-robotics-er-1.5-preview":            0.15,
 	"gemini-embedding-001":                      0.075,
 	"text-embedding-004":                        0.001,
@@ -583,6 +592,12 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 			if strings.HasPrefix(name, "gemini-3-pro-image") {
 				return 60, false
 			}
+			return 6, false
+		} else if strings.HasPrefix(name, "gemini-3.1-pro") {
+			// $12 output against $2 input.
+			return 6, false
+		} else if strings.HasPrefix(name, "gemini-3-flash") {
+			// $1.50 output against $0.25 input.
 			return 6, false
 		}
 		return 4, false

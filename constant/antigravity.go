@@ -23,6 +23,11 @@ const (
 	// to, which every generate call must then carry.
 	AntigravityMethodLoadCodeAssist = "loadCodeAssist"
 
+	// AntigravityMethodOnboardUser provisions that project. An account that has
+	// never used Antigravity owns none until this is called, so a first sign-in
+	// has to run it before the channel can serve anything.
+	AntigravityMethodOnboardUser = "onboardUser"
+
 	// AntigravityTokenEndpoint refreshes the OAuth credential.
 	AntigravityTokenEndpoint = "https://oauth2.googleapis.com/token"
 

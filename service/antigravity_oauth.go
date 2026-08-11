@@ -213,20 +213,103 @@ func postAntigravityToken(ctx context.Context, form url.Values, proxyURL string)
 	return &token, nil
 }
 
-// ResolveAntigravityProject asks the upstream which project this account is
-// onboarded to. Every generate call must carry it.
+// ResolveAntigravityProject returns the project every generate call must carry,
+// onboarding the account first if it does not have one yet. An account that has
+// never opened Antigravity owns no project, so a first sign-in always lands in
+// the onboarding branch.
 func ResolveAntigravityProject(ctx context.Context, accessToken string, proxyURL string) (string, error) {
 	client, err := GetHttpClientWithProxy(proxyURL)
 	if err != nil {
 		return "", err
 	}
 
-	payload := []byte(`{"metadata":{"ideType":"ANTIGRAVITY","pluginType":"GEMINI"}}`)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		constant.AntigravityEndpoint+"/"+constant.AntigravityAPIVersion+":"+constant.AntigravityMethodLoadCodeAssist,
-		strings.NewReader(string(payload)))
+	load, err := callAntigravity(ctx, client, accessToken,
+		constant.AntigravityMethodLoadCodeAssist,
+		map[string]any{"metadata": antigravityClientMetadata()})
 	if err != nil {
 		return "", err
+	}
+	if project := antigravityProjectOf(load); project != "" {
+		return project, nil
+	}
+	return onboardAntigravityUser(ctx, client, accessToken, load)
+}
+
+// onboardAntigravityUser provisions a project for an account that has none.
+// Onboarding is a long-running operation, so it is polled until it reports done.
+func onboardAntigravityUser(ctx context.Context, client *http.Client, accessToken string, load map[string]any) (string, error) {
+	payload := map[string]any{
+		"tierId":   antigravityDefaultTier(load),
+		"metadata": antigravityClientMetadata(),
+	}
+	for attempt := 0; attempt < 12; attempt++ {
+		operation, err := callAntigravity(ctx, client, accessToken, constant.AntigravityMethodOnboardUser, payload)
+		if err != nil {
+			return "", err
+		}
+		if done, _ := operation["done"].(bool); done {
+			response, _ := operation["response"].(map[string]any)
+			if project := antigravityProjectOf(response); project != "" {
+				return project, nil
+			}
+			return "", fmt.Errorf("onboarding finished without a project")
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+	return "", fmt.Errorf("onboarding did not finish in time, please retry the sign-in")
+}
+
+// antigravityDefaultTier picks the tier to onboard into, which upstream marks in
+// the tiers it offers this account.
+func antigravityDefaultTier(load map[string]any) string {
+	tiers, _ := load["allowedTiers"].([]any)
+	for _, entry := range tiers {
+		tier, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if isDefault, _ := tier["isDefault"].(bool); isDefault {
+			if id, _ := tier["id"].(string); id != "" {
+				return id
+			}
+		}
+	}
+	return "free-tier"
+}
+
+// antigravityProjectOf reads the project id, which upstream reports either as a
+// bare string or as an object with an id.
+func antigravityProjectOf(payload map[string]any) string {
+	switch project := payload["cloudaicompanionProject"].(type) {
+	case string:
+		return project
+	case map[string]any:
+		id, _ := project["id"].(string)
+		return id
+	}
+	return ""
+}
+
+func antigravityClientMetadata() map[string]any {
+	return map[string]any{"ideType": "ANTIGRAVITY", "pluginType": "GEMINI"}
+}
+
+// callAntigravity posts to one of the internal Cloud Code Assist methods with the
+// headers the desktop client sends.
+func callAntigravity(ctx context.Context, client *http.Client, accessToken string, method string, payload any) (map[string]any, error) {
+	encoded, err := common.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		constant.AntigravityEndpoint+"/"+constant.AntigravityAPIVersion+":"+method,
+		strings.NewReader(string(encoded)))
+	if err != nil {
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
@@ -236,34 +319,23 @@ func ResolveAntigravityProject(ctx context.Context, accessToken string, proxyURL
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer CloseResponseBodyGracefully(resp)
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("loadCodeAssist returned %d: %s", resp.StatusCode, common.LocalLogPreview(string(body)))
+		return nil, fmt.Errorf("%s returned %d: %s", method, resp.StatusCode, common.LocalLogPreview(string(body)))
 	}
 
-	// The project is reported either as a bare string or as an object with an id.
-	var payloadMap map[string]any
-	if err := common.Unmarshal(body, &payloadMap); err != nil {
-		return "", fmt.Errorf("cannot read loadCodeAssist response: %w", err)
+	var decoded map[string]any
+	if err := common.Unmarshal(body, &decoded); err != nil {
+		return nil, fmt.Errorf("cannot read %s response: %w", method, err)
 	}
-	switch project := payloadMap["cloudaicompanionProject"].(type) {
-	case string:
-		if project != "" {
-			return project, nil
-		}
-	case map[string]any:
-		if id, ok := project["id"].(string); ok && id != "" {
-			return id, nil
-		}
-	}
-	return "", fmt.Errorf("account is not onboarded to an Antigravity project")
+	return decoded, nil
 }
 
 // extractAntigravityAuthCode accepts either the bare code or the whole redirect

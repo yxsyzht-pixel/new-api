@@ -125,6 +125,7 @@ var ChannelBaseURLs = []string{
 	"",                                          //58
 	"",                                          //59
 	"",                                          //60
+	AntigravityEndpoint,                         //61
 }
 
 var ChannelTypeNames = map[int]string{

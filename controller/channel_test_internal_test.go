@@ -95,6 +95,22 @@ func TestNewAPIChannelRegistration(t *testing.T) {
 	assert.Empty(t, constant.ChannelBaseURLs[constant.ChannelTypeNewAPI])
 }
 
+// Several request paths index ChannelBaseURLs by channel type without a bounds
+// check, so a type added past the end of the table panics mid-relay rather than
+// failing the request. Adding a channel type must extend the table with it.
+func TestChannelBaseURLsCoversEveryChannelType(t *testing.T) {
+	require.GreaterOrEqual(t, len(constant.ChannelBaseURLs), constant.ChannelTypeDummy,
+		"ChannelBaseURLs must have an entry for every channel type up to ChannelTypeDummy")
+}
+
+func TestAntigravityChannelRegistration(t *testing.T) {
+	apiType, ok := common.ChannelType2APIType(constant.ChannelTypeAntigravity)
+
+	require.True(t, ok)
+	assert.Equal(t, constant.APITypeAntigravity, apiType)
+	assert.Equal(t, constant.AntigravityEndpoint, constant.ChannelBaseURLs[constant.ChannelTypeAntigravity])
+}
+
 func TestResponsesCompactAPITypeSupport(t *testing.T) {
 	tests := []struct {
 		name    string
