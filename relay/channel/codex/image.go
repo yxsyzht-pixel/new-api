@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -33,18 +35,25 @@ const (
 )
 
 // buildImageGenerationRequest expresses an images-API request as the Responses
-// call the Codex backend understands.
-func buildImageGenerationRequest(request dto.ImageRequest) (*dto.OpenAIResponsesRequest, error) {
+// call the Codex backend understands. Source images, when present, ride along as
+// data URIs in the same turn, which is how the tool is told to edit rather than
+// draw from scratch.
+func buildImageGenerationRequest(request dto.ImageRequest, sources []imageSource) (*dto.OpenAIResponsesRequest, error) {
 	prompt := strings.TrimSpace(request.Prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("codex channel: prompt is required for image generation")
 	}
 
+	content := []map[string]any{{"type": "input_text", "text": prompt}}
+	for _, source := range sources {
+		content = append(content, map[string]any{
+			"type":      "input_image",
+			"image_url": source.dataURI(),
+		})
+	}
+
 	input, err := common.Marshal([]map[string]any{
-		{
-			"role":    "user",
-			"content": []map[string]any{{"type": "input_text", "text": prompt}},
-		},
+		{"role": "user", "content": content},
 	})
 	if err != nil {
 		return nil, err
@@ -85,6 +94,82 @@ func buildImageGenerationRequest(request dto.ImageRequest) (*dto.OpenAIResponses
 		Store:        json.RawMessage("false"),
 		Instructions: json.RawMessage(`""`),
 	}, nil
+}
+
+// imageSource is one uploaded picture an edit request wants changed.
+type imageSource struct {
+	mimeType string
+	data     []byte
+}
+
+// dataURI renders the picture the way the Responses API accepts inline images.
+func (s imageSource) dataURI() string {
+	mimeType := s.mimeType
+	if mimeType == "" {
+		mimeType = "image/png"
+	}
+	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(s.data)
+}
+
+// maxImageEditSources caps how many pictures one edit may carry, matching the
+// upstream tool's own limit.
+const maxImageEditSources = 16
+
+// collectImageEditSources reads the pictures an edits request uploaded. OpenAI
+// accepts them under `image` or `image[]`, and multiple files mean "combine
+// these", so all of them are forwarded in order.
+func collectImageEditSources(c *gin.Context) ([]imageSource, error) {
+	if c == nil || c.Request == nil || c.Request.MultipartForm == nil {
+		return nil, fmt.Errorf("codex channel: /v1/images/edits requires multipart/form-data")
+	}
+
+	var headers []*multipart.FileHeader
+	for _, field := range []string{"image", "image[]"} {
+		headers = append(headers, c.Request.MultipartForm.File[field]...)
+	}
+	if len(headers) == 0 {
+		return nil, fmt.Errorf("codex channel: /v1/images/edits requires an `image` file")
+	}
+	if len(headers) > maxImageEditSources {
+		return nil, fmt.Errorf("codex channel: at most %d source images are supported", maxImageEditSources)
+	}
+
+	sources := make([]imageSource, 0, len(headers))
+	for _, header := range headers {
+		file, err := header.Open()
+		if err != nil {
+			return nil, fmt.Errorf("codex channel: cannot read uploaded image: %w", err)
+		}
+		data, err := io.ReadAll(file)
+		closeErr := file.Close()
+		if err != nil {
+			return nil, fmt.Errorf("codex channel: cannot read uploaded image: %w", err)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("codex channel: cannot read uploaded image: %w", closeErr)
+		}
+		if len(data) == 0 {
+			return nil, fmt.Errorf("codex channel: uploaded image %q is empty", header.Filename)
+		}
+		sources = append(sources, imageSource{
+			mimeType: imageMimeType(header, data),
+			data:     data,
+		})
+	}
+	return sources, nil
+}
+
+// imageMimeType decides how to label an upload. The declared header is trusted
+// only when it actually says image; otherwise the bytes decide, because clients
+// routinely send application/octet-stream.
+func imageMimeType(header *multipart.FileHeader, data []byte) string {
+	if declared := header.Header.Get("Content-Type"); strings.HasPrefix(declared, "image/") {
+		return declared
+	}
+	if detected := http.DetectContentType(data); strings.HasPrefix(detected, "image/") {
+		return detected
+	}
+	return "image/png"
 }
 
 // imageRequestUpstreamModel resolves the model the Responses call is issued

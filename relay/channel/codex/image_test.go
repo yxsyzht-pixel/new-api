@@ -2,6 +2,7 @@ package codex
 
 import (
 	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -16,7 +17,7 @@ func TestBuildImageGenerationRequest(t *testing.T) {
 		req, err := buildImageGenerationRequest(dto.ImageRequest{
 			Model:  ImageModelName,
 			Prompt: "一只卡通猫",
-		})
+		}, nil)
 		require.NoError(t, err)
 
 		// Streaming is not optional: the Codex backend rejects a non-streaming
@@ -30,13 +31,13 @@ func TestBuildImageGenerationRequest(t *testing.T) {
 	})
 
 	t.Run("image model names run on the tool host model", func(t *testing.T) {
-		req, err := buildImageGenerationRequest(dto.ImageRequest{Model: ImageModelName, Prompt: "x"})
+		req, err := buildImageGenerationRequest(dto.ImageRequest{Model: ImageModelName, Prompt: "x"}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, imageToolHostModel, req.Model, "gpt-image-* is a capability, not an upstream model")
 	})
 
 	t.Run("a real codex model is passed through", func(t *testing.T) {
-		req, err := buildImageGenerationRequest(dto.ImageRequest{Model: "gpt-5.6-terra", Prompt: "x"})
+		req, err := buildImageGenerationRequest(dto.ImageRequest{Model: "gpt-5.6-terra", Prompt: "x"}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, "gpt-5.6-terra", req.Model)
 	})
@@ -49,7 +50,7 @@ func TestBuildImageGenerationRequest(t *testing.T) {
 			Size:         "1024x1024",
 			OutputFormat: []byte(`"png"`),
 			Background:   []byte(`"opaque"`),
-		})
+		}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, "high", gjson.GetBytes(req.Tools, "0.quality").String())
 		assert.Equal(t, "1024x1024", gjson.GetBytes(req.Tools, "0.size").String())
@@ -58,13 +59,13 @@ func TestBuildImageGenerationRequest(t *testing.T) {
 	})
 
 	t.Run("size auto is left to the upstream default", func(t *testing.T) {
-		req, err := buildImageGenerationRequest(dto.ImageRequest{Model: ImageModelName, Prompt: "x", Size: "auto"})
+		req, err := buildImageGenerationRequest(dto.ImageRequest{Model: ImageModelName, Prompt: "x", Size: "auto"}, nil)
 		require.NoError(t, err)
 		assert.False(t, gjson.GetBytes(req.Tools, "0.size").Exists())
 	})
 
 	t.Run("an empty prompt is rejected before it reaches upstream", func(t *testing.T) {
-		_, err := buildImageGenerationRequest(dto.ImageRequest{Model: ImageModelName, Prompt: "   "})
+		_, err := buildImageGenerationRequest(dto.ImageRequest{Model: ImageModelName, Prompt: "   "}, nil)
 		assert.Error(t, err)
 	})
 }
@@ -98,11 +99,49 @@ func TestImageGenerationCallPayloadShape(t *testing.T) {
 // The Codex backend answers 400 unless both of these are set, so they are part of
 // the request contract rather than optional hardening.
 func TestImageRequestSatisfiesCodexBackendRequirements(t *testing.T) {
-	req, err := buildImageGenerationRequest(dto.ImageRequest{Model: ImageModelName, Prompt: "x"})
+	req, err := buildImageGenerationRequest(dto.ImageRequest{Model: ImageModelName, Prompt: "x"}, nil)
 	require.NoError(t, err)
 
 	require.NotNil(t, req.Stream)
 	assert.True(t, *req.Stream, "upstream rejects a non-streaming call with 'Stream must be set to true'")
 	assert.Equal(t, "false", string(req.Store), "upstream rejects storing with 'Store must be set to false'")
 	assert.Equal(t, `""`, string(req.Instructions), "the backend requires instructions to be present")
+}
+
+// Image-to-image sends the sources inline with the prompt, which is how the tool
+// is told to edit an existing picture instead of drawing a new one.
+func TestBuildImageGenerationRequestWithSources(t *testing.T) {
+	png := []byte("\x89PNG\r\n\x1a\nfake")
+	req, err := buildImageGenerationRequest(
+		dto.ImageRequest{Model: ImageModelName, Prompt: "把猫改成蓝色"},
+		[]imageSource{{mimeType: "image/png", data: png}},
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, "input_text", gjson.GetBytes(req.Input, "0.content.0.type").String())
+	assert.Equal(t, "input_image", gjson.GetBytes(req.Input, "0.content.1.type").String())
+
+	uri := gjson.GetBytes(req.Input, "0.content.1.image_url").String()
+	require.True(t, strings.HasPrefix(uri, "data:image/png;base64,"), "sources ride along as data URIs, got %q", uri)
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(uri, "data:image/png;base64,"))
+	require.NoError(t, err)
+	assert.Equal(t, png, decoded, "the picture must survive the round trip byte for byte")
+}
+
+func TestBuildImageGenerationRequestWithMultipleSources(t *testing.T) {
+	req, err := buildImageGenerationRequest(
+		dto.ImageRequest{Model: ImageModelName, Prompt: "合成"},
+		[]imageSource{
+			{mimeType: "image/png", data: []byte("a")},
+			{mimeType: "image/jpeg", data: []byte("b")},
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "input_image", gjson.GetBytes(req.Input, "0.content.1.type").String())
+	assert.Equal(t, "input_image", gjson.GetBytes(req.Input, "0.content.2.type").String())
+	assert.Contains(t, gjson.GetBytes(req.Input, "0.content.2.image_url").String(), "data:image/jpeg;base64,")
+}
+
+func TestImageSourceDataURIDefaultsToPNG(t *testing.T) {
+	assert.Contains(t, imageSource{data: []byte("x")}.dataURI(), "data:image/png;base64,")
 }

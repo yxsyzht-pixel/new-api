@@ -34,10 +34,14 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	var sources []imageSource
 	if info != nil && info.RelayMode == relayconstant.RelayModeImagesEdits {
-		return nil, errors.New("codex channel: /v1/images/edits endpoint not supported")
+		var err error
+		if sources, err = collectImageEditSources(c); err != nil {
+			return nil, err
+		}
 	}
-	return buildImageGenerationRequest(request)
+	return buildImageGenerationRequest(request, sources)
 }
 
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
@@ -126,7 +130,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 			return openai.OaiResponsesStreamHandler(c, info, resp)
 		}
 		return openai.OaiResponsesHandler(c, info, resp)
-	case relayconstant.RelayModeImagesGenerations:
+	case relayconstant.RelayModeImagesGenerations, relayconstant.RelayModeImagesEdits:
 		return handleImageGenerationResponse(c, info, resp)
 	default:
 		return nil, types.NewError(errors.New("codex channel: endpoint not supported"), types.ErrorCodeInvalidRequest)
@@ -150,7 +154,7 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 		path = "/backend-api/codex/responses/compact"
 	case relayconstant.RelayModeAlphaSearch:
 		path = "/backend-api/codex/alpha/search"
-	case relayconstant.RelayModeImagesGenerations:
+	case relayconstant.RelayModeImagesGenerations, relayconstant.RelayModeImagesEdits:
 		// Images are drawn through the Responses API's image_generation tool; the
 		// Codex backend has no dedicated images endpoint.
 		path = "/backend-api/codex/responses"
