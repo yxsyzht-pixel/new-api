@@ -68,19 +68,23 @@ func TestOrdinaryItemsStillConvert(t *testing.T) {
 	assert.Equal(t, "call_1", messages[0].ToolCallId)
 }
 
-// Chat Completions has no freeform tool type, and passing one through makes the
-// upstream refuse the request: "tools[1].type: unknown variant `custom`,
-// expected `function`". Vendor extensions that some upstreams do accept must
-// still travel.
-func TestCustomToolsAreDroppedButVendorTypesSurvive(t *testing.T) {
+// Chat Completions defines exactly one tool type. Responses keeps gaining
+// built-ins (custom, namespace, mcp, web_search, …) and each unknown one makes
+// the upstream refuse the whole request — "tools[12].type: unknown variant
+// `namespace`, expected `function`" — so the filter allows rather than denies.
+func TestOnlyChatRepresentableToolsSurvive(t *testing.T) {
 	tools, err := responsesRequestToolsToChat([]byte(`[
 		{"type":"function","name":"get_weather","description":"w","parameters":{"type":"object"}},
 		{"type":"custom","name":"apply_patch","description":"freeform"},
+		{"type":"namespace","name":"mcp_group"},
+		{"type":"mcp","server_label":"docs"},
+		{"type":"web_search"},
+		{"type":"some_future_responses_builtin"},
 		{"type":"plugin","name":"vendor_thing"}
 	]`))
 
 	require.NoError(t, err)
-	require.Len(t, tools, 2)
+	require.Len(t, tools, 2, "only function and the vendor type an upstream accepts")
 	assert.Equal(t, "function", tools[0].Type)
 	assert.Equal(t, "get_weather", tools[0].Function.Name)
 	assert.Equal(t, "plugin", tools[1].Type)

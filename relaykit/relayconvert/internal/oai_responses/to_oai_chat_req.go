@@ -19,10 +19,17 @@ const (
 	// turn, which clients replay verbatim. Chat Completions has nowhere to put
 	// it — see dropReasoningInput.
 	responsesInputTypeReasoning = "reasoning"
-	// responsesToolTypeCustom is the freeform tool type, which the Responses
-	// protocol has and Chat Completions does not.
-	responsesToolTypeCustom = "custom"
 )
+
+// chatCompletionsToolTypes are the tool types that survive the trip to Chat
+// Completions. The spec has only `function`; `plugin` is here because an
+// upstream this gateway serves accepts it and would otherwise lose the tool.
+// Everything else — every Responses-native built-in — is dropped, because no
+// chat upstream can parse it.
+var chatCompletionsToolTypes = map[string]bool{
+	"function": true,
+	"plugin":   true,
+}
 
 const (
 	ResponsesInputTypeFunctionCall       = responsesInputTypeFunctionCall
@@ -363,17 +370,22 @@ func responsesRequestToolsToChat(raw json.RawMessage) ([]dto.ToolCallRequest, er
 			continue
 		}
 
-		if toolType == responsesToolTypeCustom {
-			// A freeform custom tool exists only in the Responses protocol; Chat
-			// Completions accepts no such type and upstreams reject the whole
-			// request over it ("tools[1].type: unknown variant `custom`,
-			// expected `function`"). Codex already falls back to its shell tool
-			// on gateways that cannot take it, so dropping beats failing.
+		if !chatCompletionsToolTypes[toolType] {
+			// Chat Completions defines exactly one tool type — `function` — so a
+			// Responses-native tool has no representation here and upstreams
+			// reject the entire request over it, naming whichever they hit first:
+			//
+			//	tools[1].type: unknown variant `custom`, expected `function`
+			//	tools[12].type: unknown variant `namespace`, expected `function`
+			//
+			// The Responses protocol keeps gaining these (custom, namespace, mcp,
+			// web_search, …), so this allows rather than denies: a new built-in
+			// is dropped by default instead of breaking every request until it is
+			// added to a list. Codex falls back to its shell tool on gateways
+			// that cannot take these, so dropping beats failing.
 			continue
 		}
 
-		// Other non-function types are vendor extensions some upstreams do
-		// accept (Kimi's `plugin`, for one), so they keep travelling.
 		rawTool, err := kitutil.Marshal(tool)
 		if err != nil {
 			return nil, err
