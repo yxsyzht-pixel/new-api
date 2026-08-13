@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIsUpstreamUsageLimitError(t *testing.T) {
@@ -51,4 +52,22 @@ func TestIsUpstreamUsageLimitError(t *testing.T) {
 	}
 
 	assert.False(t, IsUpstreamUsageLimitError(nil))
+}
+
+// Google reports an exhausted quota with wording that shares no phrase with the
+// OpenAI or Anthropic forms, so it needs its own entry in the keyword list.
+func TestIsUpstreamUsageLimitErrorGoogleWording(t *testing.T) {
+	exhausted := types.NewErrorWithStatusCode(
+		errors.New("Resource has been exhausted (e.g. check quota)."),
+		types.ErrorCodeBadResponse, http.StatusTooManyRequests)
+	require.True(t, IsUpstreamUsageLimitError(exhausted),
+		"an out-of-quota Gemini channel must be parked, not retried")
+
+	// The other 429 the same upstream sends is capacity, not quota — parking a
+	// channel over it would take a healthy account out of rotation.
+	overloaded := types.NewErrorWithStatusCode(
+		errors.New("The engine is currently overloaded, please try again later"),
+		types.ErrorCodeBadResponse, http.StatusTooManyRequests)
+	require.False(t, IsUpstreamUsageLimitError(overloaded))
+	require.True(t, IsUpstreamOverloadedError(overloaded))
 }

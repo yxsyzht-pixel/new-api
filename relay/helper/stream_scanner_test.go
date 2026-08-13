@@ -3,6 +3,7 @@ package helper
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -570,4 +571,46 @@ func TestStreamScannerHandler_StreamStatus_ReplacesPreInitialized(t *testing.T) 
 
 	assert.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
 	assert.Equal(t, 0, info.StreamStatus.TotalErrorCount())
+}
+
+// Cleanup closes the upstream body to unblock the scanner, and that close comes
+// back as a read error. Reporting it as a stream failure buried the real ones —
+// on 2026-08-13 it accounted for 6348 of roughly 10000 error lines, every one on
+// a request that returned 200. A break the upstream causes must still be caught.
+func TestStreamScannerHandler_UpstreamBreakStillReported(t *testing.T) {
+	pr, pw := io.Pipe()
+	t.Cleanup(func() {
+		_ = pr.Close()
+		_ = pw.Close()
+	})
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	info := &relaycommon.RelayInfo{DisablePing: true, ChannelMeta: &relaycommon.ChannelMeta{}}
+
+	done := make(chan struct{})
+	go func() {
+		StreamScannerHandler(c, &http.Response{Body: pr}, info, func(data string, sr *StreamResult) {
+			_ = StringData(c, data)
+		})
+		close(done)
+	}()
+
+	_, err := fmt.Fprint(pw, "data: first\n")
+	require.NoError(t, err)
+	// The upstream drops the connection mid-stream — nothing to do with our cleanup.
+	require.NoError(t, pw.CloseWithError(errors.New("upstream exploded")))
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler did not return after upstream break")
+	}
+
+	require.NotNil(t, info.StreamStatus)
+	assert.Equal(t, relaycommon.StreamEndReasonScannerErr, info.StreamStatus.EndReason,
+		"a genuine upstream break must not be mistaken for our own shutdown")
+	assert.ErrorContains(t, info.StreamStatus.EndError, "upstream exploded")
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -96,6 +97,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		wg          sync.WaitGroup // 用于等待所有 goroutine 退出
 		cleanupOnce sync.Once
 		stopOnce    sync.Once
+		// Set before cleanup closes the upstream body, so the scanner can tell our
+		// own shutdown apart from the upstream breaking the stream.
+		bodyClosedByUs atomic.Bool
 	)
 
 	stop := func() {
@@ -126,6 +130,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			cancel()
 			stop()
 			if resp.Body != nil {
+				bodyClosedByUs.Store(true)
 				_ = resp.Body.Close()
 			}
 
@@ -281,7 +286,16 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		}
 
 		if err := scanner.Err(); err != nil {
-			if err != io.EOF {
+			// Closing the upstream body is how cleanup unblocks this read, so the
+			// error it raises is our own shutdown reported back to us — not a fault
+			// worth logging. Reporting it buried the real failures: on 2026-08-13 it
+			// produced 6348 of roughly 10000 error lines, every one of them on a
+			// request that returned 200.
+			switch {
+			case err == io.EOF:
+			case bodyClosedByUs.Load():
+				logger.LogDebug(c, "scanner stopped by our own body close: %s", err.Error())
+			default:
 				logger.LogError(c, "scanner error: "+err.Error())
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
 			}
@@ -302,9 +316,15 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	}
 
 	cleanup()
-	if info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors() {
+	switch {
+	case info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors():
 		logger.LogInfo(c, fmt.Sprintf("stream ended: %s", info.StreamStatus.Summary()))
-	} else {
+	case info.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone:
+		// The caller hung up — an editor closing a tab, a user pressing escape. Worth
+		// seeing, but it says nothing is wrong here, and at 3163 lines a day it drowns
+		// out the failures that are.
+		logger.LogWarn(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
+	default:
 		logger.LogError(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
 	}
 }

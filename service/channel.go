@@ -53,6 +53,11 @@ var upstreamUsageLimitKeywords = []string{
 	"insufficient_quota",
 	"exceeded your current quota",
 	"billing hard limit",
+	// Google's RESOURCE_EXHAUSTED wording, sent verbatim as
+	// "Resource has been exhausted (e.g. check quota)." — it matches none of the
+	// phrasings above, so Gemini and Antigravity channels were never parked and
+	// kept being selected while out of quota (108 such calls on 2026-08-13).
+	"resource has been exhausted",
 }
 
 // IsUpstreamUsageLimitError reports whether err means the upstream account behind
