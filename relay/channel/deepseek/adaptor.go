@@ -14,9 +14,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
-	"github.com/QuantumNous/new-api/relaykit/relayconvert"
 	"github.com/QuantumNous/new-api/relaykit/types"
-	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/gin-gonic/gin"
 )
@@ -71,11 +69,6 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 		case constant.RelayModeCompletions:
 			return fmt.Sprintf("%s/completions", fimBaseUrl), nil
 		case constant.RelayModeResponses:
-			if servesResponsesOverChat(info.UpstreamModelName) {
-				// The native Responses endpoint refuses this model; chat carries
-				// it. See responses_over_chat.go.
-				return fmt.Sprintf("%s/v1/chat/completions", info.ChannelBaseUrl), nil
-			}
 			return fmt.Sprintf("%s/responses", info.ChannelBaseUrl), nil
 		default:
 			return fmt.Sprintf("%s/v1/chat/completions", info.ChannelBaseUrl), nil
@@ -169,20 +162,7 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
 	applyDeepSeekV4ResponsesThinkingSuffix(info, &request)
-	if !servesResponsesOverChat(info.UpstreamModelName) {
-		return request, nil
-	}
-
-	// Carried over chat/completions instead — see responses_over_chat.go.
-	result, err := service.ConvertRequestByID(c, info, relayconvert.ConverterOpenAIResponsesToOpenAIChat, request)
-	if err != nil {
-		return nil, err
-	}
-	chatRequest, ok := result.Value.(*dto.GeneralOpenAIRequest)
-	if !ok {
-		return nil, fmt.Errorf("expected OpenAI chat completions request, got %T", result.Value)
-	}
-	return chatRequest, nil
+	return request, nil
 }
 
 func applyDeepSeekV4ResponsesThinkingSuffix(info *relaycommon.RelayInfo, request *dto.OpenAIResponsesRequest) {
@@ -219,14 +199,6 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		adaptor := claude.Adaptor{}
 		return adaptor.DoResponse(c, resp, info)
 	default:
-		if info.RelayMode == constant.RelayModeResponses && servesResponsesOverChat(info.UpstreamModelName) {
-			// A chat/completions reply has to be rendered back as Responses for
-			// the caller — see responses_over_chat.go.
-			if info.IsStream {
-				return openai.OaiChatToResponsesStreamHandler(c, info, resp)
-			}
-			return openai.OaiChatToResponsesHandler(c, info, resp)
-		}
 		adaptor := openai.Adaptor{}
 		return adaptor.DoResponse(c, resp, info)
 	}
