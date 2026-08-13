@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -23,7 +24,16 @@ func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code
 		},
 	})
 	c.Abort()
-	logger.LogError(c.Request.Context(), fmt.Sprintf("user %d | %s", userId, message))
+	// A 4xx is the caller's request being refused as designed — a stale key, a model
+	// nobody serves. Recording it as an error made the log say something is wrong
+	// here when nothing is: bad tokens alone accounted for 476 lines on 2026-08-13.
+	// 5xx is ours and stays an error.
+	line := fmt.Sprintf("user %d | %s", userId, message)
+	if statusCode >= http.StatusInternalServerError {
+		logger.LogError(c.Request.Context(), line)
+	} else {
+		logger.LogWarn(c.Request.Context(), line)
+	}
 }
 
 func abortWithMidjourneyMessage(c *gin.Context, statusCode int, code int, description string) {
