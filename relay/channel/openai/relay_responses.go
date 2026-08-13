@@ -92,6 +92,61 @@ func IsRequestFatalResponsesFailure(err *types.NewAPIError) bool {
 	return err != nil && err.StatusCode == http.StatusBadRequest
 }
 
+// sendResponsesTerminalFailure closes a committed stream with an event the
+// client recognises as the end of the response.
+//
+// The Responses protocol ends a stream with response.completed, response.failed
+// or response.incomplete. Upstream signals a refusal with a bare `error` event,
+// which is none of those — forwarding it alone leaves the client waiting, and it
+// eventually gives up with "stream closed before response.completed" instead of
+// showing why the request was refused. Emitting response.failed after it carries
+// the reason through and lets the client finish cleanly.
+func sendResponsesTerminalFailure(c *gin.Context, info *relaycommon.RelayInfo, upstreamType string, upstreamData string, failure *types.NewAPIError) {
+	if upstreamType == responsesStreamTypeFailed {
+		// Upstream already ended it properly.
+		return
+	}
+
+	// Report the upstream's own code — a client keying off error.code needs
+	// "invalid_prompt", not the relay's internal classification.
+	code := string(failure.GetErrorCode())
+	if upstream := upstreamFailureCode(upstreamData); upstream != "" {
+		code = upstream
+	}
+
+	terminal := dto.ResponsesStreamResponse{Type: responsesStreamTypeFailed}
+	payload, err := common.Marshal(map[string]any{
+		"type": responsesStreamTypeFailed,
+		"response": map[string]any{
+			"id":     helper.GetResponseID(c),
+			"object": "response",
+			"model":  info.OriginModelName,
+			"status": "failed",
+			"error": map[string]any{
+				"code":    code,
+				"message": failure.Error(),
+			},
+		},
+	})
+	if err != nil {
+		return
+	}
+	sendResponsesStreamData(c, terminal, string(payload))
+}
+
+// upstreamFailureCode reads the code out of an upstream failure event, matching
+// how ResponsesStreamFailure locates it.
+func upstreamFailureCode(data string) string {
+	errNode := gjson.Get(data, "error")
+	if !errNode.Exists() {
+		errNode = gjson.Get(data, "response.error")
+	}
+	if code := strings.TrimSpace(errNode.Get("code").String()); code != "" {
+		return code
+	}
+	return strings.TrimSpace(errNode.Get("type").String())
+}
+
 func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	defer service.CloseResponseBodyGracefully(resp)
 
@@ -194,9 +249,10 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				// committed and a relay error can no longer replace it. Withholding
 				// here would end the stream with no terminal event at all, which is
 				// what a client reports as "stream did not emit a terminal response"
-				// — an unhelpful message for a request that was simply too large.
+				// — an unhelpful message for a request that was simply refused.
 				// Forwarding the upstream failure gives the caller the real reason.
 				sendResponsesStreamData(c, streamResponse, data)
+				sendResponsesTerminalFailure(c, info, streamResponse.Type, data, upstreamStreamErr)
 				sr.Stop(upstreamStreamErr.Err)
 				return
 			}
