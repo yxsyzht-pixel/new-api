@@ -2,6 +2,12 @@ package codex
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/gin-gonic/gin"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -144,4 +150,52 @@ func TestBuildImageGenerationRequestWithMultipleSources(t *testing.T) {
 
 func TestImageSourceDataURIDefaultsToPNG(t *testing.T) {
 	assert.Contains(t, imageSource{data: []byte("x")}.dataURI(), "data:image/png;base64,")
+}
+
+// An images-API caller wants a picture no matter how the prompt reads. Left
+// optional, the tool goes uncalled whenever the model decides the prompt was a
+// question — "what is in this image?" was answered in prose three times out of
+// three on 2026-08-13, and each of those walked every channel before failing.
+func TestImageRequestForcesTheDrawingTool(t *testing.T) {
+	req, err := buildImageGenerationRequest(dto.ImageRequest{Model: ImageModelName, Prompt: "what is in this image?"}, nil)
+	require.NoError(t, err)
+
+	var choice struct {
+		Type string `json:"type"`
+	}
+	require.NoError(t, json.Unmarshal(req.ToolChoice, &choice))
+	assert.Equal(t, "image_generation", choice.Type,
+		"the drawing tool must be required, not offered")
+}
+
+// When a stream completes carrying prose instead of a picture, the account that
+// served it was never at fault — retrying spends another minute or two per
+// channel to land in the same place. The caller needs a verdict, and the model's
+// own words are the only account of why there is no image.
+func TestImageResponseWithoutPictureIsFinalAndQuotesTheModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", nil)
+
+	// Shape observed live: the reply arrives as a message item, and the response
+	// still reports success because nothing went wrong upstream.
+	stream := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_1"}}`,
+		`data: {"type":"response.output_item.done","item":{"type":"message","content":[` +
+			`{"type":"output_text","text":"The image is a solid medium-blue square with no visible objects."}]}}`,
+		`data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":10,"output_tokens":20,"total_tokens":30}}}`,
+		"data: [DONE]",
+		"",
+	}, "\n\n")
+
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(stream))}
+	usage, apiErr := handleImageGenerationResponse(c, &relaycommon.RelayInfo{}, resp)
+
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusUnprocessableEntity, apiErr.StatusCode,
+		"503 would send this through every remaining channel for the same answer")
+	assert.Contains(t, apiErr.Error(), "solid medium-blue square",
+		"the caller cannot act on 'no image' alone")
 }

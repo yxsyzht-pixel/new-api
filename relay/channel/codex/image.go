@@ -3,6 +3,7 @@ package codex
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -32,6 +33,7 @@ const (
 	codexImageStreamEventOutputItemDone = "response.output_item.done"
 	codexImageStreamEventCompleted      = "response.completed"
 	codexImageOutputTypeCall            = "image_generation_call"
+	codexImageOutputTypeMessage         = "message"
 )
 
 // buildImageGenerationRequest expresses an images-API request as the Responses
@@ -87,11 +89,18 @@ func buildImageGenerationRequest(request dto.ImageRequest, sources []imageSource
 	// a Responses call must stream, and it must not ask upstream to store.
 	stream := true
 	return &dto.OpenAIResponsesRequest{
-		Model:        imageRequestUpstreamModel(request.Model),
-		Input:        input,
-		Tools:        tools,
-		Stream:       &stream,
-		Store:        json.RawMessage("false"),
+		Model:  imageRequestUpstreamModel(request.Model),
+		Input:  input,
+		Tools:  tools,
+		Stream: &stream,
+		Store:  json.RawMessage("false"),
+		// Left to itself the model reads the prompt and decides whether drawing is
+		// what was wanted. A prompt phrased as a question — "what is in this image?",
+		// "is this suitable for a logo?" — gets an answer in prose and no picture,
+		// which reaches an images-API caller as a failure it can do nothing about.
+		// Whoever posted to /v1/images/edits wants an image whatever the wording, so
+		// the tool call is required rather than offered.
+		ToolChoice:   json.RawMessage(`{"type":"image_generation"}`),
 		Instructions: json.RawMessage(`""`),
 	}, nil
 }
@@ -200,6 +209,7 @@ func handleImageGenerationResponse(c *gin.Context, info *relaycommon.RelayInfo, 
 	// single JSON document.
 	usage := &dto.Usage{}
 	var images []dto.ImageData
+	var spokenReply []string
 	var streamErr *types.NewAPIError
 
 	scanner := helper.NewStreamScanner(resp.Body)
@@ -222,7 +232,17 @@ func handleImageGenerationResponse(c *gin.Context, info *relaycommon.RelayInfo, 
 
 		switch eventType {
 		case codexImageStreamEventOutputItemDone:
-			if gjson.Get(data, "item.type").String() != codexImageOutputTypeCall {
+			if itemType := gjson.Get(data, "item.type").String(); itemType != codexImageOutputTypeCall {
+				if itemType == codexImageOutputTypeMessage {
+					// Keep what the model said instead of drawing. If no image turns
+					// up, this is the only account of why.
+					gjson.Get(data, "item.content").ForEach(func(_, part gjson.Result) bool {
+						if text := strings.TrimSpace(part.Get("text").String()); text != "" {
+							spokenReply = append(spokenReply, text)
+						}
+						return true
+					})
+				}
 				continue
 			}
 			result := gjson.Get(data, "item.result").String()
@@ -254,9 +274,18 @@ func handleImageGenerationResponse(c *gin.Context, info *relaycommon.RelayInfo, 
 		return nil, streamErr
 	}
 	if len(images) == 0 {
+		// The stream ran to completion and simply held no picture, so the account
+		// serving it was never the problem — every retry spends another minute or two
+		// to arrive here again. One request on 2026-08-13 walked all six channels over
+		// six minutes this way. Answer 422 to keep it on one attempt, and quote what
+		// the model said instead, which is the only clue the caller gets.
+		message := "codex channel: upstream returned no image"
+		if reply := strings.TrimSpace(strings.Join(spokenReply, " ")); reply != "" {
+			message = fmt.Sprintf("%s, the model answered in text instead: %s",
+				message, common.LocalLogPreview(reply))
+		}
 		return nil, types.NewErrorWithStatusCode(
-			fmt.Errorf("codex channel: upstream returned no image"),
-			types.ErrorCodeBadResponse, http.StatusServiceUnavailable)
+			errors.New(message), types.ErrorCodeBadResponse, http.StatusUnprocessableEntity)
 	}
 
 	// The images API defaults to base64; a caller asking for URLs cannot be served
@@ -289,4 +318,3 @@ func imageResponseFormat(info *relaycommon.RelayInfo) string {
 	}
 	return request.ResponseFormat
 }
-
