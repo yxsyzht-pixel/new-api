@@ -1114,7 +1114,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
               value={
                 <StatusBadge
                   label={other.stream_status.status || t('Error')}
-                  variant='red'
+                  // A caller hanging up is ordinary; red is reserved for faults.
+                  variant={
+                    other.stream_status.status === 'aborted' ? 'grey' : 'red'
+                  }
                   size='sm'
                   copyable={false}
                 />

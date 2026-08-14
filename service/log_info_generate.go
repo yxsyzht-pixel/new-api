@@ -131,7 +131,16 @@ func appendStreamStatus(relayInfo *relaycommon.RelayInfo, other map[string]inter
 	}
 	ss := relayInfo.StreamStatus
 	status := "ok"
-	if !ss.IsNormalEnd() || ss.HasErrors() {
+	switch {
+	case ss.HasErrors():
+		status = "error"
+	case ss.EndReason == relaycommon.StreamEndReasonClientGone:
+		// The caller hung up — escape in the editor, a closed tab, a client that
+		// had read enough. Nothing failed here, and lumping it in with real faults
+		// buried them: over 8 hours on 2026-08-14 the panel flagged 1656 streams,
+		// of which 1653 were this and 3 were genuine.
+		status = "aborted"
+	case !ss.IsNormalEnd():
 		status = "error"
 	}
 	streamInfo := map[string]interface{}{

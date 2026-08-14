@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { CircleAlert } from 'lucide-react'
+import { CircleAlert, CircleSlash } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -158,8 +158,13 @@ interface StreamTpsCellProps {
 
 export function StreamTpsCell(props: StreamTpsCellProps) {
   const { t } = useTranslation()
+  // A caller that hung up is not a fault: escape in the editor, a closed tab, a
+  // client that had read enough. It is roughly a fifth of all streams, so
+  // marking it like a real failure hid the handful that are.
+  const streamState = props.streamStatus?.status
   const showStreamError =
-    props.isStream && props.streamStatus && props.streamStatus.status !== 'ok'
+    props.isStream && !!streamState && streamState !== 'ok' && streamState !== 'aborted'
+  const showStreamAborted = props.isStream && streamState === 'aborted'
   const tpsLabel =
     props.tokensPerSecond != null
       ? `${Math.round(props.tokensPerSecond)} t/s`
@@ -180,6 +185,25 @@ export function StreamTpsCell(props: StreamTpsCellProps) {
         )}
       >
         {streamLabel}
+        {showStreamAborted && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <CircleSlash className='text-muted-foreground/70 size-3' />
+                }
+              />
+              <TooltipContent>
+                <div className='space-y-0.5 text-xs'>
+                  <p>
+                    {t('Stream Status')}: {t('Client disconnected')}
+                  </p>
+                  <p>{t('The caller closed the connection before the response finished.')}</p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
         {showStreamError && (
           <TooltipProvider>
             <Tooltip>
