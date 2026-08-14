@@ -1,12 +1,6 @@
 package codex
 
-import (
-	"slices"
-
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
-)
-
-var baseModelList = []string{
+var ModelList = []string{
 	"gpt-5.6-sol",
 	"gpt-5.6-terra",
 	"gpt-5.6-luna",
@@ -28,13 +22,6 @@ const (
 	// imageToolHostModel serves image_generation requests. Image model names carry
 	// no upstream meaning, so requests naming one are issued against this model.
 	imageToolHostModel = "gpt-5.6-sol"
-)
-
-var ModelList = slices.DeleteFunc(
-	ratio_setting.WithCompactModelVariants(baseModelList),
-	func(modelName string) bool {
-		return modelName == ratio_setting.WithCompactModelSuffix("codex-auto-review")
-	},
 )
 
 const ChannelName = "codex"
