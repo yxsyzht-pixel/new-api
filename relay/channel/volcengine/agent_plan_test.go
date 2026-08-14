@@ -33,6 +33,29 @@ func TestAgentPlanBaseKeepsRequestsOnTheSubscription(t *testing.T) {
 	assert.Equal(t, "https://ark.cn-beijing.volces.com/api/plan/v1/messages", claudeURL)
 }
 
+// The plan base is a sentinel rather than a host, so any route that appends the
+// pay-as-you-go path to it produces a URL that resolves to nothing. Responses was
+// doing exactly that, which is what a Codex-shaped client hits first.
+func TestAgentPlanRoutesEveryOpenAIShapedMode(t *testing.T) {
+	adaptor := &Adaptor{}
+	const plan = "https://ark.cn-beijing.volces.com/api/plan/v3"
+
+	for mode, want := range map[int]string{
+		constant.RelayModeChatCompletions: plan + "/chat/completions",
+		constant.RelayModeResponses:       plan + "/responses",
+		constant.RelayModeEmbeddings:      plan + "/embeddings",
+	} {
+		info := &relaycommon.RelayInfo{
+			ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "doubao-agent-plan"},
+			RelayMode:   mode,
+		}
+		url, err := adaptor.GetRequestURL(info)
+		require.NoError(t, err)
+		assert.Equal(t, want, url)
+		assert.NotContains(t, url, "doubao-agent-plan", "the sentinel must never reach the wire")
+	}
+}
+
 // The plan and the pay-as-you-go catalog are separate subscriptions on separate
 // paths, so their bases must not be confused for one another.
 func TestAgentPlanAndCodingPlanStaySeparate(t *testing.T) {

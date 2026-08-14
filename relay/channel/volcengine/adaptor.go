@@ -263,6 +263,9 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 			}
 			return fmt.Sprintf("%s/api/v3/chat/completions", baseUrl), nil
 		case constant.RelayModeEmbeddings:
+			if hasSpecialPlan && specialPlan.OpenAIBaseURL != "" {
+				return fmt.Sprintf("%s/embeddings", specialPlan.OpenAIBaseURL), nil
+			}
 			return fmt.Sprintf("%s/api/v3/embeddings", baseUrl), nil
 		//豆包的图生图也走generations接口: https://www.volcengine.com/docs/82379/1824121
 		case constant.RelayModeImagesGenerations, constant.RelayModeImagesEdits:
@@ -272,6 +275,13 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 		case constant.RelayModeRerank:
 			return fmt.Sprintf("%s/api/v3/rerank", baseUrl), nil
 		case constant.RelayModeResponses:
+			// A plan base is a sentinel, not a host — appending the pay-as-you-go path
+			// to it yields a URL that goes nowhere. The subscription endpoints serve
+			// Responses natively, so they need no protocol conversion, only the right
+			// address.
+			if hasSpecialPlan && specialPlan.OpenAIBaseURL != "" {
+				return fmt.Sprintf("%s/responses", specialPlan.OpenAIBaseURL), nil
+			}
 			return fmt.Sprintf("%s/api/v3/responses", baseUrl), nil
 		case constant.RelayModeAudioSpeech:
 			if baseUrl == channelconstant.ChannelBaseURLs[channelconstant.ChannelTypeVolcEngine] {
