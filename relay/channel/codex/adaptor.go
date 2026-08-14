@@ -106,6 +106,12 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	if isCompact {
 		return request, nil
 	}
+	// The backend answers 400 "Stream must be set to true" to anything else, so a
+	// caller wanting one JSON document still has to be served from a stream. The
+	// caller's own choice is untouched in info.IsStream and decides how the reply is
+	// shaped on the way back out.
+	forceStream := true
+	request.Stream = &forceStream
 	// codex: store must be false
 	request.Store = json.RawMessage("false")
 	// rm max_output_tokens
@@ -131,7 +137,9 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		if info.IsStream {
 			return openai.OaiResponsesStreamHandler(c, info, resp)
 		}
-		return openai.OaiResponsesHandler(c, info, resp)
+		// Upstream was asked to stream regardless of what the caller wanted, so the
+		// ordinary non-streaming handler would be parsing SSE as a JSON body.
+		return handleResponsesAsNonStream(c, info, resp)
 	case relayconstant.RelayModeImagesGenerations, relayconstant.RelayModeImagesEdits:
 		return handleImageGenerationResponse(c, info, resp)
 	default:
