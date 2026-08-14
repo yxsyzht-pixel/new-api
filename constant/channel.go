@@ -218,4 +218,12 @@ var ChannelSpecialBases = map[string]ChannelSpecialBase{
 		ClaudeBaseURL: "https://ark.cn-beijing.volces.com/api/coding",
 		OpenAIBaseURL: "https://ark.cn-beijing.volces.com/api/coding/v3",
 	},
+	// Ark sells two separate subscriptions, and each has its own path. The console
+	// warns in as many words that calling /api/v3 with a plan key bills the request
+	// again as pay-as-you-go instead of drawing down the plan, so routing here is
+	// not a convenience — it is what keeps a subscription from being paid for twice.
+	"doubao-agent-plan": {
+		ClaudeBaseURL: "https://ark.cn-beijing.volces.com/api/plan",
+		OpenAIBaseURL: "https://ark.cn-beijing.volces.com/api/plan/v3",
+	},
 }
