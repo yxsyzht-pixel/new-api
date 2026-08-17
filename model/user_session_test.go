@@ -653,3 +653,58 @@ func TestPasswordResetBumpsAuthVersionAndRevokesSessions(t *testing.T) {
 	assert.Equal(t, UserSessionStatusRevoked, storedSession.Status)
 	assert.Equal(t, "password_reset", storedSession.RevokedReason)
 }
+
+// Sessions last thirty days and only expired ones are ever pruned, so an account
+// that signs in from a new browser now and then fills the ceiling with sessions
+// nobody has touched in weeks and is locked out of the panel entirely. Two
+// accounts here reached exactly that state. Room is made by giving up the
+// sessions that have gone longest unused.
+func TestRevokeIdlestUserSessionsTakesTheStalestFirst(t *testing.T) {
+	setupUserSessionTest(t)
+	now := time.Now().Unix()
+	user := User{Id: 1101, Username: "idle-evict-user", Password: "password", AuthVersion: 1}
+	require.NoError(t, DB.Create(&user).Error)
+	t.Cleanup(func() { _ = DB.Unscoped().Delete(&User{}, user.Id).Error })
+
+	// All still valid — the ceiling fills with sessions that are live but unused,
+	// which is exactly why expiry-based cleanup never frees anything. Eviction has
+	// to follow last use, not age.
+	for sid, lastActive := range map[string]int64{
+		"idle-oldest": now - 30*86400,
+		"idle-middle": now - 7*86400,
+		"used-today":  now - 60,
+	} {
+		session := newTestUserSession(sid, user.Id, now)
+		session.CreatedAt = lastActive
+		session.LastActiveAt = lastActive
+		require.NoError(t, CreateUserSession(session))
+	}
+
+	revoked, err := RevokeIdlestUserSessions(user.Id, 2, "evicted: active session limit reached")
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, revoked)
+
+	remaining, err := ListActiveUserSessions(user.Id, "", now)
+	require.NoError(t, err)
+	require.Len(t, remaining, 1, "the session in use must survive")
+	assert.Equal(t, "used-today", remaining[0].SID)
+}
+
+// Asking for nothing must not quietly sign anyone out.
+func TestRevokeIdlestUserSessionsIgnoresNonPositiveCounts(t *testing.T) {
+	setupUserSessionTest(t)
+	now := time.Now().Unix()
+	user := User{Id: 1102, Username: "idle-noop-user", Password: "password", AuthVersion: 1}
+	require.NoError(t, DB.Create(&user).Error)
+	t.Cleanup(func() { _ = DB.Unscoped().Delete(&User{}, user.Id).Error })
+	require.NoError(t, CreateUserSession(newTestUserSession("keep-me", user.Id, now)))
+
+	for _, count := range []int{0, -1} {
+		revoked, err := RevokeIdlestUserSessions(user.Id, count, "should not happen")
+		require.NoError(t, err)
+		assert.Zero(t, revoked)
+	}
+	remaining, err := ListActiveUserSessions(user.Id, "", now)
+	require.NoError(t, err)
+	assert.Len(t, remaining, 1)
+}

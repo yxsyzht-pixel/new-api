@@ -709,6 +709,48 @@ func RevokeAllUserSessions(userID int, reason string) (int64, error) {
 	return revokeUserSessions(userID, "", reason)
 }
 
+// RevokeIdlestUserSessions frees room under the active-session ceiling by
+// revoking the sessions that have gone longest without use, and reports how many
+// it took away.
+//
+// Sessions live for thirty days and only expired ones are ever pruned, so an
+// account that signs in from a new browser now and then eventually fills the
+// ceiling with sessions nobody has touched in weeks — and is then locked out
+// entirely, which is what happened to two accounts here. Refusing the login
+// punishes the person at the keyboard for tabs they closed a fortnight ago;
+// taking away the stalest session instead lets them in, and whoever held that
+// session was not using it.
+func RevokeIdlestUserSessions(userID int, count int, reason string) (int64, error) {
+	if userID <= 0 {
+		return 0, ErrUserSessionInvalid
+	}
+	if count <= 0 {
+		return 0, nil
+	}
+	now := time.Now().Unix()
+
+	var candidates []UserSession
+	if err := DB.Where("user_id = ? AND status = ? AND expires_at > ?", userID, UserSessionStatusActive, now).
+		Order("last_active_at ASC, created_at ASC").Limit(count).Find(&candidates).Error; err != nil {
+		return 0, err
+	}
+	if len(candidates) == 0 {
+		return 0, nil
+	}
+
+	var revoked int64
+	for i := range candidates {
+		ok, err := RevokeUserSession(userID, candidates[i].SID, reason)
+		if err != nil {
+			return revoked, err
+		}
+		if ok {
+			revoked++
+		}
+	}
+	return revoked, nil
+}
+
 func revokeUserSessions(userID int, excludedSID, reason string) (int64, error) {
 	if userID <= 0 {
 		return 0, ErrUserSessionInvalid

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -70,7 +72,24 @@ func createLoginSession(userID int, expectedAuthVersion int64, loginMethod, ip, 
 		return nil, err
 	}
 	if activeCount >= int64(common.UserSessionActiveLimit) {
-		return nil, model.ErrUserSessionLimit
+		// Make room rather than turn the person away. Sessions last thirty days and
+		// only expired ones are pruned, so the ceiling fills with sessions nobody has
+		// touched in weeks and the account is locked out of the panel entirely — with
+		// no way back except an administrator clearing them by hand. The sessions
+		// given up are the least recently used, which are the ones least likely to
+		// belong to anyone still working.
+		freed, err := model.RevokeIdlestUserSessions(userID,
+			int(activeCount-int64(common.UserSessionActiveLimit))+1,
+			"evicted: active session limit reached")
+		if err != nil {
+			return nil, err
+		}
+		if freed == 0 {
+			return nil, model.ErrUserSessionLimit
+		}
+		logger.LogInfo(context.Background(), fmt.Sprintf(
+			"user %d reached the %d active session limit; revoked %d least recently used session(s) to admit the new login",
+			userID, common.UserSessionActiveLimit, freed))
 	}
 	issuanceCount, err := model.CountUserSessionsCreatedSince(userID, now-common.UserSessionIssuanceWindowSeconds)
 	if err != nil {
