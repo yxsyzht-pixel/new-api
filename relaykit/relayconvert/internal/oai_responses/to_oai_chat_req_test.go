@@ -356,3 +356,55 @@ func mustRawMessage(t *testing.T, value any) []byte {
 	require.NoError(t, err)
 	return raw
 }
+
+// A message item that carries no content at all reaches the upstream as an empty
+// message, and a strict backend refuses the whole request over it — Kimi answers
+// "the message at position 0 with role 'system' must not be empty". Every shape an
+// empty item arrives in has to be left out, not forwarded blank.
+func TestResponsesRequestToChatCompletionsRequestDropsEmptyMessages(t *testing.T) {
+	for name, empty := range map[string]any{
+		"absent content":   nil,
+		"empty string":     "",
+		"blank string":     "   ",
+		"empty parts list": []map[string]any{},
+		"empty text part":  []map[string]any{{"type": "input_text", "text": ""}},
+		"reasoning-only":   []map[string]any{{"type": "reasoning_text", "text": "internal"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+				Model: "gpt-test",
+				Input: mustRawMessage(t, []map[string]any{
+					{"type": "message", "role": "system", "content": empty},
+					{"type": "message", "role": "user", "content": []map[string]any{
+						{"type": "input_text", "text": "hello"},
+					}},
+				}),
+			})
+			require.NoError(t, err)
+
+			require.Len(t, got.Messages, 1, "the empty system message has nothing to send")
+			assert.Equal(t, "user", got.Messages[0].Role)
+			assert.Equal(t, "hello", got.Messages[0].StringContent())
+		})
+	}
+}
+
+// Dropping the empty message must not cost the turn its tool call: the call is
+// appended to the last assistant message, and a fresh one is created when the empty
+// assistant that would have held it is gone.
+func TestResponsesRequestToChatCompletionsRequestEmptyAssistantStillCarriesItsToolCall(t *testing.T) {
+	got, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model: "gpt-test",
+		Input: mustRawMessage(t, []map[string]any{
+			{"type": "message", "role": "assistant", "content": ""},
+			{"type": "function_call", "call_id": "call_1", "name": "lookup", "arguments": `{"q":"x"}`},
+		}),
+	})
+	require.NoError(t, err)
+
+	require.Len(t, got.Messages, 1)
+	assert.Equal(t, "assistant", got.Messages[0].Role)
+	toolCalls := got.Messages[0].ParseToolCalls()
+	require.Len(t, toolCalls, 1)
+	assert.Equal(t, "lookup", toolCalls[0].Function.Name)
+}

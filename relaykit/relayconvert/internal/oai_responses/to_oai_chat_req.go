@@ -223,6 +223,14 @@ func responsesInputItemToChatMessages(item map[string]any, messages []dto.Messag
 	if err != nil {
 		return nil, err
 	}
+	// An item can convert to nothing at all: content absent, an empty parts list, or
+	// parts that were entirely reasoning and got dropped just above. Chat Completions
+	// has no use for a message carrying no content, and an upstream rejects the whole
+	// request over one ("the message at position 0 with role 'system' must not be
+	// empty"), so it is left out here the same way empty instructions are.
+	if text, ok := content.(string); ok && strings.TrimSpace(text) == "" {
+		return messages, nil
+	}
 	return append(messages, dto.Message{Role: role, Content: content}), nil
 }
 
