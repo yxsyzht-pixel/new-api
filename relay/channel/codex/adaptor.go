@@ -103,6 +103,13 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 		request.Instructions = json.RawMessage(`""`)
 	}
 
+	// The backend has no prompt_cache_retention and answers 400 to any request that
+	// carries one, which killed 58 turns here in a day — and because a 400 is fatal
+	// to the request rather than to the channel, no sibling account gets a turn at it
+	// either. Codex's own guidance calls the field a deprecated shape; dropping it
+	// gives up a caching hint this backend was never going to honour.
+	request.PromptCacheRetention = nil
+
 	if isCompact {
 		return request, nil
 	}

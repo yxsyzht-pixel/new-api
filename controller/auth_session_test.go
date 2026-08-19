@@ -107,7 +107,12 @@ func TestWriteAuthSessionErrorMapsSessionGrowthLimits(t *testing.T) {
 	}
 }
 
-func TestSessionLimitDoesNotRecordRejectedLoginAsSuccessful(t *testing.T) {
+// A login the server turns away must leave no trace of having succeeded — the
+// audit trail is what tells an operator whether an account was actually reached.
+// The active-session limit no longer refuses anyone (it evicts the idlest session
+// instead), so the refusal that still exists, the issuance rate limit, is the one
+// this guards.
+func TestRefusedLoginIsNotRecordedAsSuccessful(t *testing.T) {
 	previousDB := model.DB
 	previousRedis := common.RedisEnabled
 	previousActiveLimit := common.UserSessionActiveLimit
@@ -118,9 +123,9 @@ func TestSessionLimitDoesNotRecordRejectedLoginAsSuccessful(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}))
 	model.DB = db
 	common.RedisEnabled = false
-	common.UserSessionActiveLimit = 1
-	common.UserSessionIssuanceLimit = 100
-	common.UserSessionIssuanceWindowSeconds = int64(common.DefaultUserSessionIssuanceWindowSeconds)
+	common.UserSessionActiveLimit = 100
+	common.UserSessionIssuanceLimit = 1
+	common.UserSessionIssuanceWindowSeconds = 60
 	t.Cleanup(func() {
 		model.DB = previousDB
 		common.RedisEnabled = previousRedis
@@ -136,8 +141,9 @@ func TestSessionLimitDoesNotRecordRejectedLoginAsSuccessful(t *testing.T) {
 	}
 	require.NoError(t, db.Create(user).Error)
 	now := time.Now().Unix()
+	// One session already issued inside the window uses up the rate limit.
 	require.NoError(t, db.Create(&model.UserSession{
-		SID: "existing-active-session", UserID: user.Id, Version: 1, UserAuthVersion: user.AuthVersion,
+		SID: "session-issued-in-window", UserID: user.Id, Version: 1, UserAuthVersion: user.AuthVersion,
 		Status: model.UserSessionStatusActive, RefreshHash: "hash", LoginMethod: "password",
 		CreatedAt: now, LastActiveAt: now, ExpiresAt: now + 3600,
 	}).Error)
@@ -148,8 +154,9 @@ func TestSessionLimitDoesNotRecordRejectedLoginAsSuccessful(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/user/login", nil)
 	setupLogin(user, c)
 
-	assert.Equal(t, http.StatusConflict, recorder.Code)
+	assert.Equal(t, http.StatusTooManyRequests, recorder.Code)
 	var stored model.User
 	require.NoError(t, db.First(&stored, user.Id).Error)
-	assert.Equal(t, previousLastLoginAt, stored.LastLoginAt)
+	assert.Equal(t, previousLastLoginAt, stored.LastLoginAt,
+		"a login that never happened must not update the last-login stamp")
 }
