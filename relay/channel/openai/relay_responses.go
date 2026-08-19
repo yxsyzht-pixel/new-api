@@ -92,6 +92,16 @@ func IsRequestFatalResponsesFailure(err *types.NewAPIError) bool {
 	return err != nil && err.StatusCode == http.StatusBadRequest
 }
 
+// shouldCloseTruncatedStream reports whether the client is still waiting for an
+// ending that the upstream never sent. A client that has already hung up has
+// nobody left to tell.
+func shouldCloseTruncatedStream(status *relaycommon.StreamStatus, terminalSent bool) bool {
+	if terminalSent || status == nil {
+		return false
+	}
+	return status.EndReason != relaycommon.StreamEndReasonClientGone
+}
+
 // sendResponsesTerminalFailure closes a committed stream with an event the
 // client recognises as the end of the response.
 //
@@ -220,6 +230,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	// letting the retry loop reach a channel that can actually serve the request.
 	var upstreamStreamErr *types.NewAPIError
 	contentStarted := false
+	terminalSent := false
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
@@ -269,6 +280,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		sendResponsesStreamData(c, streamResponse, data)
 		switch streamResponse.Type {
 		case "response.completed", "response.done":
+			terminalSent = true
 			if streamResponse.Response != nil {
 				if streamResponse.Response.Usage != nil {
 					if streamResponse.Response.Usage.InputTokens != 0 {
@@ -304,6 +316,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				imageCommitted = true
 			}
 		case "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
+			terminalSent = true
 			if !imageCommitted {
 				imageCounter.Reset()
 				imageCounter.Commit(info)
@@ -329,6 +342,19 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 		}
 	})
+
+	// The upstream can die in the middle of a stream — an h2 INTERNAL_ERROR from the
+	// peer is the one seen here — and the scanner simply stops reading. Everything
+	// already forwarded stays valid, but with no terminal event the client cannot
+	// tell the response is over: it waits out its own idle timeout, ten minutes for
+	// one caller here, before it retries. Ending the stream ourselves turns that
+	// stall into something it can act on at once. A client that has already hung up
+	// has nobody left to tell.
+	if upstreamStreamErr == nil && shouldCloseTruncatedStream(info.StreamStatus, terminalSent) {
+		sendResponsesTerminalFailure(c, info, "", "", types.NewError(
+			fmt.Errorf("upstream ended the response stream before it completed (%s)", info.StreamStatus.Summary()),
+			types.ErrorCodeBadResponse))
+	}
 
 	if upstreamStreamErr != nil {
 		return nil, upstreamStreamErr
