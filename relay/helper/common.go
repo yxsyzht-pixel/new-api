@@ -94,6 +94,38 @@ func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data st
 	return FlushWriter(c)
 }
 
+// ResponsesStreamTerminalError ends a Responses stream that has already started
+// with a failure the client can parse.
+//
+// Once the preamble has gone out the response is committed: the status line is
+// already sent, so a JSON body written afterwards lands in the middle of the SSE
+// body as a line no client can read, and the stream then simply stops with no
+// terminal event at all. The caller cannot tell a dead stream from a slow one and
+// waits out its own idle timeout — ten minutes, for one caller here — before it
+// retries. A failure at this point has to be spoken in the protocol the stream is
+// already using.
+func ResponsesStreamTerminalError(c *gin.Context, apiErr *types.NewAPIError) {
+	if c == nil || apiErr == nil {
+		return
+	}
+	payload, err := common.Marshal(map[string]any{
+		"type": "response.failed",
+		"response": map[string]any{
+			"id":     GetResponseID(c),
+			"object": "response",
+			"status": "failed",
+			"error": map[string]any{
+				"code":    string(apiErr.GetErrorCode()),
+				"message": apiErr.Error(),
+			},
+		},
+	})
+	if err != nil {
+		return
+	}
+	_ = ResponseChunkData(c, dto.ResponsesStreamResponse{Type: "response.failed"}, string(payload))
+}
+
 func StringData(c *gin.Context, str string) error {
 	if c == nil || c.Writer == nil {
 		return errors.New("context or writer is nil")

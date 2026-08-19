@@ -101,6 +101,16 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 					"type":  "error",
 					"error": newAPIError.ToClaudeError(),
 				})
+			case types.RelayFormatOpenAIResponses, types.RelayFormatOpenAIResponsesCompaction:
+				// A stream already under way is committed — see
+				// helper.ResponsesStreamTerminalError for why a JSON body cannot end it.
+				if c.Writer.Written() {
+					helper.ResponsesStreamTerminalError(c, newAPIError)
+				} else {
+					c.JSON(newAPIError.StatusCode, gin.H{
+						"error": newAPIError.ToOpenAIError(),
+					})
+				}
 			default:
 				c.JSON(newAPIError.StatusCode, gin.H{
 					"error": newAPIError.ToOpenAIError(),
