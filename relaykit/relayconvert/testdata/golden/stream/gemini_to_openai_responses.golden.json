@@ -34,7 +34,7 @@
         "type": "response.output_item.added",
         "item": {
           "type": "message",
-          "id": "stream_fixed_msg_0",
+          "id": "msg_streamfixed",
           "status": "in_progress",
           "role": "assistant",
           "content": [],
@@ -51,7 +51,7 @@
         "delta": "Hello",
         "output_index": 0,
         "content_index": 0,
-        "item_id": "stream_fixed_msg_0"
+        "item_id": "msg_streamfixed"
       }
     },
     {
@@ -61,7 +61,7 @@
         "delta": " world",
         "output_index": 0,
         "content_index": 0,
-        "item_id": "stream_fixed_msg_0"
+        "item_id": "msg_streamfixed"
       }
     },
     {
@@ -70,7 +70,7 @@
         "type": "response.output_text.done",
         "output_index": 0,
         "content_index": 0,
-        "item_id": "stream_fixed_msg_0"
+        "item_id": "msg_streamfixed"
       }
     },
     {
@@ -79,7 +79,7 @@
         "type": "response.output_item.done",
         "item": {
           "type": "message",
-          "id": "stream_fixed_msg_0",
+          "id": "msg_streamfixed",
           "status": "completed",
           "role": "assistant",
           "content": [
@@ -110,7 +110,7 @@
           "output": [
             {
               "type": "message",
-              "id": "stream_fixed_msg_0",
+              "id": "msg_streamfixed",
               "status": "completed",
               "role": "assistant",
               "content": [

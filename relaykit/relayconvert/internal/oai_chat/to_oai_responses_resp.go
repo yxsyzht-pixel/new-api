@@ -3,6 +3,7 @@ package oaichat
 import (
 	"errors"
 	"fmt"
+	oairesponses "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/oai_responses"
 	"strings"
 	"time"
 
@@ -60,7 +61,7 @@ func ChatCompletionsResponseToResponsesResponse(resp *dto.OpenAITextResponse, id
 	if text := choice.Message.StringContent(); text != "" {
 		out.Output = append(out.Output, dto.ResponsesOutput{
 			Type:   responsesOutputTypeMessage,
-			ID:     fmt.Sprintf("%s_msg_0", id),
+			ID:     oairesponses.ItemID(oairesponses.MessageIDPrefix, id),
 			Status: responseOutputStatus(out),
 			Role:   "assistant",
 			Content: []dto.ResponsesOutputContent{
@@ -75,7 +76,7 @@ func ChatCompletionsResponseToResponsesResponse(resp *dto.OpenAITextResponse, id
 	if reasoning := choice.Message.GetReasoningContent(); reasoning != "" {
 		out.Output = append(out.Output, dto.ResponsesOutput{
 			Type:   responsesOutputTypeReasoning,
-			ID:     fmt.Sprintf("%s_reasoning_0", id),
+			ID:     oairesponses.ItemID(oairesponses.ReasoningIDPrefix, id),
 			Status: responseOutputStatus(out),
 			Content: []dto.ResponsesOutputContent{
 				{
@@ -172,12 +173,15 @@ func responseStatusString(resp *dto.OpenAIResponsesResponse) string {
 func chatToolCallToResponsesOutput(toolCall dto.ToolCallRequest, responseID string, index int, status string) (dto.ResponsesOutput, error) {
 	callID := strings.TrimSpace(toolCall.ID)
 	if callID == "" {
-		callID = fmt.Sprintf("%s_call_%d", responseID, index)
+		callID = oairesponses.ItemID(oairesponses.CallIDPrefix, fmt.Sprintf("%s%d", responseID, index))
 	}
+	// The item's own id and the id the tool result refers back to are different
+	// things; only the latter has to survive the round trip unchanged.
+	itemID := oairesponses.ItemID(oairesponses.FunctionCallIDPrefix, callID)
 	if toolCall.Type == "" || toolCall.Type == "function" {
 		return dto.ResponsesOutput{
 			Type:      responsesOutputTypeFunctionCall,
-			ID:        callID,
+			ID:        itemID,
 			Status:    status,
 			CallId:    callID,
 			Name:      toolCall.Function.Name,
@@ -186,7 +190,7 @@ func chatToolCallToResponsesOutput(toolCall dto.ToolCallRequest, responseID stri
 	}
 	return dto.ResponsesOutput{
 		Type:      toolCall.Type,
-		ID:        callID,
+		ID:        itemID,
 		Status:    status,
 		CallId:    callID,
 		Arguments: toolCall.Custom,

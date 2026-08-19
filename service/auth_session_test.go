@@ -95,7 +95,10 @@ func cachedLoginSessionKey(t *testing.T, server *miniredis.Miniredis) string {
 	return ""
 }
 
-func TestCreateLoginSessionEnforcesActiveLimitAcrossAuthVersions(t *testing.T) {
+// A login that arrives at the active limit is admitted, and the session that has sat
+// unused the longest makes room for it. Turning the login away instead left accounts
+// locked out until someone cleared the table by hand.
+func TestCreateLoginSessionAtTheActiveLimitEvictsTheIdlestSession(t *testing.T) {
 	useTestSessionSecret(t)
 	user := setupAuthSessionTestDB(t)
 	common.UserSessionActiveLimit = 50
@@ -126,10 +129,19 @@ func TestCreateLoginSessionEnforcesActiveLimitAcrossAuthVersions(t *testing.T) {
 	require.NoError(t, err, "49 active sessions must allow creation of the 50th")
 
 	_, err = CreateLoginSession(user.Id, "password", "127.0.0.1", "test-agent")
-	assert.ErrorIs(t, err, model.ErrUserSessionLimit)
-	var count int64
-	require.NoError(t, model.DB.Model(&model.UserSession{}).Count(&count).Error)
-	assert.Equal(t, int64(50), count)
+	require.NoError(t, err, "the 51st login is admitted, not refused")
+
+	var active int64
+	require.NoError(t, model.DB.Model(&model.UserSession{}).
+		Where("status = ?", model.UserSessionStatusActive).Count(&active).Error)
+	assert.Equal(t, int64(50), active, "the limit still holds once the eviction is done")
+
+	// LastActiveAt was seeded as now-i, so the 49th seeded row is the stalest.
+	var evicted model.UserSession
+	require.NoError(t, model.DB.Where("sid = ?", "active-limit-48").First(&evicted).Error)
+	assert.Equal(t, model.UserSessionStatusRevoked, evicted.Status,
+		"the session idle the longest is the one that makes room")
+	assert.NotZero(t, evicted.RevokedAt, "an eviction is recorded, not silently dropped")
 }
 
 func TestCreateLoginSessionEnforcesIssuanceLimitAcrossAllStatuses(t *testing.T) {

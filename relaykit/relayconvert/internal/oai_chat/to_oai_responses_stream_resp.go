@@ -2,6 +2,7 @@ package oaichat
 
 import (
 	"fmt"
+	oairesponses "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/oai_responses"
 	"sort"
 	"strings"
 	"time"
@@ -206,16 +207,16 @@ func (s *ChatToResponsesStreamState) appendToolCallDelta(toolCall dto.ToolCallRe
 			Name:        strings.TrimSpace(toolCall.Function.Name),
 		}
 		if tool.ID == "" {
-			tool.ID = fmt.Sprintf("%s_call_%d", s.ID, chatIndex)
+			tool.ID = oairesponses.ItemID(oairesponses.CallIDPrefix, fmt.Sprintf("%s%d", s.ID, chatIndex))
 		}
 		s.toolsByIndex[chatIndex] = tool
 		events = append(events, responsesStreamEvent(responsesEventOutputItemAdded, dto.ResponsesStreamResponse{
 			Type:        responsesEventOutputItemAdded,
 			OutputIndex: intPtr(tool.OutputIndex),
-			ItemID:      tool.ID,
+			ItemID:      tool.itemID(),
 			Item: &dto.ResponsesOutput{
 				Type:      responsesOutputTypeFunctionCall,
-				ID:        tool.ID,
+				ID:        tool.itemID(),
 				Status:    "in_progress",
 				CallId:    tool.ID,
 				Name:      tool.Name,
@@ -234,7 +235,7 @@ func (s *ChatToResponsesStreamState) appendToolCallDelta(toolCall dto.ToolCallRe
 		events = append(events, responsesStreamEvent(responsesEventFunctionArgsDelta, dto.ResponsesStreamResponse{
 			Type:        responsesEventFunctionArgsDelta,
 			OutputIndex: intPtr(tool.OutputIndex),
-			ItemID:      tool.ID,
+			ItemID:      tool.itemID(),
 			Delta:       toolCall.Function.Arguments,
 		}))
 	}
@@ -284,7 +285,7 @@ func (s *ChatToResponsesStreamState) doneDeltaEvents() []ChatToResponsesStreamEv
 		events = append(events, responsesStreamEvent(responsesEventFunctionArgsDone, dto.ResponsesStreamResponse{
 			Type:        responsesEventFunctionArgsDone,
 			OutputIndex: intPtr(tool.OutputIndex),
-			ItemID:      tool.ID,
+			ItemID:      tool.itemID(),
 		}))
 		events = append(events, responsesStreamEvent(responsesEventOutputItemDone, dto.ResponsesStreamResponse{
 			Type:        responsesEventOutputItemDone,
@@ -367,12 +368,18 @@ func (s *ChatToResponsesStreamState) outputStatus() string {
 	return "completed"
 }
 
+// itemID is the id of the function_call output item, which the spec keeps separate
+// from the call id the tool result refers back to.
+func (t *chatToResponsesStreamTool) itemID() string {
+	return oairesponses.ItemID(oairesponses.FunctionCallIDPrefix, t.ID)
+}
+
 func (s *ChatToResponsesStreamState) messageID() string {
-	return fmt.Sprintf("%s_msg_0", s.ID)
+	return oairesponses.ItemID(oairesponses.MessageIDPrefix, s.ID)
 }
 
 func (s *ChatToResponsesStreamState) reasoningID() string {
-	return fmt.Sprintf("%s_reasoning_0", s.ID)
+	return oairesponses.ItemID(oairesponses.ReasoningIDPrefix, s.ID)
 }
 
 func (s *ChatToResponsesStreamState) messageOutput(status string) *dto.ResponsesOutput {
@@ -408,7 +415,7 @@ func (s *ChatToResponsesStreamState) reasoningOutput(status string) *dto.Respons
 func (s *ChatToResponsesStreamState) toolOutput(tool *chatToResponsesStreamTool, status string) *dto.ResponsesOutput {
 	return &dto.ResponsesOutput{
 		Type:      responsesOutputTypeFunctionCall,
-		ID:        tool.ID,
+		ID:        tool.itemID(),
 		Status:    status,
 		CallId:    tool.ID,
 		Name:      tool.Name,

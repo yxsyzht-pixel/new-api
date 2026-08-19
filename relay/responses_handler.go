@@ -12,6 +12,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
@@ -65,6 +66,12 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	if err != nil {
 		return types.NewError(fmt.Errorf("failed to copy request to GeneralOpenAIRequest: %w", err), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
+
+	// A turn served by a Chat Completions upstream has no item ids of its own, so the
+	// gateway minted them; conversations held from before those ids carried the right
+	// prefix still replay the old ones, and a Responses backend rejects the whole
+	// request over a single one. Switching models mid-conversation is what replays them.
+	request.Input = relayconvert.RepairResponsesInputItemIDs(request.Input)
 
 	err = helper.ModelMappedHelper(c, info, request)
 	if err != nil {

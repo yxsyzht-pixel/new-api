@@ -2,6 +2,7 @@ package relayconvert
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
 	claudemessages "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/claude_messages"
@@ -45,4 +46,11 @@ func OpenAIResponsesRequestToClaudeMessages(c context.Context, info convmeta.Met
 
 func OpenAIResponsesRequestToGeminiChat(c context.Context, req *dto.OpenAIResponsesRequest, info convmeta.Meta) (*dto.GeminiChatRequest, error) {
 	return oairesponses.OpenAIResponsesRequestToGeminiChat(c, req, info)
+}
+
+// RepairResponsesInputItemIDs makes the ids of replayed Responses items carry the
+// prefix their kind requires, so a conversation served by a Chat Completions model
+// can be continued on a Responses one.
+func RepairResponsesInputItemIDs(input json.RawMessage) json.RawMessage {
+	return oairesponses.RepairInputItemIDs(input)
 }
