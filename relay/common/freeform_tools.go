@@ -72,6 +72,30 @@ func (info *RelayInfo) HasFreeformTools() bool {
 	return info != nil && len(info.FreeformTools) > 0
 }
 
+// ToolShapeSummary lists the type and name of every tool a caller declared, so a
+// turn that came back without the tool call it should have made can be traced to
+// the shape the caller asked for. Only types and names: never a description, a
+// schema, or anything the caller wrote.
+func ToolShapeSummary(tools json.RawMessage) string {
+	items, ok := jsonArray(tools)
+	if !ok {
+		return ""
+	}
+	parts := make([]string, 0, 8)
+	items.ForEach(func(_, tool gjson.Result) bool {
+		kind := tool.Get("type").String()
+		if kind == "" {
+			kind = "?"
+		}
+		if name := tool.Get("name").String(); name != "" {
+			kind += ":" + name
+		}
+		parts = append(parts, kind)
+		return true
+	})
+	return strings.Join(parts, " ")
+}
+
 // FreeformToolsToFunctions rewrites `custom` tool declarations into function tools
 // and records their names on info.
 func FreeformToolsToFunctions(tools json.RawMessage, info *RelayInfo) json.RawMessage {
@@ -122,6 +146,38 @@ func FreeformToolsToFunctions(tools json.RawMessage, info *RelayInfo) json.RawMe
 		return tools
 	}
 	info.RecordFreeformTools(names)
+	return out
+}
+
+// DropToolsUpstreamCannotParse removes tool declarations that make an upstream
+// refuse the whole request rather than ignore the tool it cannot serve.
+//
+// Codex declares a `namespace` tool alongside its functions, and DeepSeek answers
+// the request with "Failed to deserialize the JSON body into the target type:
+// tools[10]" — the caller loses the turn over a tool no third-party backend was
+// ever going to implement. Measured across the upstreams here, `namespace` is the
+// only type that does this: web_search and tool_search are accepted by all of
+// them, so they stay, since dropping a tool an upstream would have honoured costs
+// the caller a capability.
+func DropToolsUpstreamCannotParse(tools json.RawMessage) json.RawMessage {
+	items, ok := jsonArray(tools)
+	if !ok {
+		return tools
+	}
+
+	out := tools
+	// Removing shifts every later index, so the list is walked from the back.
+	list := items.Array()
+	for i := len(list) - 1; i >= 0; i-- {
+		if list[i].Get("type").String() != "namespace" {
+			continue
+		}
+		next, err := sjson.DeleteBytes(out, strconv.Itoa(i))
+		if err != nil {
+			return tools
+		}
+		out = next
+	}
 	return out
 }
 

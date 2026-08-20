@@ -153,3 +153,28 @@ func TestArgumentsThatIgnoreTheSchemaSurviveAsInput(t *testing.T) {
 	require.Equal(t, "custom_tool_call", gjson.GetBytes(got, "output.0.type").String())
 	assert.JSONEq(t, `{"cmd":"ls /tmp"}`, gjson.GetBytes(got, "output.0.input").String())
 }
+
+// DeepSeek answers a request carrying Codex's namespace tool with "Failed to
+// deserialize the JSON body into the target type: tools[10]", which costs the
+// caller the whole turn over a tool no third-party backend implements.
+func TestToolsAnUpstreamCannotParseAreLeftOut(t *testing.T) {
+	tools := json.RawMessage(`[
+		{"type":"function","name":"exec_command","parameters":{"type":"object"}},
+		{"type":"namespace","name":"codex_app"},
+		{"type":"web_search"},
+		{"type":"tool_search"}
+	]`)
+
+	got := gjson.ParseBytes(DropToolsUpstreamCannotParse(tools))
+
+	require.Equal(t, 3, len(got.Array()))
+	assert.Equal(t, "exec_command", got.Get("0.name").String())
+	assert.Equal(t, "web_search", got.Get("1.type").String(),
+		"every upstream measured here accepts it, so taking it away only costs the caller")
+	assert.Equal(t, "tool_search", got.Get("2.type").String())
+}
+
+func TestToolsWithoutANamespaceAreUntouched(t *testing.T) {
+	tools := json.RawMessage(`[{"type":"function","name":"lookup","parameters":{"type":"object"}}]`)
+	assert.JSONEq(t, string(tools), string(DropToolsUpstreamCannotParse(tools)))
+}
