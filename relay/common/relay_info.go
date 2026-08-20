@@ -81,6 +81,10 @@ type TokenCountMeta struct {
 }
 
 type RelayInfo struct {
+	// FreeformTools names the tools the caller declared as the Responses-native
+	// `custom` type; see freeform_tools.go for why they travel upstream as
+	// ordinary functions.
+	FreeformTools     map[string]bool
 	TokenId           int
 	TokenKey          string
 	TokenGroup        string

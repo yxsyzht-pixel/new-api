@@ -57,6 +57,7 @@ func OaiChatToResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
 	}
+	responseBody = relaycommon.FreeformResponseToCustom(responseBody, info)
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 	return usage, nil
@@ -78,13 +79,15 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	}
 	streamErr := (*types.NewAPIError)(nil)
 
+	freeform := relaycommon.NewFreeformStreamState()
 	sendEvent := func(event relayconvert.ChatToResponsesStreamEvent) bool {
 		data, err := common.Marshal(event.Payload)
 		if err != nil {
 			streamErr = types.NewOpenAIError(err, types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
 			return false
 		}
-		helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: event.Type}, string(data))
+		eventType, payload := relaycommon.FreeformEventToCustom(event.Type, string(data), info, freeform)
+		helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: eventType}, payload)
 		return true
 	}
 

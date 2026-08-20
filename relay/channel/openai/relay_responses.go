@@ -175,6 +175,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	}
 
 	// 写入新的 response body
+	responseBody = relaycommon.FreeformResponseToCustom(responseBody, info)
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	// compute usage
@@ -231,6 +232,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	var upstreamStreamErr *types.NewAPIError
 	contentStarted := false
 	terminalSent := false
+	freeform := relaycommon.NewFreeformStreamState()
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
@@ -277,6 +279,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		if !responsesStreamTypeIsPreamble(streamResponse.Type) {
 			contentStarted = true
 		}
+		streamResponse.Type, data = relaycommon.FreeformEventToCustom(streamResponse.Type, data, info, freeform)
 		sendResponsesStreamData(c, streamResponse, data)
 		switch streamResponse.Type {
 		case "response.completed", "response.done":

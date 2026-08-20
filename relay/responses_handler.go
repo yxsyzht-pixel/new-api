@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -72,6 +73,15 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	// prefix still replay the old ones, and a Responses backend rejects the whole
 	// request over a single one. Switching models mid-conversation is what replays them.
 	request.Input = relayconvert.RepairResponsesInputItemIDs(request.Input)
+
+	// Only the Codex backend takes a Responses `custom` tool; everywhere else it
+	// costs the caller the tool entirely. Sending it as a function gets it used,
+	// and the reply is turned back before the caller sees it — see
+	// relay/common/freeform_tools.go.
+	if info.ChannelType != constant.ChannelTypeCodex {
+		request.Tools = relaycommon.FreeformToolsToFunctions(request.Tools, info)
+		request.Input = relaycommon.FreeformInputToFunctions(request.Input, info)
+	}
 
 	err = helper.ModelMappedHelper(c, info, request)
 	if err != nil {
