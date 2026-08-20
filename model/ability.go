@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -60,90 +61,101 @@ func GetAllEnableAbilities() []Ability {
 	return abilities
 }
 
-func getPriority(group string, model string, retry int) (int, error) {
-
-	var priorities []int
-	err := DB.Model(&Ability{}).
-		Select("DISTINCT(priority)").
-		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
-		Order("priority DESC").              // 按优先级降序排序
-		Pluck("priority", &priorities).Error // Pluck用于将查询的结果直接扫描到一个切片中
-
-	if err != nil {
-		// 处理错误
-		return 0, err
+// abilityPriority reads a candidate's tier. The column is nullable, and a row
+// without one sorts as the lowest tier rather than crashing the selection.
+func abilityPriority(ability Ability) int {
+	if ability.Priority == nil {
+		return 0
 	}
-
-	if len(priorities) == 0 {
-		// 如果没有查询到优先级，则返回错误
-		return 0, errors.New("数据库一致性被破坏")
-	}
-
-	// 确定要使用的优先级
-	var priorityToUse int
-	if retry >= len(priorities) {
-		// 如果重试次数大于优先级数，则使用最小的优先级
-		priorityToUse = priorities[len(priorities)-1]
-	} else {
-		priorityToUse = priorities[retry]
-	}
-	return priorityToUse, nil
+	return int(*ability.Priority)
 }
 
-func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
-	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
-	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
-	if retry != 0 {
-		priority, err := getPriority(group, model, retry)
-		if err != nil {
-			return nil, err
-		} else {
-			channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority)
+// priorityTiers returns the distinct priorities present in abilities, highest
+// first. The retry counter indexes into this list, so a tier that holds no
+// candidate never gets a turn.
+func priorityTiers(abilities []Ability) []int {
+	seen := make(map[int]bool, len(abilities))
+	tiers := make([]int, 0, len(abilities))
+	for _, ability := range abilities {
+		priority := abilityPriority(ability)
+		if !seen[priority] {
+			seen[priority] = true
+			tiers = append(tiers, priority)
 		}
 	}
-
-	return channelQuery, nil
+	sort.Sort(sort.Reverse(sort.IntSlice(tiers)))
+	return tiers
 }
 
+// abilitiesAtPriority narrows candidates to one tier.
+func abilitiesAtPriority(abilities []Ability, priority int) []Ability {
+	tier := make([]Ability, 0, len(abilities))
+	for _, ability := range abilities {
+		if abilityPriority(ability) == priority {
+			tier = append(tier, ability)
+		}
+	}
+	return tier
+}
+
+// pickWeightedAbility chooses one candidate, weighted. The +10 floor gives a
+// zero-weight channel a share rather than excluding it outright.
+func pickWeightedAbility(abilities []Ability) (Ability, bool) {
+	if len(abilities) == 0 {
+		return Ability{}, false
+	}
+	weightSum := uint(0)
+	for _, ability := range abilities {
+		weightSum += ability.Weight + 10
+	}
+	weight := common.GetRandomInt(int(weightSum))
+	for _, ability := range abilities {
+		weight -= int(ability.Weight) + 10
+		if weight <= 0 {
+			return ability, true
+		}
+	}
+	return abilities[len(abilities)-1], true
+}
+
+// GetChannel picks the channel that serves this model for the given retry.
+//
+// Parked channels are removed before the priority tiers are worked out, not
+// after. Doing it the other way round pins every retry to whichever tier the
+// counter lands on, and if that tier is entirely parked the fallback inside
+// dropSuspendedAbilities hands those same parked channels straight back: a
+// caller with two exhausted accounts on the lower tier retried into them five
+// times running while five healthy accounts on the upper tier sat idle. Tiers
+// derived from the survivors cannot name a tier that has nothing left to give,
+// which is how the in-memory path has always done it.
 func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
 	var abilities []Ability
+	err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
+		Order("weight DESC").Find(&abilities).Error
+	if err != nil {
+		return nil, err
+	}
 
-	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry)
-	if err != nil {
-		return nil, err
-	}
-	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	} else {
-		err = channelQuery.Order("weight DESC").Find(&abilities).Error
-	}
-	if err != nil {
-		return nil, err
-	}
 	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
 	abilities = dropSuspendedAbilities(abilities)
-	channel := Channel{}
-	if len(abilities) > 0 {
-		// Randomly choose one
-		weightSum := uint(0)
-		for _, ability_ := range abilities {
-			weightSum += ability_.Weight + 10
-		}
-		// Randomly choose one
-		weight := common.GetRandomInt(int(weightSum))
-		for _, ability_ := range abilities {
-			weight -= int(ability_.Weight) + 10
-			//log.Printf("weight: %d, ability weight: %d", weight, *ability_.Weight)
-			if weight <= 0 {
-				channel.Id = ability_.ChannelId
-				break
-			}
-		}
-	} else {
+	if len(abilities) == 0 {
 		return nil, nil
 	}
-	err = DB.First(&channel, "id = ?", channel.Id).Error
+
+	tiers := priorityTiers(abilities)
+	if retry >= len(tiers) {
+		retry = len(tiers) - 1
+	}
+	if retry < 0 {
+		retry = 0
+	}
+	chosen, ok := pickWeightedAbility(abilitiesAtPriority(abilities, tiers[retry]))
+	if !ok {
+		return nil, nil
+	}
+
+	channel := Channel{}
+	err = DB.First(&channel, "id = ?", chosen.ChannelId).Error
 	return &channel, err
 }
 
