@@ -78,10 +78,22 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	// costs the caller the tool entirely. Sending it as a function gets it used,
 	// and the reply is turned back before the caller sees it — see
 	// relay/common/freeform_tools.go.
-	if shapes := relaycommon.ToolShapeSummary(request.Tools); shapes != "" {
-		logger.LogInfo(c, "responses tools declared: "+shapes)
-	}
 	if info.ChannelType != constant.ChannelTypeCodex {
+		// What the caller declared, by type and name only — never a description, a
+		// schema, or anything the caller wrote. A turn that comes back without the
+		// tool call it should have made looks identical whether the client never
+		// offered the tool or the gateway mishandled it, and the two have nothing
+		// in common to fix; this line is what tells them apart.
+		shapes := relaycommon.ToolShapeSummary(request.Tools)
+		if shapes == "" {
+			shapes = "none"
+		}
+		kind := "turn"
+		if info.RelayMode == relayconstant.RelayModeResponsesCompact {
+			kind = "compaction"
+		}
+		logger.LogInfo(c, fmt.Sprintf("responses %s for %s: tools %s", kind, info.OriginModelName, shapes))
+
 		request.Tools = relaycommon.DropToolsUpstreamCannotParse(request.Tools)
 		request.Tools = relaycommon.FreeformToolsToFunctions(request.Tools, info)
 		request.Input = relaycommon.FreeformInputToFunctions(request.Input, info)
