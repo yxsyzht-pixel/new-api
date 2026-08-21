@@ -381,7 +381,15 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	// serving; only the affinity binding is released, otherwise the rule's
 	// skip-retry setting would hand the caller a failure that another account
 	// could have served.
-	if service.SuspendChannelOnUsageLimit(channelError, err) || service.IsUpstreamTransientFailure(err) {
+	// A burst rate limit belongs here too. The affinity rule keeps a session on one
+	// account so it keeps its prompt cache, and refuses to retry elsewhere when that
+	// account fails — sound while the account is merely busy, wrong when it has just
+	// told us to slow down: a sibling account can serve the turn this second, and
+	// without releasing the binding the caller gets the 429 with no retry attempted
+	// at all. Losing one turn's prompt cache beats losing the turn.
+	if service.SuspendChannelOnUsageLimit(channelError, err) ||
+		service.IsUpstreamTransientFailure(err) ||
+		service.IsUpstreamRateLimited(err) {
 		service.ClearCurrentChannelAffinityCache(c)
 	}
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况

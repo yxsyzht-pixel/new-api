@@ -119,6 +119,18 @@ func IsUpstreamTransientFailure(err *types.NewAPIError) bool {
 	return err.StatusCode >= http.StatusInternalServerError && err.StatusCode <= 599
 }
 
+// IsUpstreamRateLimited reports whether the upstream refused this request for
+// sending too many too quickly, rather than for running out of quota. Both
+// arrive as 429 and they call for opposite handling: a burst limit clears in
+// seconds and a sibling account can serve the request right now, while an
+// exhausted quota is worth parking the channel over.
+func IsUpstreamRateLimited(err *types.NewAPIError) bool {
+	if err == nil || err.StatusCode != http.StatusTooManyRequests {
+		return false
+	}
+	return !IsUpstreamUsageLimitError(err)
+}
+
 // SuspendChannelOnUsageLimit parks a channel that just reported an upstream usage
 // limit and reports whether it did so. Selection then skips the channel until the
 // cooldown lapses, and the next request lands on a sibling account instead of
