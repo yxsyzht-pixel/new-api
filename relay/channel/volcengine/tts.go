@@ -245,7 +245,6 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 
 	contentType := getContentTypeByEncoding(encoding)
 	c.Header("Content-Type", contentType)
-	c.Header("Transfer-Encoding", "chunked")
 
 	for {
 		msg, recvErr := ReceiveMessage(conn)

@@ -54,7 +54,12 @@ func SetEventStreamHeaders(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("Transfer-Encoding", "chunked")
+	// Transfer-Encoding is left to net/http. It picks chunked by itself for an
+	// HTTP/1.1 reply that carries no Content-Length, and HTTP/2 has no such header
+	// at all. Naming it here only creates a contradiction when a later write does
+	// set a length — an error the stream never got to start, say — which the
+	// standard library reports as "WriteHeader called with both Transfer-Encoding
+	// of \"chunked\" and a Content-Length": 8699 times over five days here.
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 }
 
