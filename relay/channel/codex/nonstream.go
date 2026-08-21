@@ -99,6 +99,38 @@ func handleResponsesAsNonStream(c *gin.Context, info *relaycommon.RelayInfo, res
 	return codexResponsesUsage(info, body), nil
 }
 
+// addImageToolUsage folds in what drawing the picture cost.
+//
+// The backend reports a turn's text under response.usage and everything the
+// image tool spent under response.tool_usage.image_gen — a separate block with
+// its own input and output counts. Reading only the first bills a caller for the
+// prose around the picture and nothing for the picture: 186 output tokens went
+// uncounted on a plain 1024x1024, and the gap widens with size and quality.
+//
+// Input is split so each half lands on the rate it is priced at: image tokens
+// are charged through ImageRatio, text through the model's own. Output carries
+// one rate whatever it holds, so it needs no split.
+func addImageToolUsage(usage *dto.Usage, envelope string) {
+	node := gjson.Get(envelope, "tool_usage.image_gen")
+	if !node.Exists() {
+		return
+	}
+
+	imageIn := int(node.Get("input_tokens_details.image_tokens").Int())
+	textIn := int(node.Get("input_tokens_details.text_tokens").Int())
+	if imageIn == 0 && textIn == 0 {
+		// Older shapes report only the total, which is charged as text rather
+		// than silently dropped.
+		textIn = int(node.Get("input_tokens").Int())
+	}
+	out := int(node.Get("output_tokens").Int())
+
+	usage.PromptTokens += imageIn + textIn
+	usage.PromptTokensDetails.ImageTokens += imageIn
+	usage.CompletionTokens += out
+	usage.TotalTokens += imageIn + textIn + out
+}
+
 // codexResponsesUsage reads what the turn cost out of the assembled document and
 // counts the billable tool calls it performed, matching what the non-streaming
 // handler records for an ordinary OpenAI response.
@@ -111,6 +143,8 @@ func codexResponsesUsage(info *relaycommon.RelayInfo, body []byte) *dto.Usage {
 		usage.PromptTokensDetails.CachedTokens = int(node.Get("input_tokens_details.cached_tokens").Int())
 		usage.PromptTokensDetails.CacheWriteTokens = int(node.Get("input_tokens_details.cache_write_tokens").Int())
 	}
+
+	addImageToolUsage(usage, string(body))
 
 	// The helper reads the raw JSON value, not the decoded string.
 	billable := !relaycommon.IsNonBillableResponsesStatus([]byte(gjson.GetBytes(body, "status").Raw))

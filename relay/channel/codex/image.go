@@ -264,6 +264,7 @@ func handleImageGenerationResponse(c *gin.Context, info *relaycommon.RelayInfo, 
 				usage.CompletionTokens = int(node.Get("output_tokens").Int())
 				usage.TotalTokens = int(node.Get("total_tokens").Int())
 			}
+			addImageToolUsage(usage, gjson.Get(data, "response").Raw)
 		}
 	}
 	if err := scanner.Err(); err != nil {
