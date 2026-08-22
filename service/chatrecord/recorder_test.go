@@ -7,24 +7,37 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
+// stubWriter stands in for a started writer whose workers are stuck on a slow
+// database, so Submit's behaviour can be checked without one.
+func stubWriter(t *testing.T, dsn string, capacity int) *writer {
+	t.Helper()
+	running := &writer{dsn: dsn, queue: make(chan Turn, capacity), totals: &shared.totals}
+	shared.current.Store(running)
+	t.Cleanup(func() { shared.current.Store(nil) })
+
+	shared.totals = totals{}
+	running.totals = &shared.totals
+	return running
+}
+
+func enableRecording(t *testing.T, dsn string) *operation_setting.ChatRecordSetting {
+	t.Helper()
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := *cfg
+	t.Cleanup(func() { *cfg = previous })
+
+	cfg.Enabled = true
+	cfg.DSN = dsn
+	cfg.Host = ""
+	return cfg
+}
+
 // The gateway must be able to outrun its own transcript store. A full queue is
 // the case that matters: it has to drop, not wait.
 func TestSubmitDropsWhenQueueIsFullInsteadOfBlocking(t *testing.T) {
-	cfg := operation_setting.GetChatRecordSetting()
-	prevEnabled, prevDSN := cfg.Enabled, cfg.DSN
-	t.Cleanup(func() {
-		cfg.Enabled, cfg.DSN = prevEnabled, prevDSN
-		shared.current.Store(nil)
-		shared.Dropped.Store(0)
-		shared.Enqueued.Store(0)
-	})
-
-	cfg.Enabled = true
-	cfg.DSN = "postgres://user:pw@127.0.0.1:1/none"
-	// Stand in for a started writer whose workers are stuck on a slow database.
-	shared.current.Store(&live{dsn: cfg.DSN, queue: make(chan Turn, 1)})
-	shared.Dropped.Store(0)
-	shared.Enqueued.Store(0)
+	const dsn = "postgres://user:pw@127.0.0.1:1/none"
+	enableRecording(t, dsn)
+	stubWriter(t, dsn, 1)
 
 	done := make(chan struct{})
 	go func() {
@@ -40,10 +53,10 @@ func TestSubmitDropsWhenQueueIsFullInsteadOfBlocking(t *testing.T) {
 		t.Fatal("Submit blocked on a full queue; the relay would have waited on it")
 	}
 
-	if got := shared.Enqueued.Load(); got != 1 {
+	if got := shared.totals.Enqueued.Load(); got != 1 {
 		t.Fatalf("enqueued = %d, want 1 (the queue holds one)", got)
 	}
-	if got := shared.Dropped.Load(); got != 99 {
+	if got := shared.totals.Dropped.Load(); got != 99 {
 		t.Fatalf("dropped = %d, want 99", got)
 	}
 }
@@ -51,8 +64,8 @@ func TestSubmitDropsWhenQueueIsFullInsteadOfBlocking(t *testing.T) {
 // Disabled, the recorder must not so much as open a pool.
 func TestSubmitIsInertWhenDisabled(t *testing.T) {
 	cfg := operation_setting.GetChatRecordSetting()
-	prevEnabled := cfg.Enabled
-	t.Cleanup(func() { cfg.Enabled = prevEnabled })
+	previous := *cfg
+	t.Cleanup(func() { *cfg = previous; shared.current.Store(nil) })
 
 	cfg.Enabled = false
 	shared.current.Store(nil)
@@ -67,25 +80,10 @@ func TestSubmitIsInertWhenDisabled(t *testing.T) {
 // bytes, and those bytes are invisible to the gateway's own buffer accounting.
 // Past the budget, turns must be refused even though the queue has room.
 func TestSubmitStopsAtTheByteBudgetWhileSlotsRemain(t *testing.T) {
-	cfg := operation_setting.GetChatRecordSetting()
-	prevEnabled, prevDSN, prevBytes := cfg.Enabled, cfg.DSN, cfg.MaxQueuedBytes
-	t.Cleanup(func() {
-		cfg.Enabled, cfg.DSN, cfg.MaxQueuedBytes = prevEnabled, prevDSN, prevBytes
-		shared.current.Store(nil)
-		shared.QueuedBytes.Store(0)
-		shared.Dropped.Store(0)
-		shared.Enqueued.Store(0)
-	})
-
-	cfg.Enabled = true
-	cfg.DSN = "postgres://user:pw@127.0.0.1:1/none"
+	const dsn = "postgres://user:pw@127.0.0.1:1/none"
+	cfg := enableRecording(t, dsn)
 	cfg.MaxQueuedBytes = 10000
-
-	// Plenty of slots, so only the byte budget can stop anything.
-	shared.current.Store(&live{dsn: cfg.DSN, queue: make(chan Turn, 1000)})
-	shared.QueuedBytes.Store(0)
-	shared.Dropped.Store(0)
-	shared.Enqueued.Store(0)
+	running := stubWriter(t, dsn, 1000) // plenty of slots
 
 	body := make([]byte, 4000)
 	for i := 0; i < 10; i++ {
@@ -93,13 +91,52 @@ func TestSubmitStopsAtTheByteBudgetWhileSlotsRemain(t *testing.T) {
 	}
 
 	// Each turn is 8000 bytes, so the second one already exceeds 10000.
-	if got := shared.Enqueued.Load(); got != 1 {
+	if got := shared.totals.Enqueued.Load(); got != 1 {
 		t.Fatalf("enqueued = %d, want 1 before the budget stopped it", got)
 	}
-	if got := shared.QueuedBytes.Load(); got != 8000 {
-		t.Fatalf("queued_bytes = %d, want 8000", got)
+	if got := running.held.Load(); got != 8000 {
+		t.Fatalf("held = %d, want 8000", got)
 	}
-	if got := shared.Dropped.Load(); got != 9 {
+	if got := shared.totals.Dropped.Load(); got != 9 {
 		t.Fatalf("dropped = %d, want 9", got)
+	}
+}
+
+// Repointing the recorder retires the old writer whole. Its workers may still
+// be finishing turns; their bookkeeping must not be able to reach the new
+// writer's budget, which would leave the memory guard permanently permissive.
+func TestRetiringAWriterDoesNotCorruptTheNewOnesBudget(t *testing.T) {
+	const oldDSN = "postgres://user:pw@127.0.0.1:1/old"
+	cfg := enableRecording(t, oldDSN)
+	cfg.MaxQueuedBytes = 10000
+
+	old := stubWriter(t, oldDSN, 10)
+	body := make([]byte, 4000)
+	Submit(Turn{RequestID: "r", RequestBody: body})
+	if got := old.held.Load(); got != 4000 {
+		t.Fatalf("held = %d, want 4000", got)
+	}
+
+	// The operator points the recorder somewhere else.
+	shared.mu.Lock()
+	shared.stopLocked()
+	shared.mu.Unlock()
+
+	const newDSN = "postgres://user:pw@127.0.0.1:1/new"
+	cfg.DSN = newDSN
+	fresh := stubWriter(t, newDSN, 10)
+
+	// The retired worker finishes the turn it was holding.
+	old.held.Add(-4000)
+
+	if got := fresh.held.Load(); got != 0 {
+		t.Fatalf("the new writer starts at %d bytes, want 0", got)
+	}
+	Submit(Turn{RequestID: "r", RequestBody: body})
+	if got := fresh.held.Load(); got != 4000 {
+		t.Fatalf("held = %d after one turn, want 4000", got)
+	}
+	if got := fresh.held.Load(); got < 0 {
+		t.Fatalf("held went negative (%d); the budget check would let anything through", got)
 	}
 }

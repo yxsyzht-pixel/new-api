@@ -1,10 +1,12 @@
 package chatrecord
 
 import (
+	"bytes"
 	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -152,5 +154,88 @@ func TestResolveStoredPathRefusesEscapes(t *testing.T) {
 		if _, err := ResolveStoredPath(bad); err == nil {
 			t.Errorf("ResolveStoredPath(%q) was allowed out of the root", bad)
 		}
+	}
+}
+
+// Two workers can be storing the same picture at the same moment while the
+// serving endpoint reads it. A reader must see the whole file or nothing.
+func TestConcurrentSavesLeaveOneCompleteFile(t *testing.T) {
+	root := t.TempDir()
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := cfg.FileRoot
+	cfg.FileRoot = root
+	t.Cleanup(func() { cfg.FileRoot = previous })
+
+	when := time.Date(2026, 8, 22, 10, 0, 0, 0, time.UTC)
+	payload := make([]byte, 512*1024)
+	for i := range payload {
+		payload[i] = byte(i)
+	}
+	attachment := Attachment{Kind: "image", MediaType: "image/png", Data: payload}
+
+	var wg sync.WaitGroup
+	paths := make([]string, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(slot int) {
+			defer wg.Done()
+			if stored := SaveAttachments("A1024", when, []Attachment{attachment}); len(stored) == 1 {
+				paths[slot] = stored[slot*0].Path
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	for i, path := range paths {
+		if path == "" {
+			t.Fatalf("worker %d stored nothing", i)
+		}
+		if path != paths[0] {
+			t.Fatalf("worker %d wrote to %q, worker 0 to %q", i, path, paths[0])
+		}
+	}
+
+	// Exactly one file, complete, and no temporary left behind.
+	dir := filepath.Join(root, "A1024", "2026-08-22")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("%d files left in the folder: %v", len(entries), names)
+	}
+	onDisk, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(onDisk, payload) {
+		t.Fatalf("the stored file is %d bytes, want %d", len(onDisk), len(payload))
+	}
+}
+
+// A turn replays the whole conversation. Walking all of it would decode and
+// re-record every picture ever sent, once per turn — a fifty-turn conversation
+// with one image would write fifty rows pointing at the same file.
+func TestOnlyTheNewestMessagesAttachmentsAreTaken(t *testing.T) {
+	old := "data:image/png;base64," + onePixelPNG
+	// A different picture, so the two are distinguishable.
+	other := "data:image/gif;base64," + onePixelPNG
+
+	body := `{"messages":[
+	  {"role":"user","content":[{"type":"image_url","image_url":{"url":"` + old + `"}}]},
+	  {"role":"assistant","content":"got it"},
+	  {"role":"user","content":[{"type":"image_url","image_url":{"url":"` + other + `"}}]}
+	]}`
+
+	found := ExtractAttachments([]byte(body), 1<<20)
+	if len(found) != 1 {
+		t.Fatalf("found %d attachments, want only the newest message's", len(found))
+	}
+	if found[0].MediaType != "image/gif" {
+		t.Errorf("media type = %q, want the newest message's image/gif", found[0].MediaType)
 	}
 }

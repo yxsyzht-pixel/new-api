@@ -20,37 +20,23 @@ func UserMessage(body []byte) string {
 		return ""
 	}
 
-	// Responses: input is either a bare string or a list of items.
-	if input := gjson.GetBytes(body, "input"); input.Exists() {
-		if input.Type == gjson.String {
-			return input.String()
-		}
-		if input.IsArray() {
-			items := input.Array()
-			for i := len(items) - 1; i >= 0; i-- {
-				item := items[i]
-				if item.Get("role").String() != "user" {
-					continue
-				}
-				if text := textFromContent(item.Get("content")); text != "" {
-					return text
-				}
-			}
-		}
+	// Responses also accepts a bare string instead of a list.
+	if input := gjson.GetBytes(body, "input"); input.Exists() && input.Type == gjson.String {
+		return input.String()
 	}
 
-	// Chat Completions and Claude Messages both carry a messages list.
-	if messages := gjson.GetBytes(body, "messages"); messages.IsArray() {
-		items := messages.Array()
-		for i := len(items) - 1; i >= 0; i-- {
-			item := items[i]
-			if item.Get("role").String() != "user" {
-				continue
-			}
-			if text := textFromContent(item.Get("content")); text != "" {
-				return text
-			}
+	// The newest message usually carries the text. An image-only message does
+	// not, so keep walking back until something says anything.
+	var found string
+	eachUserContentNewestFirst(body, func(content gjson.Result) bool {
+		if text := textFromContent(content); text != "" {
+			found = text
+			return false
 		}
+		return true
+	})
+	if found != "" {
+		return found
 	}
 
 	// Images and audio name the caller's ask differently.
@@ -60,6 +46,31 @@ func UserMessage(body []byte) string {
 		}
 	}
 	return ""
+}
+
+// eachUserContentNewestFirst walks the user messages of a request, newest
+// first, whichever protocol carried them, and stops as soon as fn says so.
+// Responses calls the list "input"; Chat Completions and Claude Messages both
+// call it "messages".
+func eachUserContentNewestFirst(body []byte, fn func(content gjson.Result) bool) {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return
+	}
+	for _, path := range []string{"input", "messages"} {
+		items := gjson.GetBytes(body, path)
+		if !items.IsArray() {
+			continue
+		}
+		list := items.Array()
+		for i := len(list) - 1; i >= 0; i-- {
+			if list[i].Get("role").String() != "user" {
+				continue
+			}
+			if !fn(list[i].Get("content")) {
+				return
+			}
+		}
+	}
 }
 
 // textFromContent flattens the several shapes a message body takes: a plain

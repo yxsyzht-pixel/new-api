@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -52,34 +53,41 @@ func dsnFromRequest(c *gin.Context) string {
 	return candidate.ResolvedDSN()
 }
 
+// runOnConnection is the shape both buttons share: resolve the address, refuse
+// an empty one, do the thing, and answer in the same voice either way.
+func runOnConnection(c *gin.Context, done string, action func(dsn string) error) {
+	dsn := dsnFromRequest(c)
+	if dsn == "" {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请先填写数据库主机、库名和用户名"})
+		return
+	}
+	if err := action(dsn); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": done})
+}
+
 // InitChatRecordSchema creates the transcript tables in the operator's own
 // database. It is deliberately a button rather than a migration: the gateway
 // does not own that database and must not reach into it uninvited.
 func InitChatRecordSchema(c *gin.Context) {
-	dsn := dsnFromRequest(c)
-	if dsn == "" {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请先填写数据库主机、库名和用户名"})
-		return
-	}
-	if err := chatrecord.InitSchema(dsn); err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "初始化失败：" + err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "数据库和表结构已就绪"})
+	runOnConnection(c, "数据库和表结构已就绪", func(dsn string) error {
+		if err := chatrecord.InitSchema(dsn); err != nil {
+			return fmt.Errorf("初始化失败：%w", err)
+		}
+		return nil
+	})
 }
 
 // TestChatRecordConnection answers whether the address works, changing nothing.
 func TestChatRecordConnection(c *gin.Context) {
-	dsn := dsnFromRequest(c)
-	if dsn == "" {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请先填写数据库主机、库名和用户名"})
-		return
-	}
-	if err := chatrecord.TestConnection(dsn); err != nil {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "连接失败：" + err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "连接正常"})
+	runOnConnection(c, "连接正常", func(dsn string) error {
+		if err := chatrecord.TestConnection(dsn); err != nil {
+			return fmt.Errorf("连接失败：%w", err)
+		}
+		return nil
+	})
 }
 
 // GetChatRecordStatus reports what the writer has managed, so an operator can

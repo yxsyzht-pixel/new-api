@@ -3,8 +3,8 @@ package chatrecord
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -66,6 +66,14 @@ INSERT INTO chat_record_files
   (record_id, staff_id, kind, media_type, file_name, file_size, sha256, path, source_url, created_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
 
+// fileListStatement pages through attachments. An empty staff id means every
+// one of them, so the caller does not have to build two queries.
+const fileListStatement = `
+SELECT id, record_id, staff_id, kind, media_type, file_name, file_size, path, source_url, created_at
+FROM chat_record_files
+WHERE ($1 = '' OR staff_id = $1)
+ORDER BY id DESC LIMIT $2 OFFSET $3`
+
 // fileLookupStatement finds one stored attachment for the serving endpoint.
 const fileLookupStatement = `
 SELECT path, media_type, file_name, file_size, source_url
@@ -91,36 +99,96 @@ func newPool(dsn string) (*pgxpool.Pool, error) {
 	return pgxpool.NewWithConfig(ctx, cfg)
 }
 
-// InitSchema creates the table and its indexes, and reports whether the address
-// works at all — which is the question the operator is really asking when they
-// press the button.
-func InitSchema(dsn string) error {
+// Two kinds of caller need a connection, and they want opposite things. The
+// settings page tests an address that may not even be saved yet, so it gets a
+// pool that is thrown away afterwards. The pages that read transcripts back use
+// the saved address over and over — a gallery of fifty attachments would open
+// fifty pools — so those share one.
+
+// withTempPool runs fn against a pool opened just for this call.
+func withTempPool(dsn string, timeout time.Duration, fn func(context.Context, *pgxpool.Pool) error) error {
 	pool, err := newPool(dsn)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	if err := pool.Ping(ctx); err != nil {
+	return fn(ctx, pool)
+}
+
+// readers is the shared pool for reading transcripts back, rebuilt when the
+// operator points the recorder at a different database.
+var readers struct {
+	mu   sync.Mutex
+	dsn  string
+	pool *pgxpool.Pool
+}
+
+// withReadPool runs fn against the shared read pool.
+func withReadPool(dsn string, timeout time.Duration, fn func(context.Context, *pgxpool.Pool) error) error {
+	pool, retired, err := sharedReadPool(dsn)
+	if err != nil {
 		return err
 	}
-	_, err = pool.Exec(ctx, createSchema)
-	return err
+	// Close waits for queries already in flight, so retiring the previous pool
+	// cannot cut one off.
+	if retired != nil {
+		retired.Close()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return fn(ctx, pool)
+}
+
+// sharedReadPool hands back the pool for dsn, plus any pool it displaced for
+// the caller to close outside the lock.
+func sharedReadPool(dsn string) (pool, retired *pgxpool.Pool, err error) {
+	readers.mu.Lock()
+	defer readers.mu.Unlock()
+
+	if readers.pool != nil && readers.dsn == dsn {
+		return readers.pool, nil, nil
+	}
+	fresh, err := newPool(dsn)
+	if err != nil {
+		return nil, nil, err
+	}
+	retired, readers.pool, readers.dsn = readers.pool, fresh, dsn
+	return fresh, retired, nil
+}
+
+// CloseReadPool releases the shared read pool.
+func CloseReadPool() {
+	readers.mu.Lock()
+	pool := readers.pool
+	readers.pool, readers.dsn = nil, ""
+	readers.mu.Unlock()
+	if pool != nil {
+		pool.Close()
+	}
+}
+
+// InitSchema creates the tables and their indexes, and reports whether the
+// address works at all — which is the question the operator is really asking
+// when they press the button.
+func InitSchema(dsn string) error {
+	return withTempPool(dsn, 30*time.Second, func(ctx context.Context, pool *pgxpool.Pool) error {
+		if err := pool.Ping(ctx); err != nil {
+			return err
+		}
+		_, err := pool.Exec(ctx, createSchema)
+		return err
+	})
 }
 
 // TestConnection checks the address without changing anything.
 func TestConnection(dsn string) error {
-	pool, err := newPool(dsn)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	return pool.Ping(ctx)
+	return withTempPool(dsn, 15*time.Second, func(ctx context.Context, pool *pgxpool.Pool) error {
+		return pool.Ping(ctx)
+	})
 }
 
 // StoredFile is one attachment as the serving endpoint needs it.
@@ -132,72 +200,57 @@ type StoredFile struct {
 	SourceURL string
 }
 
-// LookupFile finds one attachment by id. It opens a short-lived pool rather
-// than borrowing the writer's: serving a file is a rare, human-paced request,
-// and it must not compete with the queue for connections.
+// LookupFile finds one attachment by id.
 func LookupFile(dsn string, id int64) (*StoredFile, error) {
-	pool, err := newPool(dsn)
-	if err != nil {
-		return nil, err
-	}
-	defer pool.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
 	var file StoredFile
-	err = pool.QueryRow(ctx, fileLookupStatement, id).Scan(
-		&file.Path, &file.MediaType, &file.FileName, &file.Size, &file.SourceURL)
+	err := withReadPool(dsn, 15*time.Second, func(ctx context.Context, pool *pgxpool.Pool) error {
+		return pool.QueryRow(ctx, fileLookupStatement, id).Scan(
+			&file.Path, &file.MediaType, &file.FileName, &file.Size, &file.SourceURL)
+	})
 	if err != nil {
 		return nil, err
 	}
 	return &file, nil
 }
 
+// FileListing is one attachment as the listing shows it.
+type FileListing struct {
+	ID        int64     `json:"id"`
+	RecordID  int64     `json:"record_id"`
+	StaffID   string    `json:"staff_id"`
+	Kind      string    `json:"kind"`
+	MediaType string    `json:"media_type"`
+	FileName  string    `json:"file_name"`
+	Size      int64     `json:"size"`
+	Path      string    `json:"path"`
+	SourceURL string    `json:"source_url"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // ListFiles returns a page of attachments, newest first, optionally limited to
 // one staff id.
-func ListFiles(dsn string, staffID string, limit, offset int) ([]map[string]any, error) {
-	pool, err := newPool(dsn)
-	if err != nil {
-		return nil, err
-	}
-	defer pool.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	query := `SELECT id, record_id, staff_id, kind, media_type, file_name, file_size, path, source_url, created_at
-	          FROM chat_record_files`
-	args := []any{}
-	if staffID != "" {
-		query += ` WHERE staff_id = $1`
-		args = append(args, staffID)
-	}
-	query += fmt.Sprintf(` ORDER BY id DESC LIMIT %d OFFSET %d`, limit, offset)
-
-	rows, err := pool.Query(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var items []map[string]any
-	for rows.Next() {
-		var (
-			id, recordID, size        int64
-			staff, kind, mediaType    string
-			fileName, path, sourceURL string
-			createdAt                 time.Time
-		)
-		if err := rows.Scan(&id, &recordID, &staff, &kind, &mediaType,
-			&fileName, &size, &path, &sourceURL, &createdAt); err != nil {
-			return nil, err
+func ListFiles(dsn string, staffID string, limit, offset int) ([]FileListing, error) {
+	var items []FileListing
+	err := withReadPool(dsn, 15*time.Second, func(ctx context.Context, pool *pgxpool.Pool) error {
+		rows, err := pool.Query(ctx, fileListStatement, staffID, limit, offset)
+		if err != nil {
+			return err
 		}
-		items = append(items, map[string]any{
-			"id": id, "record_id": recordID, "staff_id": staff, "kind": kind,
-			"media_type": mediaType, "file_name": fileName, "size": size,
-			"path": path, "source_url": sourceURL, "created_at": createdAt,
-		})
+		defer rows.Close()
+
+		for rows.Next() {
+			var item FileListing
+			if err := rows.Scan(&item.ID, &item.RecordID, &item.StaffID, &item.Kind,
+				&item.MediaType, &item.FileName, &item.Size, &item.Path,
+				&item.SourceURL, &item.CreatedAt); err != nil {
+				return err
+			}
+			items = append(items, item)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
-	return items, rows.Err()
+	return items, nil
 }

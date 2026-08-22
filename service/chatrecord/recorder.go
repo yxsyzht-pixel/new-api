@@ -33,26 +33,44 @@ type Turn struct {
 	ResponseBody []byte
 }
 
-// live is the running writer, published as a whole so Submit can reach the
-// queue with a single atomic load — no lock on the request path.
-type live struct {
-	dsn   string
-	queue chan Turn
+// size is what this turn will hold in memory while it waits to be written.
+func (t Turn) size() int64 {
+	return int64(len(t.RequestBody) + len(t.ResponseBody))
+}
+
+// writer is one running writer: a queue, the pool behind it, the workers
+// draining it, and the bytes those workers are holding. Everything about one
+// generation of the writer lives here so that repointing the recorder at a
+// different database discards the whole thing at once — including the byte
+// accounting, which would otherwise be left describing turns that belonged to
+// a queue nobody is draining any more.
+type writer struct {
+	dsn    string
+	queue  chan Turn
+	pool   *pgxpool.Pool
+	cancel context.CancelFunc
+
+	// held is the memory the queued turns are keeping alive. It is read on the
+	// request path, so it is atomic and it belongs to this writer alone.
+	held atomic.Int64
+
+	totals *totals
+}
+
+// totals outlive any one writer: an operator watching the status wants counts
+// since the gateway started, not since the last settings change.
+type totals struct {
+	Enqueued atomic.Int64
+	Dropped  atomic.Int64
+	Written  atomic.Int64
+	Failed   atomic.Int64
+	Files    atomic.Int64
 }
 
 type recorder struct {
 	mu      sync.Mutex
-	current atomic.Pointer[live]
-	pool    *pgxpool.Pool
-	cancel  context.CancelFunc
-	started bool
-
-	Enqueued    atomic.Int64
-	Dropped     atomic.Int64
-	Written     atomic.Int64
-	Failed      atomic.Int64
-	Files       atomic.Int64
-	QueuedBytes atomic.Int64
+	current atomic.Pointer[writer]
+	totals  totals
 }
 
 var shared = &recorder{}
@@ -67,16 +85,6 @@ func Submit(turn Turn) {
 		return
 	}
 
-	// Slots are not the real limit — bytes are. A queue of 4096 turns each
-	// holding a long conversation would be gigabytes of heap that the gateway's
-	// own buffer accounting can no longer see, and heap pressure is exactly the
-	// way a transcript store could end up slowing the relay down.
-	size := int64(len(turn.RequestBody) + len(turn.ResponseBody))
-	if shared.QueuedBytes.Load()+size > cfg.MaxQueuedBytesOrDefault() {
-		shared.Dropped.Add(1)
-		return
-	}
-
 	running := shared.current.Load()
 	if running == nil || running.dsn != dsn {
 		// First turn, or the operator repointed the recorder: pay for the lock
@@ -86,19 +94,34 @@ func Submit(turn Turn) {
 			return
 		}
 	}
+	running.submit(turn, cfg.MaxQueuedBytesOrDefault())
+}
+
+// submit is the whole request-path cost of recording: an atomic read, a
+// comparison, and a send that cannot block.
+func (w *writer) submit(turn Turn, budget int64) {
+	// Slots are not the real limit — bytes are. A queue of 4096 turns each
+	// holding a long conversation would be gigabytes of heap that the gateway's
+	// own buffer accounting can no longer see, and heap pressure is exactly the
+	// way a transcript store could end up slowing the relay down.
+	size := turn.size()
+	if w.held.Load()+size > budget {
+		w.totals.Dropped.Add(1)
+		return
+	}
 
 	select {
-	case running.queue <- turn:
-		shared.Enqueued.Add(1)
-		shared.QueuedBytes.Add(size)
+	case w.queue <- turn:
+		w.totals.Enqueued.Add(1)
+		w.held.Add(size)
 	default:
-		shared.Dropped.Add(1)
+		w.totals.Dropped.Add(1)
 	}
 }
 
 // ensureStarted brings the pool and workers up on first use, and rebuilds them
 // when the operator points the recorder at a different database.
-func (r *recorder) ensureStarted(cfg *operation_setting.ChatRecordSetting, dsn string) (*live, error) {
+func (r *recorder) ensureStarted(cfg *operation_setting.ChatRecordSetting, dsn string) (*writer, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -106,9 +129,7 @@ func (r *recorder) ensureStarted(cfg *operation_setting.ChatRecordSetting, dsn s
 	if running := r.current.Load(); running != nil && running.dsn == dsn {
 		return running, nil
 	}
-	if r.started {
-		r.stopLocked()
-	}
+	r.stopLocked()
 
 	pool, err := newPool(dsn)
 	if err != nil {
@@ -117,55 +138,65 @@ func (r *recorder) ensureStarted(cfg *operation_setting.ChatRecordSetting, dsn s
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	running := &live{dsn: dsn, queue: make(chan Turn, cfg.QueueSizeOrDefault())}
-	r.pool, r.cancel, r.started = pool, cancel, true
+	running := &writer{
+		dsn:    dsn,
+		queue:  make(chan Turn, cfg.QueueSizeOrDefault()),
+		pool:   pool,
+		cancel: cancel,
+		totals: &r.totals,
+	}
 	r.current.Store(running)
 
 	for i := 0; i < cfg.WorkersOrDefault(); i++ {
-		go r.work(ctx, running.queue, pool)
+		go running.work(ctx)
 	}
 	return running, nil
 }
 
+// stopLocked retires the running writer, if any. Its workers see a cancelled
+// context and stop; whatever was still queued is dropped along with the
+// accounting that described it.
 func (r *recorder) stopLocked() {
-	if r.cancel != nil {
-		r.cancel()
+	running := r.current.Swap(nil)
+	if running == nil {
+		return
 	}
-	if r.pool != nil {
-		r.pool.Close()
+	// Retiring a writer must never be the thing that takes the gateway down —
+	// it happens on a settings change, in a request's goroutine.
+	if running.cancel != nil {
+		running.cancel()
 	}
-	r.started, r.pool, r.cancel = false, nil, nil
-	r.current.Store(nil)
-	r.QueuedBytes.Store(0)
+	if running.pool != nil {
+		running.pool.Close()
+	}
 }
 
-// Stop releases the pool, so a settings change does not leave connections behind.
+// Stop releases the pool, so a settings change does not leave connections
+// behind.
 func Stop() {
 	shared.mu.Lock()
 	defer shared.mu.Unlock()
-	if shared.started {
-		shared.stopLocked()
-	}
+	shared.stopLocked()
 }
 
-func (r *recorder) work(ctx context.Context, queue <-chan Turn, pool *pgxpool.Pool) {
+func (w *writer) work(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case turn, ok := <-queue:
+		case turn, ok := <-w.queue:
 			if !ok {
 				return
 			}
-			r.write(ctx, pool, turn)
+			w.write(ctx, turn)
 		}
 	}
 }
 
-func (r *recorder) write(ctx context.Context, pool *pgxpool.Pool, turn Turn) {
-	// The budget is released the moment the bodies stop being needed, not when
-	// the row lands: what it guards is heap, and the heap is free again here.
-	defer r.QueuedBytes.Add(-int64(len(turn.RequestBody) + len(turn.ResponseBody)))
+func (w *writer) write(ctx context.Context, turn Turn) {
+	// The memory is free again once the bodies stop being needed, which is when
+	// the row has been built — not when it lands.
+	defer w.held.Add(-turn.size())
 
 	cfg := operation_setting.GetChatRecordSetting()
 	max := cfg.MaxContentCharsOrDefault()
@@ -191,50 +222,50 @@ func (r *recorder) write(ctx context.Context, pool *pgxpool.Pool, turn Turn) {
 	defer cancel()
 
 	var recordID int64
-	err := pool.QueryRow(writeCtx, insertStatement,
+	err := w.pool.QueryRow(writeCtx, insertStatement,
 		turn.RequestID, turn.UserID, turn.TokenID, turn.TokenName, turn.StaffID,
 		turn.ModelName, turn.Endpoint, turn.StatusCode,
 		userMessage, assistantReply, turn.CreatedAt).Scan(&recordID)
 	if err != nil {
-		r.Failed.Add(1)
+		w.totals.Failed.Add(1)
 		common.SysError("chat record: write failed: " + err.Error())
 		return
 	}
-	r.Written.Add(1)
+	w.totals.Written.Add(1)
 
 	// The attachments are already on disk; the rows only say where. A failure
 	// here costs the link to a file, not the transcript.
 	for _, attachment := range stored {
-		if _, err := pool.Exec(writeCtx, insertFileStatement,
+		if _, err := w.pool.Exec(writeCtx, insertFileStatement,
 			recordID, turn.StaffID, attachment.Kind, attachment.MediaType,
 			attachment.FileName, attachment.Size, attachment.SHA256,
 			attachment.Path, attachment.SourceURL, turn.CreatedAt); err != nil {
 			common.SysError("chat record: attachment row failed: " + err.Error())
 			continue
 		}
-		r.Files.Add(1)
+		w.totals.Files.Add(1)
 	}
 }
 
 // Stats reports what the recorder has done, so an operator can see whether the
-// store is keeping up without reading its logs.
+// store is keeping up. A rising "dropped" means it is not, and that the gateway
+// chose its own speed over the transcript — as designed.
 func Stats() map[string]any {
-	queued, capacity := 0, 0
-	if current := shared.current.Load(); current != nil {
-		queued, capacity = len(current.queue), cap(current.queue)
+	queued, capacity, held := 0, 0, int64(0)
+	running := shared.current.Load()
+	if running != nil {
+		queued, capacity, held = len(running.queue), cap(running.queue), running.held.Load()
 	}
-	shared.mu.Lock()
-	running := shared.started
-	shared.mu.Unlock()
 
 	return map[string]any{
-		"running":      running,
+		"running":      running != nil,
 		"queued":       queued,
 		"capacity":     capacity,
-		"queued_bytes": shared.QueuedBytes.Load(),
-		"enqueued":     shared.Enqueued.Load(),
-		"dropped":      shared.Dropped.Load(),
-		"written":      shared.Written.Load(),
-		"failed":       shared.Failed.Load(),
+		"queued_bytes": held,
+		"enqueued":     shared.totals.Enqueued.Load(),
+		"dropped":      shared.totals.Dropped.Load(),
+		"written":      shared.totals.Written.Load(),
+		"failed":       shared.totals.Failed.Load(),
+		"files":        shared.totals.Files.Load(),
 	}
 }

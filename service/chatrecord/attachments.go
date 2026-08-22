@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/tidwall/gjson"
@@ -102,18 +103,15 @@ func ExtractAttachments(body []byte, limit int) []Attachment {
 		})
 	}
 
-	for _, path := range []string{"messages", "input"} {
-		items := gjson.GetBytes(body, path)
-		if !items.IsArray() {
-			continue
+	// Only the newest user message, for the same reason the transcript keeps
+	// only that one: a turn replays the whole conversation, so walking all of
+	// it would decode and re-record every picture ever sent, once per turn.
+	eachUserContentNewestFirst(body, func(content gjson.Result) bool {
+		if content.IsArray() {
+			walkContent(content)
 		}
-		items.ForEach(func(_, item gjson.Result) bool {
-			if content := item.Get("content"); content.IsArray() {
-				walkContent(content)
-			}
-			return true
-		})
-	}
+		return false
+	})
 
 	// Image edits and variations name the picture at the top level.
 	for _, path := range []string{"image", "mask"} {
@@ -199,10 +197,8 @@ func SaveAttachments(staffID string, when time.Time, attachments []Attachment) [
 		full := filepath.Join(dir, name)
 
 		if _, err := os.Stat(full); err != nil {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				continue
-			}
-			if err := os.WriteFile(full, attachment.Data, 0o644); err != nil {
+			if err := writeFileAtomically(dir, full, attachment.Data); err != nil {
+				common.SysError("chat record: cannot store an attachment: " + err.Error())
 				continue
 			}
 		}
@@ -214,6 +210,34 @@ func SaveAttachments(staffID string, when time.Time, attachments []Attachment) [
 		})
 	}
 	return stored
+}
+
+// writeFileAtomically writes through a temporary name and renames into place.
+// Two workers can be storing the same picture at the same moment, and the
+// serving endpoint can be reading it while they do; a rename is the only way
+// for a reader to see either nothing or the whole file, never half of one.
+func writeFileAtomically(dir, full string, data []byte) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(dir, ".partial-*")
+	if err != nil {
+		return err
+	}
+	// Whatever happens below, the temporary file must not be left behind.
+	defer os.Remove(temp.Name())
+
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(temp.Name(), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(temp.Name(), full)
 }
 
 // sanitizeFolder keeps a staff id from naming anywhere but its own folder.

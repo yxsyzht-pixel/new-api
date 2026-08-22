@@ -73,10 +73,24 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
     ADMIN_PERMISSION_RESOURCES.TOKEN,
     ADMIN_PERMISSION_ACTIONS.MANAGE_ALL,
   );
-  // Someone who maintains everyone's keys should land on everyone's keys.
-  // Their own are usually not where the traffic is, and a listing that quietly
-  // shows only those reads as "the feature is missing".
-  const [allUsersScope, setAllUsersScope] = useState(canManageAllKeys);
+  // Someone who maintains everyone's keys should land on everyone's keys. Their
+  // own are usually not where the traffic is, and a listing that quietly shows
+  // only those reads as "the feature is missing".
+  //
+  // The permission arrives with the profile, which may not be loaded on the
+  // first render, so this cannot be a useState initial value — it would settle
+  // on "own keys only" for exactly the people who need the other setting. null
+  // means "not chosen yet" and follows the permission once it is known.
+  const [scopeChoice, setScopeChoice] = useState<boolean | null>(null);
+  const allUsersScope = scopeChoice ?? canManageAllKeys;
+  const setAllUsersScope = useCallback(
+    (next: React.SetStateAction<boolean>) => {
+      setScopeChoice((previous) =>
+        typeof next === "function" ? next(previous ?? canManageAllKeys) : next,
+      );
+    },
+    [canManageAllKeys],
+  );
 
   const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
