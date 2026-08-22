@@ -105,6 +105,10 @@ export function ApiKeysMutateDrawer({
 
   const currentRowId = currentRow?.id;
   const { triggerRefresh, canManageAllKeys } = useApiKeys();
+  // Editing someone else's key means their selectable groups, not the
+  // administrator's — that is what the server checks the choice against.
+  const autoGroupsOwnerId =
+    canManageAllKeys && currentRow?.user_id ? currentRow.user_id : undefined;
   const { status, loading: statusLoading } = useStatus();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -149,8 +153,8 @@ export function ApiKeysMutateDrawer({
     isFetched: autoGroupsFetched,
     isFetching: autoGroupsFetching,
   } = useQuery({
-    queryKey: ["token-auto-groups"],
-    queryFn: getTokenAutoGroups,
+    queryKey: ["token-auto-groups", autoGroupsOwnerId],
+    queryFn: () => getTokenAutoGroups(autoGroupsOwnerId),
     enabled: open,
     staleTime: 0,
   });

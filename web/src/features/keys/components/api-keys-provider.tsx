@@ -73,7 +73,10 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
     ADMIN_PERMISSION_RESOURCES.TOKEN,
     ADMIN_PERMISSION_ACTIONS.MANAGE_ALL,
   );
-  const [allUsersScope, setAllUsersScope] = useState(false);
+  // Someone who maintains everyone's keys should land on everyone's keys.
+  // Their own are usually not where the traffic is, and a listing that quietly
+  // shows only those reads as "the feature is missing".
+  const [allUsersScope, setAllUsersScope] = useState(canManageAllKeys);
 
   const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);

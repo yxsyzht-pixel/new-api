@@ -19,12 +19,16 @@ func newTokenScopeDB(t *testing.T) {
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, db.AutoMigrate(&Token{}))
+	require.NoError(t, db.AutoMigrate(&Token{}, &User{}))
 
 	previous := DB
 	DB = db
 	t.Cleanup(func() { DB = previous })
 
+	require.NoError(t, db.Create(&[]User{
+		{Id: 100, Username: "alice", AffCode: "alice-aff"},
+		{Id: 200, Username: "bob", AffCode: "bob-aff"},
+	}).Error)
 	require.NoError(t, db.Create(&[]Token{
 		{Id: 1, UserId: 100, Name: "alice-main", StaffId: "A001", Key: "k1"},
 		{Id: 2, UserId: 100, Name: "alice-spare", StaffId: "A001", Key: "k2"},
@@ -100,4 +104,20 @@ func TestSearchMatchesStaffIdAsWellAsName(t *testing.T) {
 	_, total, err = SearchUserTokens(OwnerScope(100), "B042", "", 0, 50)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), total, "alice found bob's key by staff id")
+}
+
+// Maintaining everyone's keys means being able to pull up one person's, and the
+// thing an operator knows is the account name.
+func TestSearchAcrossAccountsMatchesOwnerName(t *testing.T) {
+	newTokenScopeDB(t)
+
+	found, total, err := SearchUserTokens(AllOwnersScope(), "alice", "", 0, 50)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total, "searching an account name must find that account's keys")
+	assert.Len(t, found, 2)
+
+	// The owner name is not a way around the scope.
+	_, total, err = SearchUserTokens(OwnerScope(200), "alice", "", 0, 50)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), total, "bob reached alice's keys through her username")
 }

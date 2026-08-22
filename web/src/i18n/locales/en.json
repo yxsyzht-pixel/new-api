@@ -5373,6 +5373,8 @@
     "This key belongs to {{username}}.": "This key belongs to {{username}}.",
     "API Key Management": "API Key Management",
     "Manage everyone’s API keys": "Manage everyone’s API keys",
-    "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "List, create, edit, and delete API keys belonging to any user. Own keys need no permission."
+    "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.",
+    "Filter by name or staff ID...": "Filter by name or staff ID...",
+    "Filter by name, staff ID or user...": "Filter by name, staff ID or user..."
   }
 }

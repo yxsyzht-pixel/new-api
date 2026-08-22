@@ -192,10 +192,20 @@ func SearchUserTokens(scope TokenScope, keyword string, token string, offset int
 		if err != nil {
 			return nil, 0, err
 		}
-		// 工号和名称一起搜：查询页面既然显示工号，就应该能按工号找人
-		baseQuery = baseQuery.Where(
-			"name LIKE ? ESCAPE '!' OR staff_id LIKE ? ESCAPE '!'",
-			keywordPattern, keywordPattern)
+		// 工号和名称一起搜：查询页面既然显示工号，就应该能按工号找人。
+		// 跨账号查看时连用户名一起搜，否则"某个人的所有密钥"无从下手。
+		if scope.IsAllOwners() {
+			baseQuery = baseQuery.Where(
+				"name LIKE ? ESCAPE '!' OR staff_id LIKE ? ESCAPE '!'"+
+					" OR user_id IN (?)",
+				keywordPattern, keywordPattern,
+				DB.Model(&User{}).Select("id").
+					Where("username LIKE ? ESCAPE '!'", keywordPattern))
+		} else {
+			baseQuery = baseQuery.Where(
+				"name LIKE ? ESCAPE '!' OR staff_id LIKE ? ESCAPE '!'",
+				keywordPattern, keywordPattern)
+		}
 	}
 	if token != "" {
 		tokenPattern, err := sanitizeLikePattern(token)

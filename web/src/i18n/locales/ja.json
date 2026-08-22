@@ -5373,6 +5373,8 @@
     "This key belongs to {{username}}.": "このキーは {{username}} のものです。",
     "API Key Management": "API キー管理",
     "Manage everyone’s API keys": "全ユーザーの API キーを管理",
-    "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "任意のユーザーの API キーを一覧・作成・編集・削除します。自分のキーには不要です。"
+    "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "任意のユーザーの API キーを一覧・作成・編集・削除します。自分のキーには不要です。",
+    "Filter by name or staff ID...": "名称または社員番号で絞り込み…",
+    "Filter by name, staff ID or user...": "名称・社員番号・ユーザーで絞り込み…"
   }
 }

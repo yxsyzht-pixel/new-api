@@ -5373,6 +5373,8 @@
     "This key belongs to {{username}}.": "这个密钥属于 {{username}}。",
     "API Key Management": "密钥管理",
     "Manage everyone’s API keys": "管理所有用户的密钥",
-    "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "查看、创建、修改、删除任意用户的密钥。管理自己的密钥不需要这个权限。"
+    "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "查看、创建、修改、删除任意用户的密钥。管理自己的密钥不需要这个权限。",
+    "Filter by name or staff ID...": "按名称或工号筛选…",
+    "Filter by name, staff ID or user...": "按名称、工号或用户筛选…"
   }
 }
