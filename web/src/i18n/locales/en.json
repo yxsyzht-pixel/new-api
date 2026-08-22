@@ -5375,6 +5375,18 @@
     "Manage everyone’s API keys": "Manage everyone’s API keys",
     "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.",
     "Filter by name or staff ID...": "Filter by name or staff ID...",
-    "Filter by name, staff ID or user...": "Filter by name, staff ID or user..."
+    "Filter by name, staff ID or user...": "Filter by name, staff ID or user...",
+    "Host": "Host",
+    "Database name": "Database name",
+    "SSL mode": "SSL mode",
+    "Saved — leave empty to keep it": "Saved — leave empty to keep it",
+    "Connected to {{connection}}": "Connected to {{connection}}",
+    "A PostgreSQL database of your own. Fill this in, then press Initialise once to create the tables.": "A PostgreSQL database of your own. Fill this in, then press Initialise once to create the tables.",
+    "Keep attached files and images": "Keep attached files and images",
+    "Attachments are written to disk in a folder per staff ID; the database keeps only the path. Files sent as links are noted but not downloaded.": "Attachments are written to disk in a folder per staff ID; the database keeps only the path. Files sent as links are noted but not downloaded.",
+    "Attachment folder": "Attachment folder",
+    "Relative paths are resolved against the gateway’s working directory. Attachments are filed as <folder>/<staff ID>/<date>/.": "Relative paths are resolved against the gateway’s working directory. Attachments are filed as <folder>/<staff ID>/<date>/.",
+    "Largest attachment kept (MB)": "Largest attachment kept (MB)",
+    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{files}} files · {{dropped}} dropped · {{failed}} failed": "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{files}} files · {{dropped}} dropped · {{failed}} failed"
   }
 }

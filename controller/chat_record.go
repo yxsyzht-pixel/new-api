@@ -2,38 +2,63 @@ package controller
 
 import (
 	"net/http"
-	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/service/chatrecord"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 )
 
-type chatRecordDSNRequest struct {
-	DSN string `json:"dsn"`
+// chatRecordConnection is the connection as the settings page collects it —
+// parts rather than one string, so nobody has to hand-write a DSN and so the
+// password can be handled on its own.
+type chatRecordConnection struct {
+	Host     string `json:"host"`
+	Port     string `json:"port"`
+	Database string `json:"database"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+	SSLMode  string `json:"ssl_mode"`
 }
 
-// dsnOrConfigured lets the page check an address before saving it, and check the
-// saved one when the field is left empty.
-func dsnOrConfigured(req chatRecordDSNRequest) string {
-	if req.DSN != "" {
-		return req.DSN
+// dsnFromRequest builds the address to try. A form filled in on the page is
+// used as typed; an empty password means "keep the saved one", so testing a
+// connection does not require retyping it.
+func dsnFromRequest(c *gin.Context) string {
+	var req chatRecordConnection
+	_ = c.ShouldBindJSON(&req)
+
+	saved := operation_setting.GetChatRecordSetting()
+	if strings.TrimSpace(req.Host) == "" {
+		return saved.ResolvedDSN()
 	}
-	return operation_setting.GetChatRecordSetting().DSN
+
+	candidate := *saved
+	candidate.Host = req.Host
+	candidate.Port = req.Port
+	candidate.Database = req.Database
+	candidate.User = req.User
+	candidate.SSLMode = req.SSLMode
+	if req.Password != "" {
+		candidate.Password = req.Password
+	}
+	// The parts win over any older single-string form.
+	candidate.DSN = ""
+	return candidate.ResolvedDSN()
 }
 
-// InitChatRecordSchema creates the transcript table in the operator's own
+// InitChatRecordSchema creates the transcript tables in the operator's own
 // database. It is deliberately a button rather than a migration: the gateway
 // does not own that database and must not reach into it uninvited.
 func InitChatRecordSchema(c *gin.Context) {
-	var req chatRecordDSNRequest
-	_ = c.ShouldBindJSON(&req)
-
-	dsn := dsnOrConfigured(req)
+	dsn := dsnFromRequest(c)
 	if dsn == "" {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请先填写数据库连接地址"})
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请先填写数据库主机、库名和用户名"})
 		return
 	}
 	if err := chatrecord.InitSchema(dsn); err != nil {
@@ -45,12 +70,9 @@ func InitChatRecordSchema(c *gin.Context) {
 
 // TestChatRecordConnection answers whether the address works, changing nothing.
 func TestChatRecordConnection(c *gin.Context) {
-	var req chatRecordDSNRequest
-	_ = c.ShouldBindJSON(&req)
-
-	dsn := dsnOrConfigured(req)
+	dsn := dsnFromRequest(c)
 	if dsn == "" {
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请先填写数据库连接地址"})
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "请先填写数据库主机、库名和用户名"})
 		return
 	}
 	if err := chatrecord.TestConnection(dsn); err != nil {
@@ -64,31 +86,100 @@ func TestChatRecordConnection(c *gin.Context) {
 // see whether the store is keeping up. A rising "dropped" means it is not, and
 // that the gateway chose its own speed over the transcript — as designed.
 func GetChatRecordStatus(c *gin.Context) {
+	cfg := operation_setting.GetChatRecordSetting()
 	data := chatrecord.Stats()
-	dsn := operation_setting.GetChatRecordSetting().DSN
-	data["dsn_configured"] = dsn != ""
-	data["dsn_masked"] = maskDSN(dsn)
+	data["connection"] = cfg.Describe()
+	data["dsn_configured"] = cfg.ResolvedDSN() != ""
+	data["password_set"] = cfg.Password != ""
+	data["file_root"] = cfg.FileRootOrDefault()
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
 }
 
-// maskDSN keeps the parts an operator needs to recognise the address — host,
-// port, database, user — and drops the password, which is the only part that
-// must not travel back out of the gateway.
-func maskDSN(dsn string) string {
+// ListChatRecordFiles pages through the attachments that have been kept.
+func ListChatRecordFiles(c *gin.Context) {
+	cfg := operation_setting.GetChatRecordSetting()
+	dsn := cfg.ResolvedDSN()
 	if dsn == "" {
-		return ""
+		common.ApiErrorMsg(c, "尚未配置聊天记录数据库")
+		return
 	}
-	parsed, err := url.Parse(dsn)
-	if err != nil || parsed.Host == "" {
-		// A key/value DSN ("host=... password=...") or something unparseable:
-		// show nothing rather than risk echoing the password.
-		return "(已配置)"
+
+	limit, _ := strconv.Atoi(c.DefaultQuery("size", "50"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
 	}
-	if parsed.User != nil {
-		if _, hasPassword := parsed.User.Password(); hasPassword {
-			parsed.User = url.UserPassword(parsed.User.Username(), "***")
-		}
+	page, _ := strconv.Atoi(c.DefaultQuery("p", "1"))
+	if page <= 0 {
+		page = 1
 	}
-	// url.UserPassword escapes the asterisks; put them back for readability.
-	return strings.Replace(parsed.String(), "%2A%2A%2A", "***", 1)
+
+	items, err := chatrecord.ListFiles(dsn, c.Query("staff_id"), limit, (page-1)*limit)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{"items": items, "page": page, "size": limit})
+}
+
+// ServeChatRecordFile hands back one stored attachment. The database holds only
+// the path, so this is the way to look at what was sent.
+func ServeChatRecordFile(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		common.ApiErrorMsg(c, "附件 ID 不正确")
+		return
+	}
+
+	dsn := operation_setting.GetChatRecordSetting().ResolvedDSN()
+	if dsn == "" {
+		common.ApiErrorMsg(c, "尚未配置聊天记录数据库")
+		return
+	}
+
+	file, err := chatrecord.LookupFile(dsn, id)
+	if err != nil {
+		common.ApiErrorMsg(c, "附件不存在")
+		return
+	}
+	if file.Path == "" {
+		// A link the caller supplied; the bytes were never ours to keep.
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "该附件是外链，未落盘",
+			"data":    gin.H{"source_url": file.SourceURL},
+		})
+		return
+	}
+
+	full, err := chatrecord.ResolveStoredPath(file.Path)
+	if err != nil {
+		common.ApiErrorMsg(c, "附件路径不合法")
+		return
+	}
+	handle, err := os.Open(full)
+	if err != nil {
+		common.ApiErrorMsg(c, "附件文件已不在磁盘上")
+		return
+	}
+	defer handle.Close()
+
+	info, err := handle.Stat()
+	if err != nil {
+		common.ApiErrorMsg(c, "附件文件无法读取")
+		return
+	}
+
+	mediaType := file.MediaType
+	if mediaType == "" {
+		mediaType = "application/octet-stream"
+	}
+	name := file.FileName
+	if name == "" {
+		name = filepath.Base(full)
+	}
+	// inline so an image opens in the browser; the name is quoted because it
+	// came from a caller.
+	c.Header("Content-Disposition", "inline; filename="+strconv.Quote(name))
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.DataFromReader(http.StatusOK, info.Size(), mediaType, handle, nil)
 }

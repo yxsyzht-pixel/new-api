@@ -372,6 +372,14 @@ export type OperationsSettings = {
   'chat_record_setting.workers': number
   'chat_record_setting.max_content_chars': number
   'chat_record_setting.max_queued_bytes': number
+  'chat_record_setting.host': string
+  'chat_record_setting.port': string
+  'chat_record_setting.database': string
+  'chat_record_setting.user': string
+  'chat_record_setting.ssl_mode': string
+  'chat_record_setting.store_files': boolean
+  'chat_record_setting.file_root': string
+  'chat_record_setting.max_file_bytes': number
 }
 
 export type SecuritySettings = {

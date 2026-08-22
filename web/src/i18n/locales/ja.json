@@ -5375,6 +5375,18 @@
     "Manage everyone’s API keys": "全ユーザーの API キーを管理",
     "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "任意のユーザーの API キーを一覧・作成・編集・削除します。自分のキーには不要です。",
     "Filter by name or staff ID...": "名称または社員番号で絞り込み…",
-    "Filter by name, staff ID or user...": "名称・社員番号・ユーザーで絞り込み…"
+    "Filter by name, staff ID or user...": "名称・社員番号・ユーザーで絞り込み…",
+    "Host": "ホスト",
+    "Database name": "データベース名",
+    "SSL mode": "SSL モード",
+    "Saved — leave empty to keep it": "保存済み — 空欄なら変更しません",
+    "Connected to {{connection}}": "設定済み:{{connection}}",
+    "A PostgreSQL database of your own. Fill this in, then press Initialise once to create the tables.": "ご自身の PostgreSQL データベース。入力後「初期化」を一度押すとテーブルを作成します。",
+    "Keep attached files and images": "添付ファイルと画像を保存",
+    "Attachments are written to disk in a folder per staff ID; the database keeps only the path. Files sent as links are noted but not downloaded.": "添付は社員番号ごとのフォルダに保存し、データベースにはパスのみを記録します。リンクで送られたものは記録のみで取得しません。",
+    "Attachment folder": "添付の保存先",
+    "Relative paths are resolved against the gateway’s working directory. Attachments are filed as <folder>/<staff ID>/<date>/.": "相対パスはゲートウェイの作業ディレクトリ基準です。添付は <フォルダ>/<社員番号>/<日付>/ に保存されます。",
+    "Largest attachment kept (MB)": "添付 1 件の上限 (MB)",
+    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{files}} files · {{dropped}} dropped · {{failed}} failed": "書き込み稼働中 · キュー {{queued}}/{{capacity}} · 占有 {{heldMb}} MB · 書込 {{written}} · 添付 {{files}} · 破棄 {{dropped}} · 失敗 {{failed}}"
   }
 }

@@ -18,6 +18,13 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 
 import {
@@ -31,7 +38,15 @@ import { useUpdateOption } from "../hooks/use-update-option";
 
 const schema = z.object({
   enabled: z.boolean(),
-  dsn: z.string(),
+  host: z.string(),
+  port: z.string(),
+  database: z.string(),
+  user: z.string(),
+  password: z.string(),
+  sslMode: z.string(),
+  storeFiles: z.boolean(),
+  fileRoot: z.string(),
+  maxFileMb: z.coerce.number().int().min(1),
   queueSize: z.coerce.number().int().min(1),
   workers: z.coerce.number().int().min(1),
   maxContentChars: z.coerce.number().int().min(1),
@@ -47,17 +62,17 @@ type ChatRecordStatus = {
   written?: number;
   dropped?: number;
   failed?: number;
+  files?: number;
+  queued_bytes?: number;
+  connection: string;
   dsn_configured: boolean;
-  dsn_masked: string;
+  password_set: boolean;
+  file_root: string;
 };
 
-export type ChatRecordDefaults = {
-  enabled: boolean;
-  dsn: string;
-  queueSize: number;
-  workers: number;
-  maxContentChars: number;
-};
+export type ChatRecordDefaults = Values;
+
+const SSL_MODES = ["disable", "require", "verify-ca", "verify-full"] as const;
 
 export function ChatRecordSection({
   defaultValues,
@@ -69,9 +84,16 @@ export function ChatRecordSection({
   const [initializing, setInitializing] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  // The saved address never leaves the gateway in full — it carries a database
-  // password — so the page shows a redacted copy and treats an empty field as
-  // "leave it as it is".
+  const form = useForm<Values>({
+    resolver: zodResolver(schema) as unknown as Resolver<Values>,
+    defaultValues,
+  });
+
+  const { isDirty, isSubmitting } = form.formState;
+
+  // The saved password never leaves the gateway, so the page shows a
+  // description of the connection instead and treats an empty password box as
+  // "keep the one you already have".
   const { data: status, refetch: refetchStatus } = useQuery({
     queryKey: ["chat-record-status"],
     queryFn: async () => {
@@ -83,21 +105,25 @@ export function ChatRecordSection({
     refetchInterval: 15_000,
   });
 
-  const form = useForm<Values>({
-    resolver: zodResolver(schema) as unknown as Resolver<Values>,
-    defaultValues,
-  });
-
-  const { isDirty, isSubmitting } = form.formState;
-
-  // The address is sent with the request so the operator can check it before
-  // committing to it; an empty field falls back to whatever is already saved.
-  async function callWithDsn(path: string, setBusy: (busy: boolean) => void) {
+  // Connection details are sent with the request so an address can be checked
+  // before it is saved.
+  async function callWithConnection(
+    path: string,
+    setBusy: (busy: boolean) => void,
+  ) {
     setBusy(true);
     try {
+      const values = form.getValues();
       const { data } = await api.post<{ success: boolean; message: string }>(
         path,
-        { dsn: form.getValues("dsn") },
+        {
+          host: values.host,
+          port: values.port,
+          database: values.database,
+          user: values.user,
+          password: values.password,
+          ssl_mode: values.sslMode,
+        },
       );
       if (data?.success) {
         toast.success(data.message);
@@ -117,8 +143,37 @@ export function ChatRecordSection({
     };
 
     push("chat_record_setting.enabled", values.enabled, defaultValues.enabled);
-    if (values.dsn !== "") {
-      updates.push({ key: "chat_record_setting.dsn", value: values.dsn });
+    push("chat_record_setting.host", values.host, defaultValues.host);
+    push("chat_record_setting.port", values.port, defaultValues.port);
+    push(
+      "chat_record_setting.database",
+      values.database,
+      defaultValues.database,
+    );
+    push("chat_record_setting.user", values.user, defaultValues.user);
+    push("chat_record_setting.ssl_mode", values.sslMode, defaultValues.sslMode);
+    // An empty box means "leave the saved password alone".
+    if (values.password !== "") {
+      updates.push({
+        key: "chat_record_setting.password",
+        value: values.password,
+      });
+    }
+    push(
+      "chat_record_setting.store_files",
+      values.storeFiles,
+      defaultValues.storeFiles,
+    );
+    push(
+      "chat_record_setting.file_root",
+      values.fileRoot,
+      defaultValues.fileRoot,
+    );
+    if (values.maxFileMb !== defaultValues.maxFileMb) {
+      updates.push({
+        key: "chat_record_setting.max_file_bytes",
+        value: String(values.maxFileMb * 1024 * 1024),
+      });
     }
     push(
       "chat_record_setting.queue_size",
@@ -131,6 +186,12 @@ export function ChatRecordSection({
       values.maxContentChars,
       defaultValues.maxContentChars,
     );
+    if (values.maxQueuedMb !== defaultValues.maxQueuedMb) {
+      updates.push({
+        key: "chat_record_setting.max_queued_bytes",
+        value: String(values.maxQueuedMb * 1024 * 1024),
+      });
+    }
 
     if (updates.length === 0) {
       toast.info(t("No changes to save"));
@@ -139,7 +200,8 @@ export function ChatRecordSection({
     for (const update of updates) {
       await updateOption.mutateAsync(update);
     }
-    form.reset(values);
+    form.reset({ ...values, password: "" });
+    void refetchStatus();
   }
 
   return (
@@ -176,68 +238,161 @@ export function ChatRecordSection({
             )}
           />
 
-          <FormField
-            control={form.control}
-            name="dsn"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t("Transcript database address")}</FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    autoComplete="off"
-                    placeholder={
-                      status?.dsn_configured
-                        ? status.dsn_masked
-                        : "postgres://user:password@host:5432/dbname?sslmode=disable"
-                    }
-                  />
-                </FormControl>
-                <FormDescription>
-                  {status?.dsn_configured
-                    ? t(
-                        "An address is already saved (shown without its password). Leave this empty to keep it.",
-                      )
-                    : t(
-                        "A PostgreSQL database of your own. Use “Initialise” once to create the table and its indexes.",
-                      )}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <div className="space-y-4 rounded-lg border p-4">
+            <div>
+              <h4 className="text-sm font-medium">{t("Database")}</h4>
+              <p className="text-muted-foreground text-sm">
+                {status?.dsn_configured
+                  ? t("Connected to {{connection}}", {
+                      connection: status.connection,
+                    })
+                  : t(
+                      "A PostgreSQL database of your own. Fill this in, then press Initialise once to create the tables.",
+                    )}
+              </p>
+            </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={testing}
-              onClick={() =>
-                callWithDsn("/api/option/chat_record/test", setTesting)
-              }
-            >
-              {testing ? t("Testing…") : t("Test connection")}
-            </Button>
-            <Button
-              type="button"
-              disabled={initializing}
-              onClick={() =>
-                callWithDsn("/api/option/chat_record/init", setInitializing)
-              }
-            >
-              {initializing ? t("Initialising…") : t("Initialise database")}
-            </Button>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="host"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("Host")}</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="192.168.1.10" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="port"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("Port")}</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="5432" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="database"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("Database name")}</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="chatlog" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="sslMode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("SSL mode")}</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {SSL_MODES.map((mode) => (
+                          <SelectItem key={mode} value={mode}>
+                            {mode}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="user"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("Username")}</FormLabel>
+                    <FormControl>
+                      <Input {...field} autoComplete="off" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("Password")}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder={
+                          status?.password_set
+                            ? t("Saved — leave empty to keep it")
+                            : ""
+                        }
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={testing}
+                onClick={() =>
+                  callWithConnection("/api/option/chat_record/test", setTesting)
+                }
+              >
+                {testing ? t("Testing…") : t("Test connection")}
+              </Button>
+              <Button
+                type="button"
+                disabled={initializing}
+                onClick={() =>
+                  callWithConnection(
+                    "/api/option/chat_record/init",
+                    setInitializing,
+                  )
+                }
+              >
+                {initializing ? t("Initialising…") : t("Initialise database")}
+              </Button>
+            </div>
           </div>
 
           {status ? (
             <p className="text-muted-foreground text-sm">
               {status.running
                 ? t(
-                    "Writer running · {{queued}}/{{capacity}} queued · {{written}} written · {{dropped}} dropped · {{failed}} failed",
+                    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{files}} files · {{dropped}} dropped · {{failed}} failed",
                     {
                       queued: status.queued,
                       capacity: status.capacity,
+                      heldMb: (
+                        (status.queued_bytes ?? 0) /
+                        (1024 * 1024)
+                      ).toFixed(1),
                       written: status.written ?? 0,
+                      files: status.files ?? 0,
                       dropped: status.dropped ?? 0,
                       failed: status.failed ?? 0,
                     },
@@ -245,6 +400,62 @@ export function ChatRecordSection({
                 : t("Writer stopped")}
             </p>
           ) : null}
+
+          <FormField
+            control={form.control}
+            name="storeFiles"
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t("Keep attached files and images")}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      "Attachments are written to disk in a folder per staff ID; the database keeps only the path. Files sent as links are noted but not downloaded.",
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="fileRoot"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("Attachment folder")}</FormLabel>
+                <FormControl>
+                  <Input {...field} placeholder="data/chat-record-files" />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    "Relative paths are resolved against the gateway’s working directory. Attachments are filed as <folder>/<staff ID>/<date>/.",
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="maxFileMb"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("Largest attachment kept (MB)")}</FormLabel>
+                <FormControl>
+                  <Input type="number" min={1} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
           <FormField
             control={form.control}
@@ -291,6 +502,25 @@ export function ChatRecordSection({
                 <FormDescription>
                   {t(
                     "Longer messages are cut at this length. A turn replays the whole conversation, so without a cap one row could hold megabytes.",
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="maxQueuedMb"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("Memory ceiling for the queue (MB)")}</FormLabel>
+                <FormControl>
+                  <Input type="number" min={1} {...field} />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.",
                   )}
                 </FormDescription>
                 <FormMessage />

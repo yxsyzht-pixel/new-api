@@ -98,12 +98,26 @@ func captureResponseFor(path string) bool {
 	return true
 }
 
+// maxRetainedRequestBytes is how large a request body may be and still be worth
+// carrying to the writer.
+func maxRetainedRequestBytes(cfg *operation_setting.ChatRecordSetting) int64 {
+	limit := int64(cfg.MaxCaptureBytesOrDefault())
+	if cfg.StoreFiles {
+		// base64 costs a third on top, and a turn may carry more than one file.
+		withFiles := int64(cfg.MaxFileBytesOrDefault())*2 + limit
+		if withFiles > limit {
+			limit = withFiles
+		}
+	}
+	return limit
+}
+
 // ChatRecord captures one turn when transcript recording is on, and gets out of
 // the way entirely when it is off.
 func ChatRecord() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		cfg := operation_setting.GetChatRecordSetting()
-		if !cfg.Enabled || cfg.DSN == "" {
+		if !cfg.Enabled || cfg.ResolvedDSN() == "" {
 			c.Next()
 			return
 		}
@@ -134,8 +148,11 @@ func ChatRecord() gin.HandlerFunc {
 			if storage, ok := stored.(common.BodyStorage); ok && !storage.IsDisk() {
 				// Holding the reference keeps the body alive until the turn is
 				// written, so an outsized one is left behind rather than parked
-				// in the queue.
-				if storage.Size() <= int64(cfg.MaxCaptureBytesOrDefault()) {
+				// in the queue. Attachments arrive base64-encoded inside this
+				// same body, so keeping files means allowing for them here —
+				// otherwise every image would be dropped before the worker ever
+				// saw it. The queue's byte budget is what bounds the total.
+				if storage.Size() <= maxRetainedRequestBytes(cfg) {
 					requestBody, _ = storage.Bytes()
 				}
 			}

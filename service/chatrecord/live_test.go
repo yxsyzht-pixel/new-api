@@ -3,10 +3,15 @@ package chatrecord
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
 )
 
 // TestAgainstLiveDatabase exercises the whole storage path — DDL, the insert
@@ -31,6 +36,9 @@ func TestAgainstLiveDatabase(t *testing.T) {
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
+			if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files"); err != nil {
+				t.Logf("cleanup: %v", err)
+			}
 			if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records"); err != nil {
 				t.Logf("cleanup: %v", err)
 			}
@@ -50,18 +58,26 @@ func TestAgainstLiveDatabase(t *testing.T) {
 	})
 	cfg.Enabled, cfg.DSN = true, dsn
 
+	// Attachments go under a temporary root so the test leaves nothing behind.
+	fileRoot := t.TempDir()
+	prevRoot, prevStore := cfg.FileRoot, cfg.StoreFiles
+	cfg.FileRoot, cfg.StoreFiles = fileRoot, true
+	t.Cleanup(func() { cfg.FileRoot, cfg.StoreFiles = prevRoot, prevStore })
+
 	marker := "live-test-" + time.Now().Format("150405.000")
 	Submit(Turn{
-		RequestID:    marker,
-		UserID:       7,
-		TokenID:      42,
-		TokenName:    "live-test-key",
-		StaffID:      "A1024",
-		ModelName:    "gpt-5.6-sol",
-		Endpoint:     "/v1/chat/completions",
-		StatusCode:   200,
-		CreatedAt:    time.Now(),
-		RequestBody:  []byte(`{"messages":[{"role":"user","content":"海边有多远"}]}`),
+		RequestID:  marker,
+		UserID:     7,
+		TokenID:    42,
+		TokenName:  "live-test-key",
+		StaffID:    "A1024",
+		ModelName:  "gpt-5.6-sol",
+		Endpoint:   "/v1/chat/completions",
+		StatusCode: 200,
+		CreatedAt:  time.Now(),
+		RequestBody: []byte(`{"messages":[{"role":"user","content":[` +
+			`{"type":"text","text":"海边有多远"},` +
+			`{"type":"image_url","image_url":{"url":"data:image/png;base64,` + onePixelPNG + `"}}]}]}`),
 		ResponseBody: []byte(`{"choices":[{"message":{"role":"assistant","content":"大约三公里。"}}]}`),
 	})
 
@@ -93,4 +109,48 @@ func TestAgainstLiveDatabase(t *testing.T) {
 	if aiMessage != "大约三公里。" {
 		t.Errorf("ai_message = %q", aiMessage)
 	}
+
+	// The attachment must be on disk under the staff id, with only its path in
+	// the database.
+	var recordID int64
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT id FROM chat_records WHERE request_id = $1", marker).Scan(&recordID))
+
+	var storedPath, kind, mediaType string
+	var size int64
+	err = pool.QueryRow(ctx,
+		"SELECT path, kind, media_type, file_size FROM chat_record_files WHERE record_id = $1",
+		recordID).Scan(&storedPath, &kind, &mediaType, &size)
+	if err != nil {
+		t.Fatalf("the attachment never reached the table: %v", err)
+	}
+	if !strings.HasPrefix(storedPath, "A1024/") {
+		t.Errorf("path = %q, want it filed under the staff id", storedPath)
+	}
+	if kind != "image" || mediaType != "image/png" {
+		t.Errorf("kind/media = %q/%q", kind, mediaType)
+	}
+	onDisk := filepath.Join(fileRoot, filepath.FromSlash(storedPath))
+	info, err := os.Stat(onDisk)
+	if err != nil {
+		t.Fatalf("the file is not on disk: %v", err)
+	}
+	if info.Size() != size {
+		t.Errorf("size on disk %d, recorded %d", info.Size(), size)
+	}
+
+	// And the serving lookup finds it back.
+	file, err := LookupFile(dsn, mustFileID(t, pool, ctx, recordID))
+	require.NoError(t, err)
+	if file.Path != storedPath {
+		t.Errorf("LookupFile path = %q, want %q", file.Path, storedPath)
+	}
+}
+
+func mustFileID(t *testing.T, pool *pgxpool.Pool, ctx context.Context, recordID int64) int64 {
+	t.Helper()
+	var id int64
+	require.NoError(t, pool.QueryRow(ctx,
+		"SELECT id FROM chat_record_files WHERE record_id = $1", recordID).Scan(&id))
+	return id
 }

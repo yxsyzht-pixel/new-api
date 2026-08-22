@@ -5375,6 +5375,18 @@
     "Manage everyone’s API keys": "Gérer les clés de tous les utilisateurs",
     "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "Lister, créer, modifier et supprimer les clés de n’importe quel utilisateur. Inutile pour ses propres clés.",
     "Filter by name or staff ID...": "Filtrer par nom ou matricule…",
-    "Filter by name, staff ID or user...": "Filtrer par nom, matricule ou utilisateur…"
+    "Filter by name, staff ID or user...": "Filtrer par nom, matricule ou utilisateur…",
+    "Host": "Hôte",
+    "Database name": "Nom de la base",
+    "SSL mode": "Mode SSL",
+    "Saved — leave empty to keep it": "Enregistré — laissez vide pour le conserver",
+    "Connected to {{connection}}": "Configuré : {{connection}}",
+    "A PostgreSQL database of your own. Fill this in, then press Initialise once to create the tables.": "Votre propre base PostgreSQL. Remplissez ces champs puis cliquez une fois sur « Initialiser ».",
+    "Keep attached files and images": "Conserver les fichiers et images joints",
+    "Attachments are written to disk in a folder per staff ID; the database keeps only the path. Files sent as links are noted but not downloaded.": "Les pièces jointes sont écrites sur disque dans un dossier par matricule ; la base ne garde que le chemin. Les liens sont notés, pas téléchargés.",
+    "Attachment folder": "Dossier des pièces jointes",
+    "Relative paths are resolved against the gateway’s working directory. Attachments are filed as <folder>/<staff ID>/<date>/.": "Les chemins relatifs partent du répertoire de travail de la passerelle. Les pièces jointes sont classées en <dossier>/<matricule>/<date>/.",
+    "Largest attachment kept (MB)": "Taille maximale d’une pièce jointe (Mo)",
+    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{files}} files · {{dropped}} dropped · {{failed}} failed": "Écriture active · file {{queued}}/{{capacity}} · {{heldMb}} Mo retenus · {{written}} écrits · {{files}} fichiers · {{dropped}} abandonnés · {{failed}} échecs"
   }
 }

@@ -51,6 +51,7 @@ type recorder struct {
 	Dropped     atomic.Int64
 	Written     atomic.Int64
 	Failed      atomic.Int64
+	Files       atomic.Int64
 	QueuedBytes atomic.Int64
 }
 
@@ -61,7 +62,8 @@ var shared = &recorder{}
 // transcripts rather than to slow the gateway down.
 func Submit(turn Turn) {
 	cfg := operation_setting.GetChatRecordSetting()
-	if !cfg.Enabled || cfg.DSN == "" {
+	dsn := cfg.ResolvedDSN()
+	if !cfg.Enabled || dsn == "" {
 		return
 	}
 
@@ -76,11 +78,11 @@ func Submit(turn Turn) {
 	}
 
 	running := shared.current.Load()
-	if running == nil || running.dsn != cfg.DSN {
+	if running == nil || running.dsn != dsn {
 		// First turn, or the operator repointed the recorder: pay for the lock
 		// once, then never again while the address stays put.
 		var err error
-		if running, err = shared.ensureStarted(cfg); err != nil {
+		if running, err = shared.ensureStarted(cfg, dsn); err != nil {
 			return
 		}
 	}
@@ -96,26 +98,26 @@ func Submit(turn Turn) {
 
 // ensureStarted brings the pool and workers up on first use, and rebuilds them
 // when the operator points the recorder at a different database.
-func (r *recorder) ensureStarted(cfg *operation_setting.ChatRecordSetting) (*live, error) {
+func (r *recorder) ensureStarted(cfg *operation_setting.ChatRecordSetting, dsn string) (*live, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	// Another goroutine may have started it while we waited for the lock.
-	if running := r.current.Load(); running != nil && running.dsn == cfg.DSN {
+	if running := r.current.Load(); running != nil && running.dsn == dsn {
 		return running, nil
 	}
 	if r.started {
 		r.stopLocked()
 	}
 
-	pool, err := newPool(cfg.DSN)
+	pool, err := newPool(dsn)
 	if err != nil {
 		common.SysError("chat record: cannot reach the transcript database: " + err.Error())
 		return nil, err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	running := &live{dsn: cfg.DSN, queue: make(chan Turn, cfg.QueueSizeOrDefault())}
+	running := &live{dsn: dsn, queue: make(chan Turn, cfg.QueueSizeOrDefault())}
 	r.pool, r.cancel, r.started = pool, cancel, true
 	r.current.Store(running)
 
@@ -170,7 +172,16 @@ func (r *recorder) write(ctx context.Context, pool *pgxpool.Pool, turn Turn) {
 
 	userMessage := Truncate(UserMessage(turn.RequestBody), max)
 	assistantReply := Truncate(AssistantReply(turn.ResponseBody), max)
-	if userMessage == "" && assistantReply == "" {
+
+	// Parsing and decoding attachments happens here, on a worker, never on the
+	// request path.
+	var stored []StoredAttachment
+	if cfg.StoreFiles {
+		stored = SaveAttachments(turn.StaffID, turn.CreatedAt,
+			ExtractAttachments(turn.RequestBody, cfg.MaxFileBytesOrDefault()))
+	}
+
+	if userMessage == "" && assistantReply == "" && len(stored) == 0 {
 		return
 	}
 
@@ -179,16 +190,30 @@ func (r *recorder) write(ctx context.Context, pool *pgxpool.Pool, turn Turn) {
 	writeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	_, err := pool.Exec(writeCtx, insertStatement,
+	var recordID int64
+	err := pool.QueryRow(writeCtx, insertStatement,
 		turn.RequestID, turn.UserID, turn.TokenID, turn.TokenName, turn.StaffID,
 		turn.ModelName, turn.Endpoint, turn.StatusCode,
-		userMessage, assistantReply, turn.CreatedAt)
+		userMessage, assistantReply, turn.CreatedAt).Scan(&recordID)
 	if err != nil {
 		r.Failed.Add(1)
 		common.SysError("chat record: write failed: " + err.Error())
 		return
 	}
 	r.Written.Add(1)
+
+	// The attachments are already on disk; the rows only say where. A failure
+	// here costs the link to a file, not the transcript.
+	for _, attachment := range stored {
+		if _, err := pool.Exec(writeCtx, insertFileStatement,
+			recordID, turn.StaffID, attachment.Kind, attachment.MediaType,
+			attachment.FileName, attachment.Size, attachment.SHA256,
+			attachment.Path, attachment.SourceURL, turn.CreatedAt); err != nil {
+			common.SysError("chat record: attachment row failed: " + err.Error())
+			continue
+		}
+		r.Files.Add(1)
+	}
 }
 
 // Stats reports what the recorder has done, so an operator can see whether the

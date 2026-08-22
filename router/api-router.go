@@ -198,6 +198,11 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/chat_record/init", controller.InitChatRecordSchema)
 			optionRoute.POST("/chat_record/test", controller.TestChatRecordConnection)
 			optionRoute.GET("/chat_record/status", controller.GetChatRecordStatus)
+			optionRoute.GET("/chat_record/files", controller.ListChatRecordFiles)
+			// Serving a stored attachment. Admin-gated like the rest of
+			// optionRoute: a transcript's files are as sensitive as the
+			// transcript itself.
+			optionRoute.GET("/chat_record/file/:id", controller.ServeChatRecordFile)
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)
 			optionRoute.POST("/rest_model_ratio", controller.ResetModelRatio)
 			optionRoute.GET("/waffo-pancake/catalog", controller.ListWaffoPancakeCatalog)

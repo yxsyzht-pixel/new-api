@@ -157,3 +157,27 @@ func TestReadFromStillTeesTheReply(t *testing.T) {
 	assert.Equal(t, `{"choices":[{"message":{"content":"copied"}}]}`, recorder.Body.String())
 	assert.Equal(t, recorder.Body.String(), string(captured), "io.Copy bypassed the tee")
 }
+
+// Attachments ride inside the request body, base64-encoded. If the retention
+// limit ignored that, every image would be dropped before the writer saw it.
+func TestRetainedRequestSizeAllowsForAttachments(t *testing.T) {
+	cfg := operation_setting.GetChatRecordSetting()
+	prevStore, prevFile, prevCapture := cfg.StoreFiles, cfg.MaxFileBytes, cfg.MaxCaptureBytes
+	t.Cleanup(func() {
+		cfg.StoreFiles, cfg.MaxFileBytes, cfg.MaxCaptureBytes = prevStore, prevFile, prevCapture
+	})
+
+	cfg.MaxCaptureBytes = 1 << 20
+	cfg.MaxFileBytes = 20 << 20
+
+	cfg.StoreFiles = false
+	if got := maxRetainedRequestBytes(cfg); got != 1<<20 {
+		t.Fatalf("without file storage the limit is %d, want the capture limit", got)
+	}
+
+	cfg.StoreFiles = true
+	got := maxRetainedRequestBytes(cfg)
+	if got <= int64(cfg.MaxFileBytes) {
+		t.Fatalf("limit %d cannot hold a %d-byte file once base64-encoded", got, cfg.MaxFileBytes)
+	}
+}

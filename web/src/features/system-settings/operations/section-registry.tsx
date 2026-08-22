@@ -25,7 +25,12 @@ import { PerformanceSection } from "../maintenance/performance-section";
 import { UpdateCheckerSection } from "../maintenance/update-checker-section";
 import type { OperationsSettings } from "../types";
 import { ChatRecordSection } from "./chat-record-section";
+
 import { createSectionRegistry } from "../utils/section-registry";
+
+// Byte-valued settings are shown in megabytes; the option itself stays in bytes.
+const toMb = (value: number | undefined, fallback: number) =>
+  Math.max(1, Math.round((value ?? fallback) / (1024 * 1024)));
 
 const OPERATIONS_SECTIONS = [
   {
@@ -135,11 +140,29 @@ const OPERATIONS_SECTIONS = [
       <ChatRecordSection
         defaultValues={{
           enabled: settings["chat_record_setting.enabled"] ?? false,
-          dsn: settings["chat_record_setting.dsn"] ?? "",
+          host: settings["chat_record_setting.host"] ?? "",
+          port: settings["chat_record_setting.port"] || "5432",
+          database: settings["chat_record_setting.database"] ?? "",
+          user: settings["chat_record_setting.user"] ?? "",
+          // Never sent to the page; an empty box means "keep the saved one".
+          password: "",
+          sslMode: settings["chat_record_setting.ssl_mode"] || "disable",
+          storeFiles: settings["chat_record_setting.store_files"] ?? true,
+          fileRoot:
+            settings["chat_record_setting.file_root"] ||
+            "data/chat-record-files",
+          maxFileMb: toMb(
+            settings["chat_record_setting.max_file_bytes"],
+            20 * 1024 * 1024,
+          ),
           queueSize: settings["chat_record_setting.queue_size"] ?? 4096,
           workers: settings["chat_record_setting.workers"] ?? 4,
           maxContentChars:
-            settings["chat_record_setting.max_content_chars"] ?? 20000,
+            settings["chat_record_setting.max_content_chars"] ?? 32000,
+          maxQueuedMb: toMb(
+            settings["chat_record_setting.max_queued_bytes"],
+            64 * 1024 * 1024,
+          ),
         }}
       />
     ),
