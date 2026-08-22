@@ -371,6 +371,7 @@ export type OperationsSettings = {
   'chat_record_setting.queue_size': number
   'chat_record_setting.workers': number
   'chat_record_setting.max_content_chars': number
+  'chat_record_setting.max_queued_bytes': number
 }
 
 export type SecuritySettings = {

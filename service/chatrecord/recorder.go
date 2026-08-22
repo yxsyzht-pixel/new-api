@@ -47,10 +47,11 @@ type recorder struct {
 	cancel  context.CancelFunc
 	started bool
 
-	Enqueued atomic.Int64
-	Dropped  atomic.Int64
-	Written  atomic.Int64
-	Failed   atomic.Int64
+	Enqueued    atomic.Int64
+	Dropped     atomic.Int64
+	Written     atomic.Int64
+	Failed      atomic.Int64
+	QueuedBytes atomic.Int64
 }
 
 var shared = &recorder{}
@@ -61,6 +62,16 @@ var shared = &recorder{}
 func Submit(turn Turn) {
 	cfg := operation_setting.GetChatRecordSetting()
 	if !cfg.Enabled || cfg.DSN == "" {
+		return
+	}
+
+	// Slots are not the real limit — bytes are. A queue of 4096 turns each
+	// holding a long conversation would be gigabytes of heap that the gateway's
+	// own buffer accounting can no longer see, and heap pressure is exactly the
+	// way a transcript store could end up slowing the relay down.
+	size := int64(len(turn.RequestBody) + len(turn.ResponseBody))
+	if shared.QueuedBytes.Load()+size > cfg.MaxQueuedBytesOrDefault() {
+		shared.Dropped.Add(1)
 		return
 	}
 
@@ -77,6 +88,7 @@ func Submit(turn Turn) {
 	select {
 	case running.queue <- turn:
 		shared.Enqueued.Add(1)
+		shared.QueuedBytes.Add(size)
 	default:
 		shared.Dropped.Add(1)
 	}
@@ -122,6 +134,7 @@ func (r *recorder) stopLocked() {
 	}
 	r.started, r.pool, r.cancel = false, nil, nil
 	r.current.Store(nil)
+	r.QueuedBytes.Store(0)
 }
 
 // Stop releases the pool, so a settings change does not leave connections behind.
@@ -148,6 +161,10 @@ func (r *recorder) work(ctx context.Context, queue <-chan Turn, pool *pgxpool.Po
 }
 
 func (r *recorder) write(ctx context.Context, pool *pgxpool.Pool, turn Turn) {
+	// The budget is released the moment the bodies stop being needed, not when
+	// the row lands: what it guards is heap, and the heap is free again here.
+	defer r.QueuedBytes.Add(-int64(len(turn.RequestBody) + len(turn.ResponseBody)))
+
 	cfg := operation_setting.GetChatRecordSetting()
 	max := cfg.MaxContentCharsOrDefault()
 
@@ -186,12 +203,13 @@ func Stats() map[string]any {
 	shared.mu.Unlock()
 
 	return map[string]any{
-		"running":  running,
-		"queued":   queued,
-		"capacity": capacity,
-		"enqueued": shared.Enqueued.Load(),
-		"dropped":  shared.Dropped.Load(),
-		"written":  shared.Written.Load(),
-		"failed":   shared.Failed.Load(),
+		"running":      running,
+		"queued":       queued,
+		"capacity":     capacity,
+		"queued_bytes": shared.QueuedBytes.Load(),
+		"enqueued":     shared.Enqueued.Load(),
+		"dropped":      shared.Dropped.Load(),
+		"written":      shared.Written.Load(),
+		"failed":       shared.Failed.Load(),
 	}
 }

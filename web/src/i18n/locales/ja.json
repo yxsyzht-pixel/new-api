@@ -5362,6 +5362,9 @@
     "Writer stopped": "書き込み停止中",
     "Staff ID": "社員番号",
     "Enter a staff ID": "社員番号を入力",
-    "Recorded alongside each chat transcript from this key.": "このキーによるチャット記録にこの番号が付与されます。"
+    "Recorded alongside each chat transcript from this key.": "このキーによるチャット記録にこの番号が付与されます。",
+    "Memory ceiling for the queue (MB)": "キューのメモリ上限 (MB)",
+    "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "書き込み待ちの記録はリクエストと応答をメモリに保持します。データベースが詰まったとき、この上限がゲートウェイのメモリを守ります。超えた分は破棄されます。",
+    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "書き込み稼働中 · キュー {{queued}}/{{capacity}} · 占有 {{heldMb}} MB · 書込 {{written}} · 破棄 {{dropped}} · 失敗 {{failed}}"
   }
 }

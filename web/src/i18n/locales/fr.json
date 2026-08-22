@@ -5362,6 +5362,9 @@
     "Writer stopped": "Écriture arrêtée",
     "Staff ID": "Matricule",
     "Enter a staff ID": "Saisissez le matricule",
-    "Recorded alongside each chat transcript from this key.": "Enregistré avec chaque conversation issue de cette clé."
+    "Recorded alongside each chat transcript from this key.": "Enregistré avec chaque conversation issue de cette clé.",
+    "Memory ceiling for the queue (MB)": "Plafond mémoire de la file (Mo)",
+    "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "Les tours en attente conservent la requête et la réponse en mémoire. Si la base cale, ce plafond empêche la file d’envahir le tas de la passerelle.",
+    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Écriture active · file {{queued}}/{{capacity}} · {{heldMb}} Mo retenus · {{written}} écrits · {{dropped}} abandonnés · {{failed}} échecs"
   }
 }

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -82,4 +83,77 @@ func TestCaptureWriterStaysAGinWriter(t *testing.T) {
 	assert.Equal(t, 5, n)
 	w.Flush()
 	assert.Equal(t, "hello", recorder.Body.String())
+}
+
+// Binary and vector routes hold nothing a transcript could use. Wrapping their
+// replies would buffer a megabyte per request for nothing, so they are left
+// alone entirely.
+func TestBinaryRoutesAreNotWrapped(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := operation_setting.GetChatRecordSetting()
+	prevEnabled, prevDSN := cfg.Enabled, cfg.DSN
+	t.Cleanup(func() { cfg.Enabled, cfg.DSN = prevEnabled, prevDSN })
+	cfg.Enabled, cfg.DSN = true, "postgres://u:p@127.0.0.1:1/none"
+
+	for _, path := range []string{
+		"/v1/audio/speech",
+		"/v1/images/generations",
+		"/v1/embeddings",
+		"/v1/rerank",
+	} {
+		t.Run(path, func(t *testing.T) {
+			var wrapped bool
+			router := gin.New()
+			router.Use(ChatRecord())
+			router.POST(path, func(c *gin.Context) {
+				_, wrapped = c.Writer.(*captureWriter)
+				c.String(http.StatusOK, "payload")
+			})
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`)))
+
+			assert.False(t, wrapped, "%s cannot yield a transcript and must not be buffered", path)
+			assert.Equal(t, "payload", recorder.Body.String())
+		})
+	}
+
+	// A chat route, by contrast, is captured.
+	var wrapped bool
+	router := gin.New()
+	router.Use(ChatRecord())
+	router.POST("/v1/chat/completions", func(c *gin.Context) {
+		_, wrapped = c.Writer.(*captureWriter)
+		c.String(http.StatusOK, "hi")
+	})
+	router.ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{}`)))
+	assert.True(t, wrapped, "a chat reply is what the feature exists to record")
+}
+
+// io.Copy asks a writer for ReadFrom. gin reaches net/http's through embedding;
+// the wrapper must not lose the reply on the way.
+func TestReadFromStillTeesTheReply(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := operation_setting.GetChatRecordSetting()
+	prevEnabled, prevDSN := cfg.Enabled, cfg.DSN
+	t.Cleanup(func() { cfg.Enabled, cfg.DSN = prevEnabled, prevDSN })
+	cfg.Enabled, cfg.DSN = true, "postgres://u:p@127.0.0.1:1/none"
+
+	var captured []byte
+	router := gin.New()
+	router.Use(ChatRecord())
+	router.POST("/v1/chat/completions", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+		_, err := io.Copy(c.Writer, strings.NewReader(`{"choices":[{"message":{"content":"copied"}}]}`))
+		require.NoError(t, err)
+		if w, ok := c.Writer.(*captureWriter); ok {
+			captured = w.buf.Bytes()
+		}
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{}`)))
+
+	assert.Equal(t, `{"choices":[{"message":{"content":"copied"}}]}`, recorder.Body.String())
+	assert.Equal(t, recorder.Body.String(), string(captured), "io.Copy bypassed the tee")
 }

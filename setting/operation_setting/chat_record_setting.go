@@ -24,6 +24,12 @@ type ChatRecordSetting struct {
 	MaxContentChars int `json:"max_content_chars"`
 	// MaxCaptureBytes bounds what is held from one response while it streams.
 	MaxCaptureBytes int `json:"max_capture_bytes"`
+	// MaxQueuedBytes bounds what every waiting turn holds, added together. The
+	// queue keeps request and response bodies alive past the request that made
+	// them, and those bodies no longer count towards the gateway's own buffer
+	// accounting — so if the store stalls, this is the only thing standing
+	// between a slow database and the gateway's heap.
+	MaxQueuedBytes int `json:"max_queued_bytes"`
 }
 
 var chatRecordSetting = ChatRecordSetting{
@@ -33,6 +39,7 @@ var chatRecordSetting = ChatRecordSetting{
 	Workers:         4,
 	MaxContentChars: 32000,
 	MaxCaptureBytes: 1 << 20,
+	MaxQueuedBytes:  64 << 20,
 }
 
 func init() {
@@ -71,4 +78,11 @@ func (s *ChatRecordSetting) MaxCaptureBytesOrDefault() int {
 		return 1 << 20
 	}
 	return s.MaxCaptureBytes
+}
+
+func (s *ChatRecordSetting) MaxQueuedBytesOrDefault() int64 {
+	if s.MaxQueuedBytes <= 0 {
+		return 64 << 20
+	}
+	return int64(s.MaxQueuedBytes)
 }

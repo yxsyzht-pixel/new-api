@@ -35,6 +35,7 @@ const schema = z.object({
   queueSize: z.coerce.number().int().min(1),
   workers: z.coerce.number().int().min(1),
   maxContentChars: z.coerce.number().int().min(1),
+  maxQueuedMb: z.coerce.number().int().min(1),
 });
 
 type Values = z.infer<typeof schema>;

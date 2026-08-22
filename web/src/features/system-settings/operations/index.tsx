@@ -60,7 +60,8 @@ const defaultOperationsSettings: OperationsSettings = {
   'chat_record_setting.dsn': '',
   'chat_record_setting.queue_size': 4096,
   'chat_record_setting.workers': 4,
-  'chat_record_setting.max_content_chars': 20000,
+  'chat_record_setting.max_content_chars': 32000,
+  'chat_record_setting.max_queued_bytes': 64 * 1024 * 1024,
 }
 
 export function OperationsSettings() {

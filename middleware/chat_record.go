@@ -3,6 +3,7 @@ package middleware
 import (
 	"bytes"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -29,19 +30,31 @@ type captureWriter struct {
 }
 
 func (w *captureWriter) Write(b []byte) (int, error) {
-	w.keep(b)
+	if !w.dropped {
+		w.keep(b)
+	}
 	return w.ResponseWriter.Write(b)
 }
 
 func (w *captureWriter) WriteString(s string) (int, error) {
-	w.keep([]byte(s))
+	// Kept as a string: converting to []byte first would copy every chunk of
+	// every stream a second time, for nothing.
+	if !w.dropped {
+		if room := w.limit - w.buf.Len(); room > 0 {
+			if len(s) <= room {
+				w.buf.WriteString(s)
+			} else {
+				w.buf.WriteString(s[:room])
+				w.dropped = true
+			}
+		} else {
+			w.dropped = true
+		}
+	}
 	return io.WriteString(w.ResponseWriter, s)
 }
 
 func (w *captureWriter) keep(b []byte) {
-	if w.dropped {
-		return
-	}
 	if room := w.limit - w.buf.Len(); room > 0 {
 		if len(b) <= room {
 			w.buf.Write(b)
@@ -50,6 +63,39 @@ func (w *captureWriter) keep(b []byte) {
 		w.buf.Write(b[:room])
 	}
 	w.dropped = true
+}
+
+// ReadFrom keeps io.Copy on its fast path. gin's own writer reaches the
+// net/http ReaderFrom through embedding; wrapping it in an interface hides that,
+// which would quietly turn a sendfile-style copy into a 32KB loop. Once there is
+// nothing left to keep, hand the reader straight down.
+func (w *captureWriter) ReadFrom(r io.Reader) (int64, error) {
+	if w.dropped {
+		if rf, ok := w.ResponseWriter.(io.ReaderFrom); ok {
+			return rf.ReadFrom(r)
+		}
+	}
+	// writeOnly hides this ReadFrom from io.Copy so it uses Write and the tee.
+	type writeOnly struct{ io.Writer }
+	return io.Copy(writeOnly{w}, r)
+}
+
+// captureResponseFor says whether a reply on this route can hold anything worth
+// recording. Image endpoints answer with base64 payloads and audio with binary:
+// buffering a megabyte of either, per request, to extract nothing from it is
+// pure cost. The prompt on those routes is still recorded.
+func captureResponseFor(path string) bool {
+	switch {
+	case strings.Contains(path, "/images/"),
+		strings.Contains(path, "/audio/"),
+		strings.Contains(path, "/embeddings"),
+		strings.Contains(path, "/moderations"),
+		strings.Contains(path, "/rerank"),
+		strings.Contains(path, "/files"),
+		strings.Contains(path, "/realtime"):
+		return false
+	}
+	return true
 }
 
 // ChatRecord captures one turn when transcript recording is on, and gets out of
@@ -62,13 +108,22 @@ func ChatRecord() gin.HandlerFunc {
 			return
 		}
 
-		writer := &captureWriter{ResponseWriter: c.Writer, limit: cfg.MaxCaptureBytesOrDefault()}
-		c.Writer = writer
 		started := time.Now()
+		var writer *captureWriter
+		if captureResponseFor(c.Request.URL.Path) {
+			writer = &captureWriter{ResponseWriter: c.Writer, limit: cfg.MaxCaptureBytesOrDefault()}
+			c.Writer = writer
+		}
 
 		c.Next()
 
-		c.Writer = writer.ResponseWriter
+		var responseBody []byte
+		status := c.Writer.Status()
+		if writer != nil {
+			c.Writer = writer.ResponseWriter
+			responseBody = writer.buf.Bytes()
+			status = writer.ResponseWriter.Status()
+		}
 
 		// The relay has already materialised the body by now, so reading it back
 		// costs nothing more — as long as it stayed in memory. One that spilled to
@@ -77,7 +132,12 @@ func ChatRecord() gin.HandlerFunc {
 		var requestBody []byte
 		if stored, ok := c.Get(common.KeyBodyStorage); ok {
 			if storage, ok := stored.(common.BodyStorage); ok && !storage.IsDisk() {
-				requestBody, _ = storage.Bytes()
+				// Holding the reference keeps the body alive until the turn is
+				// written, so an outsized one is left behind rather than parked
+				// in the queue.
+				if storage.Size() <= int64(cfg.MaxCaptureBytesOrDefault()) {
+					requestBody, _ = storage.Bytes()
+				}
 			}
 		}
 		chatrecord.Submit(chatrecord.Turn{
@@ -88,10 +148,10 @@ func ChatRecord() gin.HandlerFunc {
 			StaffID:      c.GetString("token_staff_id"),
 			ModelName:    c.GetString(string(constant.ContextKeyOriginalModel)),
 			Endpoint:     c.Request.URL.Path,
-			StatusCode:   writer.ResponseWriter.Status(),
+			StatusCode:   status,
 			CreatedAt:    started,
 			RequestBody:  requestBody,
-			ResponseBody: writer.buf.Bytes(),
+			ResponseBody: responseBody,
 		})
 	}
 }

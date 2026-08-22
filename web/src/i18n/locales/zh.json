@@ -5362,6 +5362,9 @@
     "Writer stopped": "写入进程未运行",
     "Staff ID": "工号",
     "Enter a staff ID": "请输入工号",
-    "Recorded alongside each chat transcript from this key.": "该密钥产生的每条聊天记录都会带上这个工号。"
+    "Recorded alongside each chat transcript from this key.": "该密钥产生的每条聊天记录都会带上这个工号。",
+    "Memory ceiling for the queue (MB)": "队列内存上限(MB)",
+    "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "等待写入的记录会把请求和回复留在内存里。数据库卡住时,就靠这个上限拦住队列吃掉网关的内存——超过就丢记录。",
+    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "写入进程运行中 · 队列 {{queued}}/{{capacity}} · 占用 {{heldMb}} MB · 已写入 {{written}} · 已丢弃 {{dropped}} · 失败 {{failed}}"
   }
 }
