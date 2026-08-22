@@ -89,7 +89,10 @@ func GetOptions(c *gin.Context) {
 			strings.HasSuffix(k, "Secret") ||
 			strings.HasSuffix(k, "Key") ||
 			strings.HasSuffix(k, "secret") ||
-			strings.HasSuffix(k, "api_key")
+			strings.HasSuffix(k, "api_key") ||
+			// carries a database password; the page reads a redacted form from
+			// /api/option/chat_record/status instead
+			k == "chat_record_setting.dsn"
 		if isSensitiveKey {
 			continue
 		}

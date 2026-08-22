@@ -5341,6 +5341,27 @@
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom",
     "Client disconnected": "Client disconnected",
-    "The caller closed the connection before the response finished.": "The caller closed the connection before the response finished."
+    "The caller closed the connection before the response finished.": "The caller closed the connection before the response finished.",
+    "Chat transcript recording": "Chat transcript recording",
+    "Record chat transcripts": "Record chat transcripts",
+    "Stores each turn’s user message and model reply in a separate database. Writing happens on a queue the relay never waits on: if the store falls behind, transcripts are dropped rather than requests being slowed.": "Stores each turn’s user message and model reply in a separate database. Writing happens on a queue the relay never waits on: if the store falls behind, transcripts are dropped rather than requests being slowed.",
+    "Transcript database address": "Transcript database address",
+    "A PostgreSQL database of your own. Use “Initialise” once to create the table and its indexes.": "A PostgreSQL database of your own. Use “Initialise” once to create the table and its indexes.",
+    "An address is already saved (shown without its password). Leave this empty to keep it.": "An address is already saved (shown without its password). Leave this empty to keep it.",
+    "Test connection": "Test connection",
+    "Testing…": "Testing…",
+    "Initialise database": "Initialise database",
+    "Initialising…": "Initialising…",
+    "Save transcript settings": "Save transcript settings",
+    "Queue size": "Queue size",
+    "How many finished turns may wait to be written. A full queue drops new ones so no request ever waits.": "How many finished turns may wait to be written. A full queue drops new ones so no request ever waits.",
+    "Writer count": "Writer count",
+    "Characters kept per message": "Characters kept per message",
+    "Longer messages are cut at this length. A turn replays the whole conversation, so without a cap one row could hold megabytes.": "Longer messages are cut at this length. A turn replays the whole conversation, so without a cap one row could hold megabytes.",
+    "Writer running · {{queued}}/{{capacity}} queued · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Writer running · {{queued}}/{{capacity}} queued · {{written}} written · {{dropped}} dropped · {{failed}} failed",
+    "Writer stopped": "Writer stopped",
+    "Staff ID": "Staff ID",
+    "Enter a staff ID": "Enter a staff ID",
+    "Recorded alongside each chat transcript from this key.": "Recorded alongside each chat transcript from this key."
   }
 }

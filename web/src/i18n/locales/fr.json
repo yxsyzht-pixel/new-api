@@ -5341,6 +5341,27 @@
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom",
     "Client disconnected": "Client déconnecté",
-    "The caller closed the connection before the response finished.": "L'appelant a fermé la connexion avant la fin de la réponse."
+    "The caller closed the connection before the response finished.": "L'appelant a fermé la connexion avant la fin de la réponse.",
+    "Chat transcript recording": "Enregistrement des conversations",
+    "Record chat transcripts": "Enregistrer les conversations",
+    "Stores each turn’s user message and model reply in a separate database. Writing happens on a queue the relay never waits on: if the store falls behind, transcripts are dropped rather than requests being slowed.": "Enregistre le message de l’utilisateur et la réponse du modèle dans une base séparée. L’écriture passe par une file d’attente que le relais n’attend jamais.",
+    "Transcript database address": "Adresse de la base de données",
+    "A PostgreSQL database of your own. Use “Initialise” once to create the table and its indexes.": "Votre propre base PostgreSQL. Cliquez une fois sur « Initialiser » pour créer la table et ses index.",
+    "An address is already saved (shown without its password). Leave this empty to keep it.": "Une adresse est déjà enregistrée (sans son mot de passe). Laissez vide pour la conserver.",
+    "Test connection": "Tester la connexion",
+    "Testing…": "Test en cours…",
+    "Initialise database": "Initialiser la base",
+    "Initialising…": "Initialisation…",
+    "Save transcript settings": "Enregistrer les paramètres",
+    "Queue size": "Taille de la file",
+    "How many finished turns may wait to be written. A full queue drops new ones so no request ever waits.": "Nombre de tours pouvant attendre l’écriture. Une file pleine abandonne les nouveaux plutôt que de ralentir les requêtes.",
+    "Writer count": "Nombre d’écrivains",
+    "Characters kept per message": "Caractères conservés par message",
+    "Longer messages are cut at this length. A turn replays the whole conversation, so without a cap one row could hold megabytes.": "Les messages plus longs sont tronqués. Un tour rejoue toute la conversation ; sans limite, une ligne pèserait des mégaoctets.",
+    "Writer running · {{queued}}/{{capacity}} queued · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Écriture active · file {{queued}}/{{capacity}} · {{written}} écrits · {{dropped}} abandonnés · {{failed}} échecs",
+    "Writer stopped": "Écriture arrêtée",
+    "Staff ID": "Matricule",
+    "Enter a staff ID": "Saisissez le matricule",
+    "Recorded alongside each chat transcript from this key.": "Enregistré avec chaque conversation issue de cette clé."
   }
 }

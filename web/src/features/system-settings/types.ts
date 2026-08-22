@@ -366,6 +366,11 @@ export type OperationsSettings = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
+  'chat_record_setting.enabled': boolean
+  'chat_record_setting.dsn': string
+  'chat_record_setting.queue_size': number
+  'chat_record_setting.workers': number
+  'chat_record_setting.max_content_chars': number
 }
 
 export type SecuritySettings = {

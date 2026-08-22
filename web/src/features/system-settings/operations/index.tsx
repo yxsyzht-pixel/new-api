@@ -56,6 +56,11 @@ const defaultOperationsSettings: OperationsSettings = {
   'perf_metrics_setting.flush_interval': 5,
   'perf_metrics_setting.bucket_time': 'hour',
   'perf_metrics_setting.retention_days': 0,
+  'chat_record_setting.enabled': false,
+  'chat_record_setting.dsn': '',
+  'chat_record_setting.queue_size': 4096,
+  'chat_record_setting.workers': 4,
+  'chat_record_setting.max_content_chars': 20000,
 }
 
 export function OperationsSettings() {

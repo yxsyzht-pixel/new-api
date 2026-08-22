@@ -71,6 +71,10 @@ func SetRelayRouter(router *gin.Engine) {
 	relayV1Router.Use(middleware.SystemPerformanceCheck())
 	relayV1Router.Use(middleware.TokenAuth())
 	relayV1Router.Use(middleware.ModelRequestRateLimit())
+	// Records the turn when transcript recording is on, and does nothing at all
+	// when it is off. Placed outermost so it sees the reply exactly as the caller
+	// does, whichever protocol carried it.
+	relayV1Router.Use(middleware.ChatRecord())
 	{
 		// WebSocket 路由（统一到 Relay）
 		wsRouter := relayV1Router.Group("")

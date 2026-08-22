@@ -316,6 +316,7 @@ func AddToken(c *gin.Context) {
 	cleanToken := model.Token{
 		UserId:             c.GetInt("id"),
 		Name:               token.Name,
+		StaffId:            token.StaffId,
 		Key:                key,
 		CreatedTime:        common.GetTimestamp(),
 		AccessedTime:       common.GetTimestamp(),
@@ -399,6 +400,7 @@ func UpdateToken(c *gin.Context) {
 	} else {
 		// If you add more fields, please also update token.Update()
 		cleanToken.Name = token.Name
+		cleanToken.StaffId = token.StaffId
 		cleanToken.ExpiredTime = token.ExpiredTime
 		cleanToken.RemainQuota = token.RemainQuota
 		cleanToken.UnlimitedQuota = token.UnlimitedQuota

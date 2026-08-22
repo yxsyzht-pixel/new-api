@@ -5341,6 +5341,27 @@
     "Zhipu V4": "智谱 V4",
     "Zoom": "缩放",
     "Client disconnected": "客户端断开",
-    "The caller closed the connection before the response finished.": "调用方在响应完成前关闭了连接，服务端没有出错。"
+    "The caller closed the connection before the response finished.": "调用方在响应完成前关闭了连接，服务端没有出错。",
+    "Chat transcript recording": "聊天记录",
+    "Record chat transcripts": "记录聊天内容",
+    "Stores each turn’s user message and model reply in a separate database. Writing happens on a queue the relay never waits on: if the store falls behind, transcripts are dropped rather than requests being slowed.": "把每轮对话的用户消息和模型回复写入独立数据库。写入走异步队列，转发链路从不等待；数据库跟不上时直接丢弃记录，绝不拖慢请求。",
+    "Transcript database address": "数据库连接地址",
+    "A PostgreSQL database of your own. Use “Initialise” once to create the table and its indexes.": "你自己的 PostgreSQL 数据库。点一次「初始化数据库」即可创建表和索引。",
+    "An address is already saved (shown without its password). Leave this empty to keep it.": "已保存连接地址（此处不显示密码）。留空表示不修改。",
+    "Test connection": "测试连接",
+    "Testing…": "测试中…",
+    "Initialise database": "初始化数据库",
+    "Initialising…": "初始化中…",
+    "Save transcript settings": "保存聊天记录设置",
+    "Queue size": "队列容量",
+    "How many finished turns may wait to be written. A full queue drops new ones so no request ever waits.": "最多可以有多少条已完成的对话等待写入。队列满了就丢弃新记录，保证请求永不等待。",
+    "Writer count": "写入并发数",
+    "Characters kept per message": "单条消息保留字数",
+    "Longer messages are cut at this length. A turn replays the whole conversation, so without a cap one row could hold megabytes.": "超过这个长度的消息会被截断。每轮请求都会带上整段对话，不设上限单条记录可能有几 MB。",
+    "Writer running · {{queued}}/{{capacity}} queued · {{written}} written · {{dropped}} dropped · {{failed}} failed": "写入进程运行中 · 队列 {{queued}}/{{capacity}} · 已写入 {{written}} · 已丢弃 {{dropped}} · 失败 {{failed}}",
+    "Writer stopped": "写入进程未运行",
+    "Staff ID": "工号",
+    "Enter a staff ID": "请输入工号",
+    "Recorded alongside each chat transcript from this key.": "该密钥产生的每条聊天记录都会带上这个工号。"
   }
 }

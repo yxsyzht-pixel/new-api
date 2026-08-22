@@ -5341,6 +5341,27 @@
     "Zhipu V4": "Zhipu V 4",
     "Zoom": "ズーム",
     "Client disconnected": "クライアント切断",
-    "The caller closed the connection before the response finished.": "呼び出し側が応答の完了前に接続を閉じました。サーバー側の障害ではありません。"
+    "The caller closed the connection before the response finished.": "呼び出し側が応答の完了前に接続を閉じました。サーバー側の障害ではありません。",
+    "Chat transcript recording": "チャット記録",
+    "Record chat transcripts": "チャット内容を記録",
+    "Stores each turn’s user message and model reply in a separate database. Writing happens on a queue the relay never waits on: if the store falls behind, transcripts are dropped rather than requests being slowed.": "各ターンのユーザーメッセージとモデル応答を別のデータベースに保存します。書き込みは非同期キューで行われ、中継処理が待つことはありません。",
+    "Transcript database address": "データベース接続先",
+    "A PostgreSQL database of your own. Use “Initialise” once to create the table and its indexes.": "ご自身の PostgreSQL データベース。「初期化」を一度押すとテーブルとインデックスを作成します。",
+    "An address is already saved (shown without its password). Leave this empty to keep it.": "接続先は保存済みです（パスワードは表示されません）。空欄のままなら変更しません。",
+    "Test connection": "接続テスト",
+    "Testing…": "テスト中…",
+    "Initialise database": "データベースを初期化",
+    "Initialising…": "初期化中…",
+    "Save transcript settings": "チャット記録設定を保存",
+    "Queue size": "キュー容量",
+    "How many finished turns may wait to be written. A full queue drops new ones so no request ever waits.": "書き込み待ちにできる会話の最大数。満杯になると新しい記録を破棄し、リクエストを待たせません。",
+    "Writer count": "書き込み並列数",
+    "Characters kept per message": "メッセージあたりの保存文字数",
+    "Longer messages are cut at this length. A turn replays the whole conversation, so without a cap one row could hold megabytes.": "この長さを超えるメッセージは切り詰められます。1 回のリクエストが会話全体を含むため、上限がないと 1 行が数 MB になります。",
+    "Writer running · {{queued}}/{{capacity}} queued · {{written}} written · {{dropped}} dropped · {{failed}} failed": "書き込み稼働中 · キュー {{queued}}/{{capacity}} · 書込 {{written}} · 破棄 {{dropped}} · 失敗 {{failed}}",
+    "Writer stopped": "書き込み停止中",
+    "Staff ID": "社員番号",
+    "Enter a staff ID": "社員番号を入力",
+    "Recorded alongside each chat transcript from this key.": "このキーによるチャット記録にこの番号が付与されます。"
   }
 }

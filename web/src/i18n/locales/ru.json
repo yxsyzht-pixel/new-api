@@ -5341,6 +5341,27 @@
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom",
     "Client disconnected": "Клиент отключился",
-    "The caller closed the connection before the response finished.": "Вызывающая сторона закрыла соединение до завершения ответа."
+    "The caller closed the connection before the response finished.": "Вызывающая сторона закрыла соединение до завершения ответа.",
+    "Chat transcript recording": "Запись переписки",
+    "Record chat transcripts": "Записывать переписку",
+    "Stores each turn’s user message and model reply in a separate database. Writing happens on a queue the relay never waits on: if the store falls behind, transcripts are dropped rather than requests being slowed.": "Сохраняет сообщение пользователя и ответ модели в отдельной базе. Запись идёт через очередь, запросы её не ждут.",
+    "Transcript database address": "Адрес базы данных",
+    "A PostgreSQL database of your own. Use “Initialise” once to create the table and its indexes.": "Ваша база PostgreSQL. Нажмите «Инициализировать», чтобы создать таблицу и индексы.",
+    "An address is already saved (shown without its password). Leave this empty to keep it.": "Адрес уже сохранён (без пароля). Оставьте поле пустым, чтобы не менять его.",
+    "Test connection": "Проверить подключение",
+    "Testing…": "Проверка…",
+    "Initialise database": "Инициализировать базу",
+    "Initialising…": "Инициализация…",
+    "Save transcript settings": "Сохранить настройки записи",
+    "Queue size": "Размер очереди",
+    "How many finished turns may wait to be written. A full queue drops new ones so no request ever waits.": "Сколько завершённых диалогов может ждать записи. При переполнении новые отбрасываются, запросы не ждут.",
+    "Writer count": "Число писателей",
+    "Characters kept per message": "Символов на сообщение",
+    "Longer messages are cut at this length. A turn replays the whole conversation, so without a cap one row could hold megabytes.": "Более длинные сообщения обрезаются. Один запрос содержит весь диалог, без ограничения строка займёт мегабайты.",
+    "Writer running · {{queued}}/{{capacity}} queued · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Писатель работает · очередь {{queued}}/{{capacity}} · записано {{written}} · отброшено {{dropped}} · ошибок {{failed}}",
+    "Writer stopped": "Писатель остановлен",
+    "Staff ID": "Табельный номер",
+    "Enter a staff ID": "Введите табельный номер",
+    "Recorded alongside each chat transcript from this key.": "Сохраняется вместе с каждой записью переписки по этому ключу."
   }
 }
