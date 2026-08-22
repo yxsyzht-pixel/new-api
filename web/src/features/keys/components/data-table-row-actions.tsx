@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { Row } from '@tanstack/react-table'
+import type { Row } from "@tanstack/react-table";
 import {
   Trash2,
   Edit,
@@ -27,13 +27,13 @@ import {
   Copy,
   Link,
   Loader2,
-} from 'lucide-react'
-import { useCallback, useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
+} from "lucide-react";
+import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
-import { DataTableRowActionMenu } from '@/components/data-table/core/row-action-menu'
-import { Button } from '@/components/ui/button'
+import { DataTableRowActionMenu } from "@/components/data-table/core/row-action-menu";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -41,45 +41,48 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuShortcut,
-} from '@/components/ui/dropdown-menu'
+} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { useChatPresets } from '@/features/chat/hooks/use-chat-presets'
-import { resolveChatUrl, type ChatPreset } from '@/features/chat/lib/chat-links'
-import { sendToFluent } from '@/features/chat/lib/send-to-fluent'
-import { encodeChannelConnectionInfo } from '@/lib/channel-connection-info'
-import { copyToClipboard } from '@/lib/copy-to-clipboard'
+} from "@/components/ui/tooltip";
+import { useChatPresets } from "@/features/chat/hooks/use-chat-presets";
+import {
+  resolveChatUrl,
+  type ChatPreset,
+} from "@/features/chat/lib/chat-links";
+import { sendToFluent } from "@/features/chat/lib/send-to-fluent";
+import { encodeChannelConnectionInfo } from "@/lib/channel-connection-info";
+import { copyToClipboard } from "@/lib/copy-to-clipboard";
 
-import { updateApiKeyStatus } from '../api'
-import { API_KEY_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
-import { apiKeySchema } from '../types'
-import { useApiKeys } from './api-keys-provider'
+import { updateApiKeyStatus } from "../api";
+import { API_KEY_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from "../constants";
+import { apiKeySchema } from "../types";
+import { useApiKeys } from "./api-keys-provider";
 
 function getServerAddress(): string {
   try {
-    const raw = localStorage.getItem('status')
+    const raw = localStorage.getItem("status");
     if (raw) {
-      const status = JSON.parse(raw)
-      if (status.server_address) return status.server_address as string
+      const status = JSON.parse(raw);
+      if (status.server_address) return status.server_address as string;
     }
   } catch {
     /* empty */
   }
-  return window.location.origin
+  return window.location.origin;
 }
 
 type DataTableRowActionsProps<TData> = {
-  row: Row<TData>
-}
+  row: Row<TData>;
+};
 
 export function DataTableRowActions<TData>({
   row,
 }: DataTableRowActionsProps<TData>) {
-  const { t } = useTranslation()
-  const apiKey = apiKeySchema.parse(row.original)
+  const { t } = useTranslation();
+  const apiKey = apiKeySchema.parse(row.original);
   const {
     setOpen,
     setCurrentRow,
@@ -88,122 +91,122 @@ export function DataTableRowActions<TData>({
     resolveRealKey,
     resolvedKeys,
     loadingKeys,
-  } = useApiKeys()
-  const isEnabled = apiKey.status === API_KEY_STATUS.ENABLED
-  const { chatPresets, serverAddress } = useChatPresets()
-  const [isTogglingStatus, setIsTogglingStatus] = useState(false)
-  const resolvedRealKey = resolvedKeys[apiKey.id]
-  const isRealKeyLoading = Boolean(loadingKeys[apiKey.id])
+  } = useApiKeys();
+  const isEnabled = apiKey.status === API_KEY_STATUS.ENABLED;
+  const { chatPresets, serverAddress } = useChatPresets();
+  const [isTogglingStatus, setIsTogglingStatus] = useState(false);
+  const resolvedRealKey = resolvedKeys[apiKey.id];
+  const isRealKeyLoading = Boolean(loadingKeys[apiKey.id]);
 
-  const hasChatPresets = chatPresets.length > 0
-  const toggleLabel = isEnabled ? t('Disable') : t('Enable')
+  const hasChatPresets = chatPresets.length > 0;
+  const toggleLabel = isEnabled ? t("Disable") : t("Enable");
 
   const handleMenuOpenChange = useCallback(
     (open: boolean) => {
       if (open && !resolvedRealKey && !isRealKeyLoading) {
-        void resolveRealKey(apiKey.id)
+        void resolveRealKey(apiKey.id);
       }
     },
-    [apiKey.id, isRealKeyLoading, resolvedRealKey, resolveRealKey]
-  )
+    [apiKey.id, isRealKeyLoading, resolvedRealKey, resolveRealKey],
+  );
 
   const getCachedRealKey = useCallback(() => {
-    if (resolvedRealKey) return resolvedRealKey
-    void resolveRealKey(apiKey.id)
-    toast.info(t('API key is loading, please try again in a moment'))
-    return null
-  }, [apiKey.id, resolvedRealKey, resolveRealKey, t])
+    if (resolvedRealKey) return resolvedRealKey;
+    void resolveRealKey(apiKey.id);
+    toast.info(t("API key is loading, please try again in a moment"));
+    return null;
+  }, [apiKey.id, resolvedRealKey, resolveRealKey, t]);
 
   const handleOpenChatPreset = useCallback(
     async (preset: ChatPreset) => {
-      const realKey = await resolveRealKey(apiKey.id)
-      if (!realKey) return
+      const realKey = await resolveRealKey(apiKey.id);
+      if (!realKey) return;
 
-      if (preset.type === 'fluent') {
-        const success = sendToFluent(realKey, serverAddress)
+      if (preset.type === "fluent") {
+        const success = sendToFluent(realKey, serverAddress);
         if (success) {
-          toast.success(t('Sent the API key to FluentRead.'))
+          toast.success(t("Sent the API key to FluentRead."));
         } else {
           toast.info(
             t(
-              'FluentRead extension not detected. Please ensure it is installed and active.'
-            )
-          )
+              "FluentRead extension not detected. Please ensure it is installed and active.",
+            ),
+          );
         }
-        return
+        return;
       }
 
       const resolvedUrl = resolveChatUrl({
         template: preset.url,
         apiKey: realKey,
         serverAddress,
-      })
+      });
 
       if (!resolvedUrl) {
-        toast.error(t('Invalid chat link. Please contact your administrator.'))
-        return
+        toast.error(t("Invalid chat link. Please contact your administrator."));
+        return;
       }
 
-      if (typeof window === 'undefined') return
+      if (typeof window === "undefined") return;
 
       try {
-        window.open(resolvedUrl, '_blank', 'noopener')
+        window.open(resolvedUrl, "_blank", "noopener");
       } catch {
-        window.location.href = resolvedUrl
+        window.location.href = resolvedUrl;
       }
     },
-    [resolveRealKey, apiKey.id, serverAddress, t]
-  )
+    [resolveRealKey, apiKey.id, serverAddress, t],
+  );
 
   const handleToggleStatus = async (
-    e?: React.MouseEvent<HTMLButtonElement>
+    e?: React.MouseEvent<HTMLButtonElement>,
   ) => {
-    e?.stopPropagation()
+    e?.stopPropagation();
     const newStatus = isEnabled
       ? API_KEY_STATUS.DISABLED
-      : API_KEY_STATUS.ENABLED
+      : API_KEY_STATUS.ENABLED;
 
-    setIsTogglingStatus(true)
+    setIsTogglingStatus(true);
     try {
-      const result = await updateApiKeyStatus(apiKey.id, newStatus)
+      const result = await updateApiKeyStatus(apiKey.id, newStatus);
       if (result.success) {
         const message = isEnabled
           ? t(SUCCESS_MESSAGES.API_KEY_DISABLED)
-          : t(SUCCESS_MESSAGES.API_KEY_ENABLED)
-        toast.success(message)
-        triggerRefresh()
+          : t(SUCCESS_MESSAGES.API_KEY_ENABLED);
+        toast.success(message);
+        triggerRefresh();
       } else {
-        toast.error(result.message || t(ERROR_MESSAGES.STATUS_UPDATE_FAILED))
+        toast.error(result.message || t(ERROR_MESSAGES.STATUS_UPDATE_FAILED));
       }
     } catch {
-      toast.error(t(ERROR_MESSAGES.UNEXPECTED))
+      toast.error(t(ERROR_MESSAGES.UNEXPECTED));
     } finally {
-      setIsTogglingStatus(false)
+      setIsTogglingStatus(false);
     }
-  }
+  };
 
-  let statusIcon = <Power className='size-4' />
+  let statusIcon = <Power className="size-4" />;
   if (isTogglingStatus) {
-    statusIcon = <Loader2 className='size-4 animate-spin' />
+    statusIcon = <Loader2 className="size-4 animate-spin" />;
   } else if (isEnabled) {
-    statusIcon = <PowerOff className='size-4' />
+    statusIcon = <PowerOff className="size-4" />;
   }
 
   return (
-    <div className='-ml-1.5 flex items-center gap-1'>
+    <div className="-ml-1.5 flex items-center gap-1">
       <Tooltip>
         <TooltipTrigger
           render={
             <Button
-              variant='ghost'
-              size='icon-sm'
+              variant="ghost"
+              size="icon-sm"
               onClick={handleToggleStatus}
               disabled={isTogglingStatus}
               aria-label={toggleLabel}
               className={
                 isEnabled
-                  ? 'text-destructive hover:text-destructive'
-                  : 'text-emerald-600 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-400'
+                  ? "text-destructive hover:text-destructive"
+                  : "text-emerald-600 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-400"
               }
             />
           }
@@ -217,53 +220,53 @@ export function DataTableRowActions<TData>({
         <TooltipTrigger
           render={
             <Button
-              variant='ghost'
-              size='icon-sm'
+              variant="ghost"
+              size="icon-sm"
               onClick={() => {
-                setCurrentRow(apiKey)
-                setOpen('update')
+                setCurrentRow(apiKey);
+                setOpen("update");
               }}
-              aria-label={t('Edit')}
+              aria-label={t("Edit")}
             />
           }
         >
           <Edit />
         </TooltipTrigger>
-        <TooltipContent>{t('Edit')}</TooltipContent>
+        <TooltipContent>{t("Edit")}</TooltipContent>
       </Tooltip>
 
       <DataTableRowActionMenu
-        ariaLabel={t('Open menu')}
-        contentClassName='w-[200px]'
+        ariaLabel={t("Open menu")}
+        contentClassName="w-[200px]"
         modal={false}
         onOpenChange={handleMenuOpenChange}
       >
         <DropdownMenuItem
           onClick={async () => {
-            const realKey = getCachedRealKey()
-            if (!realKey) return
-            const ok = await copyToClipboard(realKey)
-            if (ok) toast.success(t('Copied'))
+            const realKey = getCachedRealKey();
+            if (!realKey) return;
+            const ok = await copyToClipboard(realKey);
+            if (ok) toast.success(t("Copied"));
           }}
         >
-          {t('Copy Key')}
+          {t("Copy Key")}
           <DropdownMenuShortcut>
             <Copy size={16} />
           </DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={async () => {
-            const realKey = getCachedRealKey()
-            if (!realKey) return
+            const realKey = getCachedRealKey();
+            if (!realKey) return;
             const connStr = encodeChannelConnectionInfo(
               realKey,
-              getServerAddress()
-            )
-            const ok = await copyToClipboard(connStr)
-            if (ok) toast.success(t('Copied'))
+              getServerAddress(),
+            );
+            const ok = await copyToClipboard(connStr);
+            if (ok) toast.success(t("Copied"));
           }}
         >
-          {t('Copy Connection Info')}
+          {t("Copy Connection Info")}
           <DropdownMenuShortcut>
             <Link size={16} />
           </DropdownMenuShortcut>
@@ -271,21 +274,21 @@ export function DataTableRowActions<TData>({
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={async () => {
-            const realKey = await resolveRealKey(apiKey.id)
-            if (!realKey) return
-            setResolvedKey(realKey)
-            setCurrentRow(apiKey)
-            setOpen('cc-switch')
+            const realKey = await resolveRealKey(apiKey.id);
+            if (!realKey) return;
+            setResolvedKey(realKey);
+            setCurrentRow(apiKey);
+            setOpen("cc-switch");
           }}
         >
-          {t('CC Switch')}
+          {t("CC Switch")}
           <DropdownMenuShortcut>
             <ArrowRightLeft size={16} />
           </DropdownMenuShortcut>
         </DropdownMenuItem>
         {hasChatPresets && (
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger>{t('Chat')}</DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger>{t("Chat")}</DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               {chatPresets.map((preset) => (
                 <DropdownMenuItem
@@ -293,7 +296,7 @@ export function DataTableRowActions<TData>({
                   onClick={() => handleOpenChatPreset(preset)}
                 >
                   {preset.name}
-                  {preset.type !== 'web' && (
+                  {preset.type !== "web" && (
                     <DropdownMenuShortcut>
                       <ExternalLink size={16} />
                     </DropdownMenuShortcut>
@@ -306,17 +309,17 @@ export function DataTableRowActions<TData>({
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={() => {
-            setCurrentRow(apiKey)
-            setOpen('delete')
+            setCurrentRow(apiKey);
+            setOpen("delete");
           }}
-          className='text-destructive focus:text-destructive'
+          className="text-destructive focus:text-destructive"
         >
-          {t('Delete')}
+          {t("Delete")}
           <DropdownMenuShortcut>
             <Trash2 size={16} />
           </DropdownMenuShortcut>
         </DropdownMenuItem>
       </DataTableRowActionMenu>
     </div>
-  )
+  );
 }

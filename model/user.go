@@ -1449,3 +1449,23 @@ func RootUserExists() bool {
 	}
 	return true
 }
+
+// GetUsernamesByIds resolves a page's worth of owners in one query, so a key
+// listing does not turn into one lookup per row.
+func GetUsernamesByIds(ids []int) (map[int]string, error) {
+	names := make(map[int]string, len(ids))
+	if len(ids) == 0 {
+		return names, nil
+	}
+	var rows []struct {
+		Id       int
+		Username string
+	}
+	if err := DB.Model(&User{}).Select("id", "username").Where("id IN (?)", ids).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		names[row.Id] = row.Username
+	}
+	return names, nil
+}

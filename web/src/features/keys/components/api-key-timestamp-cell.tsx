@@ -20,29 +20,30 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { formatTimestampRelative, formatTimestampToDate } from '@/lib/format'
-import { cn } from '@/lib/utils'
+} from "@/components/ui/tooltip";
+import { formatTimestampRelative, formatTimestampToDate } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 interface ApiKeyTimestampCellProps {
-  timestamp: number
-  now: number
-  locale?: string
-  justNowLabel: string
-  className?: string
+  timestamp: number;
+  now: number;
+  locale?: string;
+  justNowLabel: string;
+  className?: string;
 }
 
 export function ApiKeyTimestampCell(props: ApiKeyTimestampCellProps) {
   if (!props.timestamp || props.timestamp === -1) {
-    return <span className='text-muted-foreground text-xs'>-</span>
+    return <span className="text-muted-foreground text-xs">-</span>;
   }
 
-  const timestampMs = props.timestamp * 1000
-  const isJustNow = timestampMs <= props.now && props.now - timestampMs < 60_000
+  const timestampMs = props.timestamp * 1000;
+  const isJustNow =
+    timestampMs <= props.now && props.now - timestampMs < 60_000;
   const relativeTime = isJustNow
     ? props.justNowLabel
-    : formatTimestampRelative(props.timestamp, 'seconds', props.locale)
-  const absoluteTime = formatTimestampToDate(props.timestamp)
+    : formatTimestampRelative(props.timestamp, "seconds", props.locale);
+  const absoluteTime = formatTimestampToDate(props.timestamp);
 
   return (
     <Tooltip>
@@ -52,8 +53,8 @@ export function ApiKeyTimestampCell(props: ApiKeyTimestampCellProps) {
             dateTime={new Date(timestampMs).toISOString()}
             tabIndex={0}
             className={cn(
-              'block truncate font-mono text-xs tabular-nums',
-              props.className
+              "block truncate font-mono text-xs tabular-nums",
+              props.className,
             )}
           />
         }
@@ -61,8 +62,8 @@ export function ApiKeyTimestampCell(props: ApiKeyTimestampCellProps) {
         {relativeTime}
       </TooltipTrigger>
       <TooltipContent>
-        <span className='font-mono tabular-nums'>{absoluteTime}</span>
+        <span className="font-mono tabular-nums">{absoluteTime}</span>
       </TooltipContent>
     </Tooltip>
-  )
+  );
 }

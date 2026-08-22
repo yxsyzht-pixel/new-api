@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
@@ -39,6 +40,9 @@ type tokenRequest struct {
 type tokenResponse struct {
 	*model.Token
 	AutoGroups []string `json:"auto_groups"`
+	// Username is the owner's, filled in only for listings that can span more
+	// than one account.
+	Username string `json:"username,omitempty"`
 }
 
 func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
@@ -58,6 +62,35 @@ func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
 	return &tokenResponse{Token: &maskedToken, AutoGroups: autoGroups}
 }
 
+// withOwnerNames attaches each key's owner, so a page listing more than one
+// account's keys can say whose each one is. One query for the whole page.
+func withOwnerNames(tokens []*model.Token) []*tokenResponse {
+	responses := buildMaskedTokenResponses(tokens)
+
+	ids := make([]int, 0, len(responses))
+	seen := make(map[int]bool, len(responses))
+	for _, response := range responses {
+		if response.Token != nil && !seen[response.Token.UserId] {
+			seen[response.Token.UserId] = true
+			ids = append(ids, response.Token.UserId)
+		}
+	}
+	if len(ids) == 0 {
+		return responses
+	}
+	names, err := model.GetUsernamesByIds(ids)
+	if err != nil {
+		common.SysError("failed to load key owners: " + err.Error())
+		return responses
+	}
+	for _, response := range responses {
+		if response.Token != nil {
+			response.Username = names[response.Token.UserId]
+		}
+	}
+	return responses
+}
+
 func buildMaskedTokenResponses(tokens []*model.Token) []*tokenResponse {
 	maskedTokens := make([]*tokenResponse, 0, len(tokens))
 	for _, token := range tokens {
@@ -66,7 +99,71 @@ func buildMaskedTokenResponses(tokens []*model.Token) []*tokenResponse {
 	return maskedTokens
 }
 
-func getTokenRequestUserGroup(c *gin.Context) (string, error) {
+// canManageAllTokens asks whether this caller may reach into other people's
+// keys. Own keys never need it.
+func canManageAllTokens(c *gin.Context) bool {
+	return authz.Can(c.GetInt("id"), c.GetInt("role"), authz.TokenManageAll)
+}
+
+// newTokenOwner decides whose account a new key lands on. Left unset it is the
+// caller's own; naming someone else is only for a caller cleared to manage
+// other people's keys, and the account has to exist.
+func newTokenOwner(c *gin.Context, requested int) (int, bool) {
+	self := c.GetInt("id")
+	if requested == 0 || requested == self {
+		return self, true
+	}
+	if !canManageAllTokens(c) {
+		common.ApiErrorMsg(c, "无权为其他用户创建密钥")
+		return 0, false
+	}
+	if _, err := model.GetUserById(requested, false); err != nil {
+		common.ApiErrorMsg(c, "目标用户不存在")
+		return 0, false
+	}
+	return requested, true
+}
+
+// listScope resolves whose keys a listing is about. Without user_id it is the
+// caller's own, exactly as before. user_id=all spans every account, and a
+// number names one — both only for a caller cleared to manage other people's
+// keys, and both refused otherwise rather than quietly falling back to self.
+func listScope(c *gin.Context) (model.TokenScope, bool) {
+	requested := strings.TrimSpace(c.Query("user_id"))
+	if requested == "" {
+		return model.OwnerScope(c.GetInt("id")), true
+	}
+	if !canManageAllTokens(c) {
+		common.ApiErrorMsg(c, "无权查看其他用户的密钥")
+		return model.TokenScope{}, false
+	}
+	if requested == "all" {
+		return model.AllOwnersScope(), true
+	}
+	targetId, err := strconv.Atoi(requested)
+	if err != nil || targetId <= 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return model.TokenScope{}, false
+	}
+	return model.OwnerScope(targetId), true
+}
+
+// mutateScope is the scope for acting on one key that was named by id. An
+// administrator may act on anyone's; everybody else only on their own.
+func mutateScope(c *gin.Context) model.TokenScope {
+	if canManageAllTokens(c) {
+		return model.AllOwnersScope()
+	}
+	return model.OwnerScope(c.GetInt("id"))
+}
+
+// getTokenOwnerGroup resolves the group whose selectable groups a key may draw
+// on. That is the key owner's group — an administrator editing somebody else's
+// key must not widen it to their own.
+func getTokenOwnerGroup(c *gin.Context, ownerId int) (string, error) {
+	if ownerId != 0 && ownerId != c.GetInt("id") {
+		return model.GetUserGroup(ownerId, false)
+	}
 	if userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup); userGroup != "" {
 		return userGroup, nil
 	}
@@ -76,7 +173,7 @@ func getTokenRequestUserGroup(c *gin.Context) (string, error) {
 	return model.GetUserGroup(c.GetInt("id"), false)
 }
 
-func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) bool {
+func setTokenAutoGroups(c *gin.Context, ownerId int, token *model.Token, groups []string) bool {
 	if len(groups) == 0 {
 		if err := token.SetAutoGroups(nil); err != nil {
 			common.ApiError(c, err)
@@ -91,7 +188,7 @@ func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) boo
 		return false
 	}
 
-	userGroup, err := getTokenRequestUserGroup(c)
+	userGroup, err := getTokenOwnerGroup(c, ownerId)
 	if err != nil {
 		common.ApiError(c, err)
 		return false
@@ -117,44 +214,49 @@ func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) boo
 }
 
 func GetAllTokens(c *gin.Context) {
-	userId := c.GetInt("id")
+	scope, ok := listScope(c)
+	if !ok {
+		return
+	}
 	pageInfo := common.GetPageQuery(c)
-	tokens, err := model.GetAllUserTokens(userId, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	tokens, err := model.GetAllUserTokens(scope, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	total, _ := model.CountUserTokens(userId)
+	total, _ := model.CountTokens(scope)
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
+	pageInfo.SetItems(withOwnerNames(tokens))
 	common.ApiSuccess(c, pageInfo)
 }
 
 func SearchTokens(c *gin.Context) {
-	userId := c.GetInt("id")
+	scope, ok := listScope(c)
+	if !ok {
+		return
+	}
 	keyword := c.Query("keyword")
 	token := c.Query("token")
 
 	pageInfo := common.GetPageQuery(c)
 
-	tokens, total, err := model.SearchUserTokens(userId, keyword, token, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	tokens, total, err := model.SearchUserTokens(scope, keyword, token, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(buildMaskedTokenResponses(tokens))
+	pageInfo.SetItems(withOwnerNames(tokens))
 	common.ApiSuccess(c, pageInfo)
 }
 
 func GetToken(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
-	userId := c.GetInt("id")
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	token, err := model.GetTokenByIds(id, userId)
+	token, err := model.GetTokenByIds(id, mutateScope(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -163,7 +265,22 @@ func GetToken(c *gin.Context) {
 }
 
 func GetTokenAutoGroups(c *gin.Context) {
-	userGroup, err := getTokenRequestUserGroup(c)
+	// An administrator picking groups for someone else's key needs that user's
+	// selectable groups, not their own.
+	ownerId := 0
+	if requested := strings.TrimSpace(c.Query("user_id")); requested != "" {
+		if !canManageAllTokens(c) {
+			common.ApiErrorMsg(c, "无权查看其他用户的分组")
+			return
+		}
+		parsed, err := strconv.Atoi(requested)
+		if err != nil || parsed <= 0 {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		ownerId = parsed
+	}
+	userGroup, err := getTokenOwnerGroup(c, ownerId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -176,12 +293,11 @@ func GetTokenAutoGroups(c *gin.Context) {
 
 func GetTokenKey(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
-	userId := c.GetInt("id")
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	token, err := model.GetTokenByIds(id, userId)
+	token, err := model.GetTokenByIds(id, mutateScope(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -193,8 +309,7 @@ func GetTokenKey(c *gin.Context) {
 
 func GetTokenStatus(c *gin.Context) {
 	tokenId := c.GetInt("token_id")
-	userId := c.GetInt("id")
-	token, err := model.GetTokenByIds(tokenId, userId)
+	token, err := model.GetTokenByIds(tokenId, model.OwnerScope(c.GetInt("id")))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -273,6 +388,10 @@ func AddToken(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
 	}
+	ownerId, ok := newTokenOwner(c, token.UserId)
+	if !ok {
+		return
+	}
 	// 非无限额度时，检查额度值是否超出有效范围
 	if !token.UnlimitedQuota {
 		if token.RemainQuota < 0 {
@@ -287,7 +406,7 @@ func AddToken(c *gin.Context) {
 	}
 	// 检查用户令牌数量是否已达上限
 	maxTokens := operation_setting.GetMaxUserTokens()
-	count, err := model.CountUserTokens(c.GetInt("id"))
+	count, err := model.CountUserTokens(ownerId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -300,7 +419,7 @@ func AddToken(c *gin.Context) {
 		return
 	}
 	if token.Group == "auto" {
-		if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups) {
+		if !setTokenAutoGroups(c, ownerId, &token, request.AutoGroups.Groups) {
 			return
 		}
 	} else {
@@ -314,7 +433,7 @@ func AddToken(c *gin.Context) {
 		return
 	}
 	cleanToken := model.Token{
-		UserId:             c.GetInt("id"),
+		UserId:             ownerId,
 		Name:               token.Name,
 		StaffId:            token.StaffId,
 		Key:                key,
@@ -343,8 +462,7 @@ func AddToken(c *gin.Context) {
 
 func DeleteToken(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	userId := c.GetInt("id")
-	err := model.DeleteTokenById(id, userId)
+	err := model.DeleteTokenById(id, mutateScope(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -356,7 +474,6 @@ func DeleteToken(c *gin.Context) {
 }
 
 func UpdateToken(c *gin.Context) {
-	userId := c.GetInt("id")
 	statusOnly := c.Query("status_only")
 	request := tokenRequest{}
 	err := c.ShouldBindJSON(&request)
@@ -380,7 +497,7 @@ func UpdateToken(c *gin.Context) {
 			return
 		}
 	}
-	cleanToken, err := model.GetTokenByIds(token.Id, userId)
+	cleanToken, err := model.GetTokenByIds(token.Id, mutateScope(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -413,7 +530,7 @@ func UpdateToken(c *gin.Context) {
 			cleanToken.CrossGroupRetry = false
 			_ = cleanToken.SetAutoGroups(nil)
 		} else if request.AutoGroups.Set {
-			if !setTokenAutoGroups(c, cleanToken, request.AutoGroups.Groups) {
+			if !setTokenAutoGroups(c, cleanToken.UserId, cleanToken, request.AutoGroups.Groups) {
 				return
 			}
 		}
@@ -440,8 +557,7 @@ func DeleteTokenBatch(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	userId := c.GetInt("id")
-	count, err := model.BatchDeleteTokens(tokenBatch.Ids, userId)
+	count, err := model.BatchDeleteTokens(tokenBatch.Ids, mutateScope(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -463,8 +579,7 @@ func GetTokenKeysBatch(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgBatchTooMany, map[string]any{"Max": 100})
 		return
 	}
-	userId := c.GetInt("id")
-	tokens, err := model.GetTokenKeysByIds(tokenBatch.Ids, userId)
+	tokens, err := model.GetTokenKeysByIds(tokenBatch.Ids, mutateScope(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return

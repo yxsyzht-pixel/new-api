@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { z } from 'zod'
+import { z } from "zod";
 
 // ============================================================================
 // API Key Schema & Types
@@ -25,7 +25,9 @@ import { z } from 'zod'
 export const apiKeySchema = z.object({
   id: z.number(),
   name: z.string(),
-  staff_id: z.string().nullish().default(''),
+  staff_id: z.string().nullish().default(""),
+  user_id: z.number().optional(),
+  username: z.string().nullish().default(""),
   key: z.string(),
   status: z.number(), // 1: enabled, 2: disabled, 3: expired, 4: exhausted
   remain_quota: z.number(),
@@ -34,73 +36,81 @@ export const apiKeySchema = z.object({
   expired_time: z.number(), // -1 for never expires
   created_time: z.number(),
   accessed_time: z.number(),
-  group: z.string().nullish().default(''),
+  group: z.string().nullish().default(""),
   auto_groups: z.array(z.string()).nullish().default(null),
   cross_group_retry: z
     .preprocess((v) => {
-      if (v === 1) return true
-      if (v === 0) return false
-      return v
+      if (v === 1) return true;
+      if (v === 0) return false;
+      return v;
     }, z.boolean())
     .optional()
     .default(false),
   model_limits_enabled: z.boolean(),
-  model_limits: z.string().nullish().default(''),
-  allow_ips: z.string().nullish().default(''),
-})
+  model_limits: z.string().nullish().default(""),
+  allow_ips: z.string().nullish().default(""),
+});
 
-export type ApiKey = z.infer<typeof apiKeySchema>
+export type ApiKey = z.infer<typeof apiKeySchema>;
 
 // ============================================================================
 // API Request/Response Types
 // ============================================================================
 
 export interface ApiResponse<T = unknown> {
-  success: boolean
-  message?: string
-  data?: T
+  success: boolean;
+  message?: string;
+  data?: T;
 }
 
+// scope names whose keys to list. Left out it is the caller's own — the only
+// thing an ordinary user may ask for. 'all' and a numeric id are refused by the
+// server unless the caller may manage other people's keys.
+export type ApiKeyScope = number | "all" | undefined;
+
 export interface GetApiKeysParams {
-  p?: number
-  size?: number
+  p?: number;
+  size?: number;
+  scope?: ApiKeyScope;
 }
 
 export interface GetApiKeysResponse {
-  success: boolean
-  message?: string
+  success: boolean;
+  message?: string;
   data?: {
-    items: ApiKey[]
-    total: number
-    page: number
-    page_size: number
-  }
+    items: ApiKey[];
+    total: number;
+    page: number;
+    page_size: number;
+  };
 }
 
 export interface SearchApiKeysParams {
-  keyword?: string
-  token?: string
-  p?: number
-  size?: number
+  keyword?: string;
+  token?: string;
+  p?: number;
+  size?: number;
+  scope?: ApiKeyScope;
 }
 
 export interface ApiKeyFormData {
-  name: string
-  staff_id: string
-  remain_quota: number
-  expired_time: number
-  unlimited_quota: boolean
-  model_limits_enabled: boolean
-  model_limits: string
-  allow_ips: string
-  group: string
-  auto_groups: string[]
-  cross_group_retry: boolean
+  name: string;
+  staff_id: string;
+  user_id?: number;
+  remain_quota: number;
+  expired_time: number;
+  unlimited_quota: boolean;
+  model_limits_enabled: boolean;
+  model_limits: string;
+  allow_ips: string;
+  group: string;
+  auto_groups: string[];
+  cross_group_retry: boolean;
 }
 
 export interface TokenAutoGroupsConfig {
-  groups: string[]
-  max_count: number
+  groups: string[];
+  max_count: number;
 }
 
 // ============================================================================
@@ -108,8 +118,4 @@ export interface TokenAutoGroupsConfig {
 // ============================================================================
 
 export type ApiKeysDialogType =
-  | 'create'
-  | 'update'
-  | 'delete'
-  | 'batch-delete'
-  | 'cc-switch'
+  "create" | "update" | "delete" | "batch-delete" | "cc-switch";

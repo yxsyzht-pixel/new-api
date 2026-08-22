@@ -102,8 +102,9 @@ export function ApiKeysMutateDrawer({
 }: ApiKeyMutateDrawerProps) {
   const { t } = useTranslation();
   const isUpdate = !!currentRow;
+
   const currentRowId = currentRow?.id;
-  const { triggerRefresh } = useApiKeys();
+  const { triggerRefresh, canManageAllKeys } = useApiKeys();
   const { status, loading: statusLoading } = useStatus();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -412,6 +413,37 @@ export function ApiKeysMutateDrawer({
                   </FormItem>
                 )}
               />
+
+              {canManageAllKeys && !isUpdate ? (
+                <FormField
+                  control={form.control}
+                  name="owner_user_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t("Owner user ID")}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value ?? ""}
+                          inputMode="numeric"
+                          placeholder={t("Leave empty to create for yourself")}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t("Creates the key on another user’s account.")}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
+              {isUpdate && canManageAllKeys && currentRow?.username ? (
+                <p className="text-muted-foreground text-sm">
+                  {t("This key belongs to {{username}}.", {
+                    username: currentRow.username,
+                  })}
+                </p>
+              ) : null}
 
               <FormField
                 control={form.control}

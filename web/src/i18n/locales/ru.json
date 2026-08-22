@@ -5365,6 +5365,14 @@
     "Recorded alongside each chat transcript from this key.": "Сохраняется вместе с каждой записью переписки по этому ключу.",
     "Memory ceiling for the queue (MB)": "Лимит памяти очереди (МБ)",
     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "Ожидающие записи держат запрос и ответ в памяти. Если база встанет, этот лимит не даст очереди съесть память шлюза — сверх него записи отбрасываются.",
-    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Писатель работает · очередь {{queued}}/{{capacity}} · занято {{heldMb}} МБ · записано {{written}} · отброшено {{dropped}} · ошибок {{failed}}"
+    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Писатель работает · очередь {{queued}}/{{capacity}} · занято {{heldMb}} МБ · записано {{written}} · отброшено {{dropped}} · ошибок {{failed}}",
+    "Owner": "Владелец",
+    "Owner user ID": "ID пользователя-владельца",
+    "Leave empty to create for yourself": "Пусто — создать себе",
+    "Creates the key on another user’s account.": "Создаёт ключ на аккаунте другого пользователя.",
+    "This key belongs to {{username}}.": "Этот ключ принадлежит {{username}}.",
+    "API Key Management": "Управление ключами API",
+    "Manage everyone’s API keys": "Управлять ключами всех пользователей",
+    "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "Просмотр, создание, изменение и удаление ключей любого пользователя. Для своих ключей не требуется."
   }
 }

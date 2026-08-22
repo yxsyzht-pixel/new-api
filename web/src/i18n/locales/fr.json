@@ -5365,6 +5365,14 @@
     "Recorded alongside each chat transcript from this key.": "Enregistré avec chaque conversation issue de cette clé.",
     "Memory ceiling for the queue (MB)": "Plafond mémoire de la file (Mo)",
     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "Les tours en attente conservent la requête et la réponse en mémoire. Si la base cale, ce plafond empêche la file d’envahir le tas de la passerelle.",
-    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Écriture active · file {{queued}}/{{capacity}} · {{heldMb}} Mo retenus · {{written}} écrits · {{dropped}} abandonnés · {{failed}} échecs"
+    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Écriture active · file {{queued}}/{{capacity}} · {{heldMb}} Mo retenus · {{written}} écrits · {{dropped}} abandonnés · {{failed}} échecs",
+    "Owner": "Propriétaire",
+    "Owner user ID": "ID de l’utilisateur propriétaire",
+    "Leave empty to create for yourself": "Laissez vide pour vous-même",
+    "Creates the key on another user’s account.": "Crée la clé sur le compte d’un autre utilisateur.",
+    "This key belongs to {{username}}.": "Cette clé appartient à {{username}}.",
+    "API Key Management": "Gestion des clés API",
+    "Manage everyone’s API keys": "Gérer les clés de tous les utilisateurs",
+    "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "Lister, créer, modifier et supprimer les clés de n’importe quel utilisateur. Inutile pour ses propres clés."
   }
 }

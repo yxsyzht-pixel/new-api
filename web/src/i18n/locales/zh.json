@@ -5365,6 +5365,14 @@
     "Recorded alongside each chat transcript from this key.": "该密钥产生的每条聊天记录都会带上这个工号。",
     "Memory ceiling for the queue (MB)": "队列内存上限(MB)",
     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "等待写入的记录会把请求和回复留在内存里。数据库卡住时,就靠这个上限拦住队列吃掉网关的内存——超过就丢记录。",
-    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "写入进程运行中 · 队列 {{queued}}/{{capacity}} · 占用 {{heldMb}} MB · 已写入 {{written}} · 已丢弃 {{dropped}} · 失败 {{failed}}"
+    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "写入进程运行中 · 队列 {{queued}}/{{capacity}} · 占用 {{heldMb}} MB · 已写入 {{written}} · 已丢弃 {{dropped}} · 失败 {{failed}}",
+    "Owner": "所属用户",
+    "Owner user ID": "所属用户 ID",
+    "Leave empty to create for yourself": "留空则创建到自己名下",
+    "Creates the key on another user’s account.": "把密钥创建到别的用户名下。",
+    "This key belongs to {{username}}.": "这个密钥属于 {{username}}。",
+    "API Key Management": "密钥管理",
+    "Manage everyone’s API keys": "管理所有用户的密钥",
+    "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "查看、创建、修改、删除任意用户的密钥。管理自己的密钥不需要这个权限。"
   }
 }
