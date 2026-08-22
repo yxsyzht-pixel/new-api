@@ -147,6 +147,16 @@ func (r *recorder) ensureStarted(cfg *operation_setting.ChatRecordSetting, dsn s
 	}
 	r.current.Store(running)
 
+	// The schema gains columns as this feature grows, and a store left on an
+	// older shape would fail every write silently. The statements are additive
+	// and idempotent, and they run off the request path — the first turns may
+	// race them and be lost, which is the trade this whole package is built on.
+	go func() {
+		if err := InitSchema(dsn); err != nil {
+			common.SysError("chat record: could not bring the schema up to date: " + err.Error())
+		}
+	}()
+
 	for i := 0; i < cfg.WorkersOrDefault(); i++ {
 		go running.work(ctx)
 	}
@@ -207,7 +217,7 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	// Parsing and decoding attachments happens here, on a worker, never on the
 	// request path.
 	var stored []StoredAttachment
-	if cfg.StoreFiles {
+	if cfg.StoreFiles && StoreAttachmentsFor(turn.Endpoint) {
 		stored = SaveAttachments(turn.StaffID, turn.CreatedAt,
 			ExtractAttachments(turn.RequestBody, cfg.MaxFileBytesOrDefault()))
 	}
@@ -221,11 +231,16 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	writeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	// Every request an agent makes while working on one question carries the
+	// same newest user message, so they all resolve to the same turn and fold
+	// into one row.
+	turnKey := TurnKey(turn.TokenID, ConversationKey(turn.RequestBody), userMessage)
+
 	var recordID int64
 	err := w.pool.QueryRow(writeCtx, insertStatement,
 		turn.RequestID, turn.UserID, turn.TokenID, turn.TokenName, turn.StaffID,
 		turn.ModelName, turn.Endpoint, turn.StatusCode,
-		userMessage, assistantReply, turn.CreatedAt).Scan(&recordID)
+		userMessage, assistantReply, turn.CreatedAt, turnKey, max).Scan(&recordID)
 	if err != nil {
 		w.totals.Failed.Add(1)
 		common.SysError("chat record: write failed: " + err.Error())

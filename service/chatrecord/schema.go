@@ -26,7 +26,10 @@ CREATE TABLE IF NOT EXISTS chat_records (
     status_code  INT          NOT NULL DEFAULT 0,
     user_message TEXT         NOT NULL DEFAULT '',
     ai_message   TEXT         NOT NULL DEFAULT '',
-    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
+    turn_key     VARCHAR(64)  NOT NULL DEFAULT '',
+    request_count INT         NOT NULL DEFAULT 1,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_chat_records_created_at ON chat_records (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_records_token_name ON chat_records (token_name);
@@ -35,6 +38,13 @@ CREATE INDEX IF NOT EXISTS idx_chat_records_user_id    ON chat_records (user_id)
 CREATE INDEX IF NOT EXISTS idx_chat_records_model_name ON chat_records (model_name);
 CREATE INDEX IF NOT EXISTS idx_chat_records_request_id ON chat_records (request_id);
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS staff_id VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS turn_key VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS request_count INT NOT NULL DEFAULT 1;
+ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+-- One row per user turn. Partial, so rows written before this existed (and any
+-- turn we could not identify) are left alone instead of colliding on an empty key.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_records_turn_key
+    ON chat_records (turn_key) WHERE turn_key <> '';
 
 CREATE TABLE IF NOT EXISTS chat_record_files (
     id         BIGSERIAL PRIMARY KEY,
@@ -53,18 +63,43 @@ CREATE INDEX IF NOT EXISTS idx_chat_record_files_record   ON chat_record_files (
 CREATE INDEX IF NOT EXISTS idx_chat_record_files_staff    ON chat_record_files (staff_id);
 CREATE INDEX IF NOT EXISTS idx_chat_record_files_sha256   ON chat_record_files (sha256);
 CREATE INDEX IF NOT EXISTS idx_chat_record_files_created  ON chat_record_files (created_at DESC);
+-- An agent replays its conversation on every round-trip, so the same picture
+-- arrives with every one of them. One row per file per turn.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_record_files_once
+    ON chat_record_files (record_id, sha256) WHERE sha256 <> '';
 `
 
+// insertStatement records a turn, or folds this request into the turn already
+// recorded. An agent working on one question sends the conversation again on
+// every tool round-trip: without the fold, one question becomes a hundred rows,
+// most of them holding a tool call and no answer at all. The model's replies
+// are appended in the order they arrived, so the row ends up holding the whole
+// answer rather than whichever fragment came last.
 const insertStatement = `
 INSERT INTO chat_records
-  (request_id, user_id, token_id, token_name, staff_id, model_name, endpoint, status_code, user_message, ai_message, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+  (request_id, user_id, token_id, token_name, staff_id, model_name, endpoint,
+   status_code, user_message, ai_message, created_at, updated_at, turn_key)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12)
+ON CONFLICT (turn_key) WHERE turn_key <> '' DO UPDATE SET
+  ai_message = CASE
+    WHEN EXCLUDED.ai_message = '' THEN chat_records.ai_message
+    WHEN chat_records.ai_message = '' THEN EXCLUDED.ai_message
+    -- The same text can arrive twice when a client retries; do not repeat it.
+    WHEN right(chat_records.ai_message, length(EXCLUDED.ai_message)) = EXCLUDED.ai_message
+      THEN chat_records.ai_message
+    ELSE left(chat_records.ai_message || E'\n\n' || EXCLUDED.ai_message, $13)
+  END,
+  model_name    = EXCLUDED.model_name,
+  status_code   = EXCLUDED.status_code,
+  request_count = chat_records.request_count + 1,
+  updated_at    = EXCLUDED.created_at
 RETURNING id`
 
 const insertFileStatement = `
 INSERT INTO chat_record_files
   (record_id, staff_id, kind, media_type, file_name, file_size, sha256, path, source_url, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+ON CONFLICT (record_id, sha256) WHERE sha256 <> '' DO NOTHING`
 
 // fileListStatement pages through attachments. An empty staff id means every
 // one of them, so the caller does not have to build two queries.

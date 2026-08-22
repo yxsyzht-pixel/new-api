@@ -239,3 +239,52 @@ func TestOnlyTheNewestMessagesAttachmentsAreTaken(t *testing.T) {
 		t.Errorf("media type = %q, want the newest message's image/gif", found[0].MediaType)
 	}
 }
+
+// The image endpoints are exempt: what goes in and out of them is a picture by
+// definition, and keeping every one fills a disk with pixels the recorded
+// prompt already accounts for.
+func TestImageRoutesKeepNoAttachments(t *testing.T) {
+	exempt := []string{
+		"/v1/images/generations",
+		"/v1/images/edits",
+		"/v1/images/variations",
+	}
+	for _, endpoint := range exempt {
+		if StoreAttachmentsFor(endpoint) {
+			t.Errorf("%s must not have its pictures kept", endpoint)
+		}
+	}
+
+	kept := []string{
+		"/v1/chat/completions",
+		"/v1/responses",
+		"/v1/messages",
+	}
+	for _, endpoint := range kept {
+		if !StoreAttachmentsFor(endpoint) {
+			t.Errorf("%s carries attachments worth keeping", endpoint)
+		}
+	}
+}
+
+// The exemption has to hold where it counts: nothing on disk, no rows.
+func TestNothingIsStoredForAnImageRoute(t *testing.T) {
+	root := t.TempDir()
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := cfg.FileRoot
+	cfg.FileRoot = root
+	t.Cleanup(func() { cfg.FileRoot = previous })
+
+	body := []byte(`{"prompt":"a beach","image":"data:image/png;base64,` + onePixelPNG + `"}`)
+
+	var stored []StoredAttachment
+	if StoreAttachmentsFor("/v1/images/edits") {
+		stored = SaveAttachments("A1024", time.Now(), ExtractAttachments(body, 1<<20))
+	}
+	if len(stored) != 0 {
+		t.Fatalf("stored %d attachments for an image route, want none", len(stored))
+	}
+	if entries, err := os.ReadDir(root); err == nil && len(entries) != 0 {
+		t.Fatalf("%d entries were written under the attachment root", len(entries))
+	}
+}

@@ -40,6 +40,14 @@ type StoredAttachment struct {
 
 var dataURLPattern = regexp.MustCompile(`^data:([^;,]+)(;[^,]*)?,(.*)$`)
 
+// StoreAttachmentsFor says whether a route's pictures and files are worth
+// keeping. The image endpoints are exempt: what goes in and out of them is a
+// picture by definition, so keeping every one would fill a disk with pixels
+// that the recorded prompt already accounts for.
+func StoreAttachmentsFor(endpoint string) bool {
+	return !strings.Contains(endpoint, "/images")
+}
+
 // ExtractAttachments walks the shapes each protocol uses for attached content.
 // Anything it does not recognise is simply not recorded — a transcript missing
 // a file is a smaller problem than a worker tripping over an unfamiliar body.
@@ -112,13 +120,6 @@ func ExtractAttachments(body []byte, limit int) []Attachment {
 		}
 		return false
 	})
-
-	// Image edits and variations name the picture at the top level.
-	for _, path := range []string{"image", "mask"} {
-		if v := gjson.GetBytes(body, path); v.Exists() && v.Type == gjson.String {
-			add(fromURLOrData("image", v.String(), ""))
-		}
-	}
 
 	return found
 }

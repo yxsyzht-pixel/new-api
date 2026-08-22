@@ -100,9 +100,11 @@ func captureResponseFor(path string) bool {
 
 // maxRetainedRequestBytes is how large a request body may be and still be worth
 // carrying to the writer.
-func maxRetainedRequestBytes(cfg *operation_setting.ChatRecordSetting) int64 {
+func maxRetainedRequestBytes(cfg *operation_setting.ChatRecordSetting, path string) int64 {
 	limit := int64(cfg.MaxCaptureBytesOrDefault())
-	if cfg.StoreFiles {
+	// Routes whose attachments are not kept do not need the headroom, and those
+	// are exactly the routes that upload the largest bodies.
+	if cfg.StoreFiles && chatrecord.StoreAttachmentsFor(path) {
 		// base64 costs a third on top, and a turn may carry more than one file.
 		withFiles := int64(cfg.MaxFileBytesOrDefault())*2 + limit
 		if withFiles > limit {
@@ -152,7 +154,7 @@ func ChatRecord() gin.HandlerFunc {
 				// same body, so keeping files means allowing for them here —
 				// otherwise every image would be dropped before the worker ever
 				// saw it. The queue's byte budget is what bounds the total.
-				if storage.Size() <= maxRetainedRequestBytes(cfg) {
+				if storage.Size() <= maxRetainedRequestBytes(cfg, c.Request.URL.Path) {
 					requestBody, _ = storage.Bytes()
 				}
 			}

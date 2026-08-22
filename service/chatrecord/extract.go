@@ -4,6 +4,9 @@
 package chatrecord
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"strconv"
 	"strings"
 
 	"github.com/tidwall/gjson"
@@ -71,6 +74,55 @@ func eachUserContentNewestFirst(body []byte, fn func(content gjson.Result) bool)
 			}
 		}
 	}
+}
+
+// ConversationKey identifies the conversation a request belongs to. An agentic
+// client sends the whole conversation again on every tool round-trip, so
+// without this the same question is recorded once per round-trip.
+//
+// Codex labels its conversations for cache affinity, which is exactly the
+// identity wanted here. Everything else falls back to the opening user message,
+// which stays put for the life of a session.
+func ConversationKey(body []byte) string {
+	for _, path := range []string{"prompt_cache_key", "metadata.conversation_id", "conversation"} {
+		if key := gjson.GetBytes(body, path); key.Type == gjson.String && key.String() != "" {
+			return key.String()
+		}
+	}
+	return firstUserText(body)
+}
+
+// firstUserText is the opening message of a conversation.
+func firstUserText(body []byte) string {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return ""
+	}
+	for _, path := range []string{"input", "messages"} {
+		items := gjson.GetBytes(body, path)
+		if !items.IsArray() {
+			continue
+		}
+		for _, item := range items.Array() {
+			if item.Get("role").String() != "user" {
+				continue
+			}
+			if text := textFromContent(item.Get("content")); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+// TurnKey names one user turn: the same question, in the same conversation, on
+// the same key. Every request an agent makes while working on that turn maps to
+// this one key, so they land on one row instead of a hundred.
+func TurnKey(tokenID int, conversation, userMessage string) string {
+	if userMessage == "" && conversation == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(strconv.Itoa(tokenID) + "\x00" + conversation + "\x00" + userMessage))
+	return hex.EncodeToString(sum[:])
 }
 
 // textFromContent flattens the several shapes a message body takes: a plain
