@@ -181,3 +181,44 @@ func TestRetainedRequestSizeAllowsForAttachments(t *testing.T) {
 		t.Fatalf("limit %d cannot hold a %d-byte file once base64-encoded", got, cfg.MaxFileBytes)
 	}
 }
+
+// Some keys drive agents whose traffic is noise in a transcript and worse in a
+// memory. A key that has opted out must cost nothing at all — not even the
+// writer wrapper.
+func TestAKeyCanOptOutOfBeingRecorded(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := operation_setting.GetChatRecordSetting()
+	prevEnabled, prevDSN := cfg.Enabled, cfg.DSN
+	t.Cleanup(func() { cfg.Enabled, cfg.DSN = prevEnabled, prevDSN })
+	cfg.Enabled, cfg.DSN = true, "postgres://u:p@127.0.0.1:1/none"
+
+	for _, tc := range []struct {
+		name        string
+		skip        bool
+		wantWrapped bool
+	}{
+		{"opted out", true, false},
+		{"opted in", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var wrapped bool
+			router := gin.New()
+			router.Use(func(c *gin.Context) {
+				c.Set("token_skip_chat_record", tc.skip)
+				c.Next()
+			})
+			router.Use(ChatRecord())
+			router.POST("/v1/chat/completions", func(c *gin.Context) {
+				_, wrapped = c.Writer.(*captureWriter)
+				c.String(http.StatusOK, "hi")
+			})
+
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(
+				http.MethodPost, "/v1/chat/completions", strings.NewReader(`{}`)))
+
+			assert.Equal(t, tc.wantWrapped, wrapped)
+			assert.Equal(t, "hi", recorder.Body.String())
+		})
+	}
+}

@@ -406,6 +406,53 @@ export function ApiKeysMutateDrawer({
               />
               <FormField
                 control={form.control}
+                name="record_chat"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between gap-4 rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>{t("Record conversations")}</FormLabel>
+                      <FormDescription>
+                        {t(
+                          "Off for keys that drive agents whose traffic is noise in a transcript.",
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="feed_memory"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between gap-4 rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>{t("Build memory from this key")}</FormLabel>
+                      <FormDescription>
+                        {t(
+                          "Only applies while conversations are being recorded, since a memory is built from the record.",
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        disabled={!form.watch("record_chat")}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
                 name="staff_id"
                 render={({ field }) => (
                   <FormItem>

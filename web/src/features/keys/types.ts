@@ -26,6 +26,8 @@ export const apiKeySchema = z.object({
   id: z.number(),
   name: z.string(),
   staff_id: z.string().nullish().default(""),
+  skip_chat_record: z.boolean().nullish().default(false),
+  skip_memory: z.boolean().nullish().default(false),
   user_id: z.number().optional(),
   username: z.string().nullish().default(""),
   key: z.string(),
@@ -96,6 +98,8 @@ export interface SearchApiKeysParams {
 export interface ApiKeyFormData {
   name: string;
   staff_id: string;
+  skip_chat_record: boolean;
+  skip_memory: boolean;
   user_id?: number;
   remain_quota: number;
   expired_time: number;

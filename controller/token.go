@@ -462,6 +462,8 @@ func AddToken(c *gin.Context) {
 		UserId:             ownerId,
 		Name:               token.Name,
 		StaffId:            token.StaffId,
+		SkipChatRecord:     token.SkipChatRecord,
+		SkipMemory:         token.SkipMemory,
 		Key:                key,
 		CreatedTime:        common.GetTimestamp(),
 		AccessedTime:       common.GetTimestamp(),
@@ -547,6 +549,8 @@ func UpdateToken(c *gin.Context) {
 		}
 		cleanToken.Name = token.Name
 		cleanToken.StaffId = strings.TrimSpace(token.StaffId)
+		cleanToken.SkipChatRecord = token.SkipChatRecord
+		cleanToken.SkipMemory = token.SkipMemory
 		cleanToken.ExpiredTime = token.ExpiredTime
 		cleanToken.RemainQuota = token.RemainQuota
 		cleanToken.UnlimitedQuota = token.UnlimitedQuota

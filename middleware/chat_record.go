@@ -119,6 +119,12 @@ func maxRetainedRequestBytes(cfg *operation_setting.ChatRecordSetting, path stri
 func ChatRecord() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		cfg := operation_setting.GetChatRecordSetting()
+		// A key can opt out of being recorded at all. Checked before anything
+		// else so an opted-out key pays exactly nothing.
+		if c.GetBool("token_skip_chat_record") {
+			c.Next()
+			return
+		}
 		if !cfg.Enabled || cfg.ResolvedDSN() == "" {
 			c.Next()
 			return
@@ -165,6 +171,7 @@ func ChatRecord() gin.HandlerFunc {
 			TokenID:      c.GetInt(string(constant.ContextKeyTokenId)),
 			TokenName:    c.GetString("token_name"),
 			StaffID:      c.GetString("token_staff_id"),
+			SkipMemory:   c.GetBool("token_skip_memory"),
 			ModelName:    c.GetString(string(constant.ContextKeyOriginalModel)),
 			Endpoint:     c.Request.URL.Path,
 			StatusCode:   status,

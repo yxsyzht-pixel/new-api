@@ -43,6 +43,10 @@ export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
         .min(1, t("Please enter a staff ID"))
         .regex(/^[A-Za-z0-9_-]{1,64}$/, t("Letters, digits, _ and - only")),
       owner_user_id: z.string().optional(),
+      // Positive in the form because that is how a person reads a switch; the
+      // stored field is the negation, so an unset value keeps recording.
+      record_chat: z.boolean(),
+      feed_memory: z.boolean(),
       remain_quota_dollars: z.number().optional(),
       expired_time: z.date().optional(),
       unlimited_quota: z.boolean(),
@@ -114,6 +118,8 @@ export type ApiKeyFormValues = z.infer<ReturnType<typeof getApiKeyFormSchema>>;
 export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   name: "",
   staff_id: "",
+  record_chat: true,
+  feed_memory: true,
   owner_user_id: "",
   remain_quota_dollars: 10,
   expired_time: undefined,
@@ -152,6 +158,8 @@ export function transformFormDataToPayload(
   return {
     name: data.name,
     staff_id: data.staff_id || "",
+    skip_chat_record: !data.record_chat,
+    skip_memory: !data.feed_memory,
     // Only sent when an administrator is deliberately creating on another
     // account; the server refuses it from anyone else.
     ...(data.owner_user_id?.trim()
@@ -194,6 +202,8 @@ export function transformApiKeyToFormDefaults(
   return {
     name: apiKey.name,
     staff_id: apiKey.staff_id || "",
+    record_chat: !apiKey.skip_chat_record,
+    feed_memory: !apiKey.skip_memory,
     owner_user_id: apiKey.user_id ? String(apiKey.user_id) : "",
     remain_quota_dollars: apiKey.unlimited_quota
       ? 0

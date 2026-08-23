@@ -5416,6 +5416,10 @@
     "Agent, shared": "Agent, partagé",
     "Fixed name, per person": "Nom fixe, par personne",
     "Whose memory this is. Available: {staff_id}, {token_name}, {user_id}, {agent}, {model}.": "À qui appartient cette mémoire. Disponibles : {staff_id}, {token_name}, {user_id}, {agent}, {model}.",
-    "Where the model’s replies go, so they read as context rather than facts about the person. {agent} is the agent the client named — Codex reports its subagents, Hermes reports nothing and falls back to “assistant”. Keeping {staff_id} in it stops one shared peer collecting a representation inside every person’s session.": "Où vont les réponses du modèle, comme contexte et non comme faits. {agent} est l’agent annoncé par le client : Codex l’annonce, Hermes non."
+    "Where the model’s replies go, so they read as context rather than facts about the person. {agent} is the agent the client named — Codex reports its subagents, Hermes reports nothing and falls back to “assistant”. Keeping {staff_id} in it stops one shared peer collecting a representation inside every person’s session.": "Où vont les réponses du modèle, comme contexte et non comme faits. {agent} est l’agent annoncé par le client : Codex l’annonce, Hermes non.",
+    "Record conversations": "Enregistrer les conversations",
+    "Off for keys that drive agents whose traffic is noise in a transcript.": "À désactiver pour les clés d’agents dont le trafic n’est que du bruit.",
+    "Build memory from this key": "Construire la mémoire depuis cette clé",
+    "Only applies while conversations are being recorded, since a memory is built from the record.": "N’a d’effet que si les conversations sont enregistrées : la mémoire en découle."
   }
 }

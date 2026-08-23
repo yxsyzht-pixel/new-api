@@ -5416,6 +5416,10 @@
     "Agent, shared": "agent 名称,共用",
     "Fixed name, per person": "固定名称,按人分开",
     "Whose memory this is. Available: {staff_id}, {token_name}, {user_id}, {agent}, {model}.": "这份记忆算在谁头上。可用变量:{staff_id}(工号)、{token_name}(密钥名称)、{user_id}、{agent}、{model}。",
-    "Where the model’s replies go, so they read as context rather than facts about the person. {agent} is the agent the client named — Codex reports its subagents, Hermes reports nothing and falls back to “assistant”. Keeping {staff_id} in it stops one shared peer collecting a representation inside every person’s session.": "模型的回复挂在哪里——只作上下文,不会变成关于这个人的事实。{agent} 是客户端自报的 agent 名:Codex 会报它的子 agent(如 guardian),**Hermes 什么都不报**,回退成 assistant。保留 {staff_id} 可以避免共用一个 peer 在每个人的会话里各建一份表征。"
+    "Where the model’s replies go, so they read as context rather than facts about the person. {agent} is the agent the client named — Codex reports its subagents, Hermes reports nothing and falls back to “assistant”. Keeping {staff_id} in it stops one shared peer collecting a representation inside every person’s session.": "模型的回复挂在哪里——只作上下文,不会变成关于这个人的事实。{agent} 是客户端自报的 agent 名:Codex 会报它的子 agent(如 guardian),**Hermes 什么都不报**,回退成 assistant。保留 {staff_id} 可以避免共用一个 peer 在每个人的会话里各建一份表征。",
+    "Record conversations": "记录聊天内容",
+    "Off for keys that drive agents whose traffic is noise in a transcript.": "驱动 agent 的密钥可以关掉——它们的流量对聊天记录来说只是噪音。",
+    "Build memory from this key": "参与记忆",
+    "Only applies while conversations are being recorded, since a memory is built from the record.": "只在「记录聊天内容」开着时有意义——记忆是从记录里长出来的。"
   }
 }

@@ -12,12 +12,19 @@ import (
 )
 
 type Token struct {
-	Id                 int            `json:"id"`
-	UserId             int            `json:"user_id" gorm:"index"`
-	Key                string         `json:"key" gorm:"type:varchar(128);uniqueIndex"`
-	Status             int            `json:"status" gorm:"default:1"`
-	Name               string         `json:"name" gorm:"index" `
-	StaffId            string         `json:"staff_id" gorm:"type:varchar(64);index;default:''"` // 工号，用于聊天记录归属到人
+	Id      int    `json:"id"`
+	UserId  int    `json:"user_id" gorm:"index"`
+	Key     string `json:"key" gorm:"type:varchar(128);uniqueIndex"`
+	Status  int    `json:"status" gorm:"default:1"`
+	Name    string `json:"name" gorm:"index" `
+	StaffId string `json:"staff_id" gorm:"type:varchar(64);index;default:''"` // 工号，用于聊天记录归属到人
+	// The two opt-outs below are stored as negatives on purpose. A bool's zero
+	// value is false, and false has to mean "behave normally": a key loaded
+	// from an older cache, a context key nobody set, a row written before these
+	// columns existed — every one of those must keep recording rather than
+	// silently stop. Only a deliberate true turns something off.
+	SkipChatRecord     bool           `json:"skip_chat_record" gorm:"default:false"`
+	SkipMemory         bool           `json:"skip_memory" gorm:"default:false"`
 	CreatedTime        int64          `json:"created_time" gorm:"bigint"`
 	AccessedTime       int64          `json:"accessed_time" gorm:"bigint"`
 	ExpiredTime        int64          `json:"expired_time" gorm:"bigint;default:-1"` // -1 means never expired
@@ -325,8 +332,9 @@ func (token *Token) Update() (err error) {
 	if cacheErr := invalidateTokenCacheForMutation(token.Key); cacheErr != nil {
 		common.SysLog("failed to invalidate token cache before update: " + cacheErr.Error())
 	}
-	return DB.Model(token).Select("name", "staff_id", "status", "expired_time", "remain_quota", "unlimited_quota",
-		"model_limits_enabled", "model_limits", "allow_ips", "group", "cross_group_retry", "auto_groups").Updates(token).Error
+	return DB.Model(token).Select("name", "staff_id", "skip_chat_record", "skip_memory", "status", "expired_time",
+		"remain_quota", "unlimited_quota", "model_limits_enabled", "model_limits", "allow_ips", "group",
+		"cross_group_retry", "auto_groups").Updates(token).Error
 }
 
 func (token *Token) SelectUpdate() (err error) {

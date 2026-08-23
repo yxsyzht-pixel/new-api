@@ -38,6 +38,8 @@ const baseApiKey: ApiKey = {
   id: 1,
   name: "test",
   staff_id: "",
+  skip_chat_record: false,
+  skip_memory: false,
   username: "",
   key: "sk-test",
   status: 1,

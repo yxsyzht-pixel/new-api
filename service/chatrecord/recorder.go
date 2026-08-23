@@ -19,11 +19,14 @@ import (
 
 // Turn is one exchange on its way to the transcript store.
 type Turn struct {
-	RequestID  string
-	UserID     int
-	TokenID    int
-	TokenName  string
-	StaffID    string
+	RequestID string
+	UserID    int
+	TokenID   int
+	TokenName string
+	StaffID   string
+	// SkipMemory keeps this key's turns out of the memory store. Negative so
+	// that the zero value means "behave normally".
+	SkipMemory bool
 	ModelName  string
 	Endpoint   string
 	StatusCode int
@@ -276,7 +279,8 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	// The memory store is told only what a client positively declared to be a
 	// person speaking, and only when the key names whose person it is. It has
 	// its own queue: a slow memory store loses memories, never transcripts.
-	if cfg.MemoryReady() && EligibleForMemory(verdict, turn.StaffID, cfg.MemoryMinCharsOrDefault()) {
+	if !turn.SkipMemory && cfg.MemoryReady() &&
+		EligibleForMemory(verdict, turn.StaffID, cfg.MemoryMinCharsOrDefault()) {
 		agent := client.Agent
 		if agent == "" {
 			agent = "assistant"

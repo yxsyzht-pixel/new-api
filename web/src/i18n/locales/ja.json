@@ -5416,6 +5416,10 @@
     "Agent, shared": "エージェント名(共有)",
     "Fixed name, per person": "固定名(人ごと)",
     "Whose memory this is. Available: {staff_id}, {token_name}, {user_id}, {agent}, {model}.": "この記憶が誰のものか。使用可能:{staff_id}、{token_name}、{user_id}、{agent}、{model}。",
-    "Where the model’s replies go, so they read as context rather than facts about the person. {agent} is the agent the client named — Codex reports its subagents, Hermes reports nothing and falls back to “assistant”. Keeping {staff_id} in it stops one shared peer collecting a representation inside every person’s session.": "モデルの応答の保存先。文脈として扱われ、本人の事実にはなりません。{agent} はクライアントが申告したエージェント名で、Codex は申告し Hermes は申告しません。"
+    "Where the model’s replies go, so they read as context rather than facts about the person. {agent} is the agent the client named — Codex reports its subagents, Hermes reports nothing and falls back to “assistant”. Keeping {staff_id} in it stops one shared peer collecting a representation inside every person’s session.": "モデルの応答の保存先。文脈として扱われ、本人の事実にはなりません。{agent} はクライアントが申告したエージェント名で、Codex は申告し Hermes は申告しません。",
+    "Record conversations": "会話を記録",
+    "Off for keys that drive agents whose traffic is noise in a transcript.": "エージェント用のキーはオフに。記録にとってノイズになります。",
+    "Build memory from this key": "このキーから記憶を作る",
+    "Only applies while conversations are being recorded, since a memory is built from the record.": "会話を記録している間のみ有効です。記憶は記録から作られます。"
   }
 }
