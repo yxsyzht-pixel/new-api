@@ -75,7 +75,6 @@ const defaultOperationsSettings: OperationsSettings = {
   "staff_directory_setting.enabled": false,
   "staff_directory_setting.base_url": "https://datas.vyxsy.com",
   "staff_directory_setting.app_id": "",
-  "staff_directory_setting.cache_minutes": 30,
   "staff_directory_setting.require_directory": true,
   "chat_record_setting.memory_enabled": false,
   "chat_record_setting.memory_base_url": "",

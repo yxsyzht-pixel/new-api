@@ -199,7 +199,6 @@ const OPERATIONS_SECTIONS = [
             "https://datas.vyxsy.com",
           appId: settings["staff_directory_setting.app_id"] ?? "",
           appSecret: "",
-          cacheMinutes: settings["staff_directory_setting.cache_minutes"] ?? 30,
           requireDirectory:
             settings["staff_directory_setting.require_directory"] ?? true,
         }}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
@@ -81,7 +82,6 @@ func configure(t *testing.T, baseURL string) *operation_setting.StaffDirectorySe
 	t.Cleanup(func() { *cfg = previous; Invalidate() })
 
 	cfg.Enabled, cfg.BaseURL, cfg.AppID, cfg.AppSecret = true, baseURL, "app", "secret"
-	cfg.CacheMinutes = 30
 	Invalidate()
 	return cfg
 }
@@ -158,13 +158,18 @@ func TestSearchMatchesNumberNameAndDepartment(t *testing.T) {
 // list from a few minutes ago.
 func TestAStaleCopyIsServedWhenHRGoesAway(t *testing.T) {
 	server, _ := fakeHR(t, 4)
-	cfg := configure(t, server.URL)
+	configure(t, server.URL)
 
 	if _, err := Search(context.Background(), "", 10); err != nil {
 		t.Fatal(err)
 	}
 	server.Close()
-	cfg.CacheMinutes = 0 // force a refresh, which will now fail
+
+	// Age the cached copy rather than dropping it: the point is what happens
+	// when a refresh is due and the refresh fails.
+	cache.mu.Lock()
+	cache.loadedAt = time.Now().Add(-time.Hour)
+	cache.mu.Unlock()
 
 	people, err := Search(context.Background(), "", 10)
 	if err != nil {

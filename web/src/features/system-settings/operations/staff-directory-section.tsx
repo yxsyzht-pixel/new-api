@@ -33,7 +33,6 @@ const schema = z.object({
   baseUrl: z.string(),
   appId: z.string(),
   appSecret: z.string(),
-  cacheMinutes: z.coerce.number().int().min(1),
   requireDirectory: z.boolean(),
 });
 
@@ -72,11 +71,6 @@ export function StaffDirectorySection({
         value: values.appSecret,
       });
     }
-    push(
-      "staff_directory_setting.cache_minutes",
-      values.cacheMinutes,
-      saved.cacheMinutes,
-    );
     push(
       "staff_directory_setting.require_directory",
       values.requireDirectory,
@@ -235,25 +229,6 @@ export function StaffDirectorySection({
                   />
                 </FormControl>
               </SettingsSwitchItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="cacheMinutes"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t("Cache the directory for (minutes)")}</FormLabel>
-                <FormControl>
-                  <Input type="number" min={1} {...field} />
-                </FormControl>
-                <FormDescription>
-                  {t(
-                    "The list is fetched once and searched locally, so a picker does not put HR behind a text box.",
-                  )}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
             )}
           />
         </SettingsForm>

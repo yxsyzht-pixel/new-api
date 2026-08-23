@@ -19,10 +19,6 @@ type StaffDirectorySetting struct {
 	// withheld from the options API.
 	AppID     string `json:"app_id"`
 	AppSecret string `json:"app_secret"`
-	// CacheMinutes is how long a fetched directory is reused. It is a list of
-	// people, not a ledger: minutes of staleness cost nothing, and a picker
-	// that queried on every keystroke would put HR behind a text box.
-	CacheMinutes int `json:"cache_minutes"`
 	// RequireDirectory refuses a staff number the directory does not know,
 	// unless the person entering it may write one freehand.
 	RequireDirectory bool `json:"require_directory"`
@@ -30,7 +26,6 @@ type StaffDirectorySetting struct {
 
 var staffDirectorySetting = StaffDirectorySetting{
 	BaseURL:          "https://datas.vyxsy.com",
-	CacheMinutes:     30,
 	RequireDirectory: true,
 }
 
@@ -42,11 +37,13 @@ func GetStaffDirectorySetting() *StaffDirectorySetting {
 	return &staffDirectorySetting
 }
 
+// CacheTTL is how long a fetched directory is reused. It is a list of people,
+// not a ledger: minutes of staleness cost nothing, while a picker that queried
+// on every keystroke would put HR behind a text box. Not a setting — the number
+// nobody would tune, and the picker has a refresh button for the one moment it
+// matters, which is when somebody has just been hired.
 func (s *StaffDirectorySetting) CacheTTL() time.Duration {
-	if s.CacheMinutes <= 0 {
-		return 30 * time.Minute
-	}
-	return time.Duration(s.CacheMinutes) * time.Minute
+	return 30 * time.Minute
 }
 
 // Describe names the connection without its secret.

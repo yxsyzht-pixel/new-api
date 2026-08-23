@@ -376,7 +376,6 @@ export type OperationsSettings = {
   'staff_directory_setting.enabled': boolean
   'staff_directory_setting.base_url': string
   'staff_directory_setting.app_id': string
-  'staff_directory_setting.cache_minutes': number
   'staff_directory_setting.require_directory': boolean
   'chat_record_setting.memory_enabled': boolean
   'chat_record_setting.memory_base_url': string

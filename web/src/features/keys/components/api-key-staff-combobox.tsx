@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, RefreshCw } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -51,7 +52,9 @@ export function ApiKeyStaffCombobox({
   const [open, setOpen] = useState(false);
   const [keyword, setKeyword] = useState("");
 
-  const { data, isFetching } = useQuery({
+  const [refreshing, setRefreshing] = useState(false);
+
+  const { data, isFetching, refetch } = useQuery({
     queryKey: ["staff-directory", keyword],
     queryFn: async () => {
       const params = new URLSearchParams({ size: "50" });
@@ -75,6 +78,28 @@ export function ApiKeyStaffCombobox({
         placeholder={t("Enter a staff ID")}
       />
     );
+  }
+
+  // Somebody who has just been added in HR is exactly the person being looked
+  // for, so the refresh belongs here rather than in a settings page nobody has
+  // open at the time.
+  async function onRefresh() {
+    setRefreshing(true);
+    try {
+      const { data } = await api.post<{ success: boolean; message: string }>(
+        "/api/token/staff-directory/refresh",
+        {},
+      );
+      if (!data?.success) {
+        toast.error(data?.message ?? t("Request failed"));
+        return;
+      }
+      await refetch();
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   const selected = data.items.find((person) => person.code === value);
@@ -109,11 +134,27 @@ export function ApiKeyStaffCombobox({
         align="start"
       >
         <Command shouldFilter={false}>
-          <CommandInput
-            placeholder={t("Search by staff ID, name or department…")}
-            value={keyword}
-            onValueChange={setKeyword}
-          />
+          <div className="flex items-center gap-1 pe-1">
+            <CommandInput
+              placeholder={t("Search by staff ID, name or department…")}
+              value={keyword}
+              onValueChange={setKeyword}
+              className="flex-1"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0"
+              disabled={refreshing}
+              title={t("Refresh from HR")}
+              onClick={onRefresh}
+            >
+              <RefreshCw
+                className={cn("size-4", refreshing && "animate-spin")}
+              />
+            </Button>
+          </div>
           <CommandList>
             <CommandEmpty>
               {isFetching ? t("Searching…") : t("Nobody matches")}
