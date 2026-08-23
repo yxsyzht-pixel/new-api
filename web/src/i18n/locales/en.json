@@ -5362,7 +5362,6 @@
     "Writer stopped": "Writer stopped",
     "Staff ID": "Staff ID",
     "Enter a staff ID": "Enter a staff ID",
-    "Recorded alongside each chat transcript from this key.": "Recorded alongside each chat transcript from this key.",
     "Memory ceiling for the queue (MB)": "Memory ceiling for the queue (MB)",
     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.",
     "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed",
@@ -5370,7 +5369,6 @@
     "Owner user ID": "Owner user ID",
     "Leave empty to create for yourself": "Leave empty to create for yourself",
     "Creates the key on another user’s account.": "Creates the key on another user’s account.",
-    "This key belongs to {{username}}.": "This key belongs to {{username}}.",
     "API Key Management": "API Key Management",
     "Manage everyone’s API keys": "Manage everyone’s API keys",
     "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.",
@@ -5394,7 +5392,6 @@
     "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.",
     "Please enter a staff ID": "Please enter a staff ID",
     "Letters, digits, _ and - only": "Letters, digits, _ and - only",
-    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.",
     "Feed a memory store": "Feed a memory store",
     "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.": "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.",
     "Memory service address": "Memory service address",
@@ -5447,6 +5444,8 @@
     "Pick from the staff directory": "Pick from the staff directory",
     "Search by staff ID, name or department…": "Search by staff ID, name or department…",
     "Nobody matches": "Nobody matches",
-    "Use \"{{value}}\"": "Use \"{{value}}\""
+    "Pick a person": "Pick a person",
+    "Choose": "Choose",
+    "Refresh from HR": "Refresh from HR"
   }
 }

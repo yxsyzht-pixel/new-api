@@ -5362,7 +5362,6 @@
     "Writer stopped": "書き込み停止中",
     "Staff ID": "社員番号",
     "Enter a staff ID": "社員番号を入力",
-    "Recorded alongside each chat transcript from this key.": "このキーによるチャット記録にこの番号が付与されます。",
     "Memory ceiling for the queue (MB)": "キューのメモリ上限 (MB)",
     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "書き込み待ちの記録はリクエストと応答をメモリに保持します。データベースが詰まったとき、この上限がゲートウェイのメモリを守ります。超えた分は破棄されます。",
     "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "書き込み稼働中 · キュー {{queued}}/{{capacity}} · 占有 {{heldMb}} MB · 書込 {{written}} · 破棄 {{dropped}} · 失敗 {{failed}}",
@@ -5370,7 +5369,6 @@
     "Owner user ID": "所有者のユーザー ID",
     "Leave empty to create for yourself": "空欄なら自分のアカウントに作成",
     "Creates the key on another user’s account.": "他のユーザーのアカウントにキーを作成します。",
-    "This key belongs to {{username}}.": "このキーは {{username}} のものです。",
     "API Key Management": "API キー管理",
     "Manage everyone’s API keys": "全ユーザーの API キーを管理",
     "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "任意のユーザーの API キーを一覧・作成・編集・削除します。自分のキーには不要です。",
@@ -5394,7 +5392,6 @@
     "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "1 行に 1 つのモデル名。これらのモデルの通信は人の発言とは見なしません。要約・承認・タイトル生成は本人の文言をそのまま再送するため、テキストでは区別できません。",
     "Please enter a staff ID": "社員番号を入力してください",
     "Letters, digits, _ and - only": "英数字とアンダースコア・ハイフンのみ",
-    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "必須。このキーのチャット記録と添付はこの番号の下に保存され、人ごとの記憶もこれを基準に作られます。",
     "Feed a memory store": "メモリシステムに連携",
     "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.": "各ターンを honcho のメモリに転送し、キーの社員番号に紐付けます。クライアントが「人が話している」と明示したターンのみ送ります。配送は専用キューで、メモリ側が遅くても記録には影響しません。",
     "Memory service address": "メモリサービスのアドレス",
@@ -5447,6 +5444,8 @@
     "Pick from the staff directory": "人事ディレクトリから選択",
     "Search by staff ID, name or department…": "社員番号・氏名・部署で検索…",
     "Nobody matches": "該当者なし",
-    "Use \"{{value}}\"": "「{{value}}」を使う"
+    "Pick a person": "担当者を選択",
+    "Choose": "選択",
+    "Refresh from HR": "人事から更新"
   }
 }

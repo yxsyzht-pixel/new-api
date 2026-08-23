@@ -5362,7 +5362,6 @@
     "Writer stopped": "Écriture arrêtée",
     "Staff ID": "Matricule",
     "Enter a staff ID": "Saisissez le matricule",
-    "Recorded alongside each chat transcript from this key.": "Enregistré avec chaque conversation issue de cette clé.",
     "Memory ceiling for the queue (MB)": "Plafond mémoire de la file (Mo)",
     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "Les tours en attente conservent la requête et la réponse en mémoire. Si la base cale, ce plafond empêche la file d’envahir le tas de la passerelle.",
     "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Écriture active · file {{queued}}/{{capacity}} · {{heldMb}} Mo retenus · {{written}} écrits · {{dropped}} abandonnés · {{failed}} échecs",
@@ -5370,7 +5369,6 @@
     "Owner user ID": "ID de l’utilisateur propriétaire",
     "Leave empty to create for yourself": "Laissez vide pour vous-même",
     "Creates the key on another user’s account.": "Crée la clé sur le compte d’un autre utilisateur.",
-    "This key belongs to {{username}}.": "Cette clé appartient à {{username}}.",
     "API Key Management": "Gestion des clés API",
     "Manage everyone’s API keys": "Gérer les clés de tous les utilisateurs",
     "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "Lister, créer, modifier et supprimer les clés de n’importe quel utilisateur. Inutile pour ses propres clés.",
@@ -5394,7 +5392,6 @@
     "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "Un modèle par ligne. Ce trafic n’est jamais une personne qui parle : les résumeurs et générateurs de titres rejouent mot pour mot le texte de l’utilisateur.",
     "Please enter a staff ID": "Saisissez le matricule",
     "Letters, digits, _ and - only": "Lettres, chiffres, _ et - uniquement",
-    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "Obligatoire. Les conversations et pièces jointes de cette clé y sont classées, et la mémoire par personne s’appuie dessus.",
     "Feed a memory store": "Alimenter une mémoire",
     "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.": "Transmet chaque tour à une mémoire honcho, classé sous le matricule de la clé. Seuls les tours qu’un client a explicitement déclarés comme parole humaine sont envoyés. La livraison a sa propre file : une mémoire lente perd des souvenirs, jamais des transcriptions.",
     "Memory service address": "Adresse du service mémoire",
@@ -5447,6 +5444,8 @@
     "Pick from the staff directory": "Choisir dans l’annuaire",
     "Search by staff ID, name or department…": "Rechercher par matricule, nom ou service…",
     "Nobody matches": "Aucune correspondance",
-    "Use \"{{value}}\"": "Utiliser « {{value}} »"
+    "Pick a person": "Choisir une personne",
+    "Choose": "Choisir",
+    "Refresh from HR": "Actualiser depuis les RH"
   }
 }

@@ -5362,7 +5362,6 @@
     "Writer stopped": "写入进程未运行",
     "Staff ID": "工号",
     "Enter a staff ID": "请输入工号",
-    "Recorded alongside each chat transcript from this key.": "该密钥产生的每条聊天记录都会带上这个工号。",
     "Memory ceiling for the queue (MB)": "队列内存上限(MB)",
     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "等待写入的记录会把请求和回复留在内存里。数据库卡住时,就靠这个上限拦住队列吃掉网关的内存——超过就丢记录。",
     "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "写入进程运行中 · 队列 {{queued}}/{{capacity}} · 占用 {{heldMb}} MB · 已写入 {{written}} · 已丢弃 {{dropped}} · 失败 {{failed}}",
@@ -5370,7 +5369,6 @@
     "Owner user ID": "所属用户 ID",
     "Leave empty to create for yourself": "留空则创建到自己名下",
     "Creates the key on another user’s account.": "把密钥创建到别的用户名下。",
-    "This key belongs to {{username}}.": "这个密钥属于 {{username}}。",
     "API Key Management": "密钥管理",
     "Manage everyone’s API keys": "管理所有用户的密钥",
     "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "查看、创建、修改、删除任意用户的密钥。管理自己的密钥不需要这个权限。",
@@ -5394,7 +5392,6 @@
     "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "一行一个模型名。这些模型上的流量一律不算人在说话——摘要、审批、起标题这类后台任务会把人的原话一字不差地重放,任何文本规则都分不出来。",
     "Please enter a staff ID": "请填写工号",
     "Letters, digits, _ and - only": "工号只能包含字母、数字、下划线和连字符",
-    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "必填。这个密钥产生的聊天记录和附件都归到这个工号下,按人做的记忆也是以它为准。",
     "Feed a memory store": "接入记忆系统",
     "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.": "把每轮对话转发给 honcho 记忆库,按密钥的工号归属。只发送客户端明确声明「是人在说话」的轮次——聊天记录判错一条还能事后筛掉,记忆判错会变成关于这个人的持久假事实。投递走独立队列:记忆库慢了只丢记忆,绝不影响聊天记录。",
     "Memory service address": "记忆服务地址",
@@ -5447,6 +5444,8 @@
     "Pick from the staff directory": "从人事目录选择",
     "Search by staff ID, name or department…": "按工号、姓名或部门搜索…",
     "Nobody matches": "没有匹配的人员",
-    "Use \"{{value}}\"": "使用「{{value}}」"
+    "Pick a person": "选择人员",
+    "Choose": "选择",
+    "Refresh from HR": "从人事系统刷新"
   }
 }

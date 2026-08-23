@@ -87,7 +87,7 @@ import {
   type ApiKeyGroupOption,
 } from "./api-key-group-combobox";
 import { ApiKeyOwnerCombobox } from "./api-key-owner-combobox";
-import { ApiKeyStaffCombobox } from "./api-key-staff-combobox";
+import { StaffPickerDialog, useStaffDirectory } from "./api-key-staff-picker";
 import { useApiKeys } from "./api-keys-provider";
 import { AutoGroupOrderEditor } from "./auto-group-order-editor";
 
@@ -107,6 +107,11 @@ export function ApiKeysMutateDrawer({
 
   const currentRowId = currentRow?.id;
   const { triggerRefresh, canManageAllKeys } = useApiKeys();
+  const [staffPickerOpen, setStaffPickerOpen] = useState(false);
+  const { data: staffDirectory } = useStaffDirectory("", true);
+  // With nothing to pick from, typing is all there is.
+  const staffFreeform =
+    !staffDirectory?.configured || staffDirectory.freeform === true;
   // Editing someone else's key means their selectable groups, not the
   // administrator's — that is what the server checks the choice against.
   const autoGroupsOwnerId =
@@ -413,17 +418,31 @@ export function ApiKeysMutateDrawer({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t("Staff ID")}</FormLabel>
-                    <FormControl>
-                      <ApiKeyStaffCombobox
-                        value={field.value ?? ""}
-                        onValueChange={field.onChange}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t(
-                        "Recorded alongside each chat transcript from this key.",
-                      )}
-                    </FormDescription>
+                    <div className="flex gap-2">
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value ?? ""}
+                          // Without the freehand grant the number comes from the
+                          // directory and nowhere else; read-only says so plainly
+                          // rather than accepting keystrokes the server will reject.
+                          readOnly={!staffFreeform}
+                          placeholder={
+                            staffFreeform
+                              ? t("Enter a staff ID")
+                              : t("Pick from the staff directory")
+                          }
+                        />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="shrink-0"
+                        onClick={() => setStaffPickerOpen(true)}
+                      >
+                        {t("Choose")}
+                      </Button>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -463,13 +482,6 @@ export function ApiKeysMutateDrawer({
                     </FormItem>
                   )}
                 />
-              ) : null}
-              {isUpdate && canManageAllKeys && currentRow?.username ? (
-                <p className="text-muted-foreground text-sm">
-                  {t("This key belongs to {{username}}.", {
-                    username: currentRow.username,
-                  })}
-                </p>
               ) : null}
 
               <FormField
@@ -853,6 +865,18 @@ export function ApiKeysMutateDrawer({
             ) : null}
           </form>
         </Form>
+
+        <StaffPickerDialog
+          open={staffPickerOpen}
+          onOpenChange={setStaffPickerOpen}
+          selected={form.watch("staff_id")}
+          onPick={(person) => {
+            // One choice fills both: the number identifies the person to every
+            // downstream record, the name is what a human reads in the list.
+            form.setValue("staff_id", person.code, { shouldDirty: true });
+            form.setValue("name", person.name, { shouldDirty: true });
+          }}
+        />
         <SheetFooter className={sideDrawerFooterClassName()}>
           <SheetClose
             render={<Button variant="outline" className="w-full sm:w-auto" />}

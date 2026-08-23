@@ -5362,7 +5362,6 @@
     "Writer stopped": "Писатель остановлен",
     "Staff ID": "Табельный номер",
     "Enter a staff ID": "Введите табельный номер",
-    "Recorded alongside each chat transcript from this key.": "Сохраняется вместе с каждой записью переписки по этому ключу.",
     "Memory ceiling for the queue (MB)": "Лимит памяти очереди (МБ)",
     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "Ожидающие записи держат запрос и ответ в памяти. Если база встанет, этот лимит не даст очереди съесть память шлюза — сверх него записи отбрасываются.",
     "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Писатель работает · очередь {{queued}}/{{capacity}} · занято {{heldMb}} МБ · записано {{written}} · отброшено {{dropped}} · ошибок {{failed}}",
@@ -5370,7 +5369,6 @@
     "Owner user ID": "ID пользователя-владельца",
     "Leave empty to create for yourself": "Пусто — создать себе",
     "Creates the key on another user’s account.": "Создаёт ключ на аккаунте другого пользователя.",
-    "This key belongs to {{username}}.": "Этот ключ принадлежит {{username}}.",
     "API Key Management": "Управление ключами API",
     "Manage everyone’s API keys": "Управлять ключами всех пользователей",
     "List, create, edit, and delete API keys belonging to any user. Own keys need no permission.": "Просмотр, создание, изменение и удаление ключей любого пользователя. Для своих ключей не требуется.",
@@ -5394,7 +5392,6 @@
     "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "По одной модели в строке. Их трафик никогда не считается речью человека: суммаризаторы и генераторы заголовков дословно повторяют текст пользователя.",
     "Please enter a staff ID": "Укажите табельный номер",
     "Letters, digits, _ and - only": "Только буквы, цифры, _ и -",
-    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "Обязательно. Записи и вложения этого ключа хранятся под ним, и по нему строится персональная память.",
     "Feed a memory store": "Передавать в систему памяти",
     "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.": "Передаёт каждый ход в память honcho под табельным номером ключа. Отправляются только ходы, которые клиент явно объявил речью человека. У доставки своя очередь: медленная память теряет воспоминания, но не записи.",
     "Memory service address": "Адрес сервиса памяти",
@@ -5447,6 +5444,8 @@
     "Pick from the staff directory": "Выбрать из справочника",
     "Search by staff ID, name or department…": "Поиск по номеру, имени или отделу…",
     "Nobody matches": "Совпадений нет",
-    "Use \"{{value}}\"": "Использовать «{{value}}»"
+    "Pick a person": "Выбор сотрудника",
+    "Choose": "Выбрать",
+    "Refresh from HR": "Обновить из HR"
   }
 }
