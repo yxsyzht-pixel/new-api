@@ -94,3 +94,14 @@ func TestNewTokenOwnerRefusesOtherAccountsWithoutPermission(t *testing.T) {
 	assert.True(t, ok, "naming yourself is not a privilege")
 	assert.Equal(t, 7, owner)
 }
+
+// Opting a key out of the transcript is a key-manager's decision. Hiding the
+// switches in the page is not a control: the request body has to be ignored too.
+func TestOnlyKeyManagersMayOptAKeyOut(t *testing.T) {
+	ordinary, _ := scopeContext(common.RoleCommonUser, "")
+	assert.False(t, canManageAllTokens(ordinary),
+		"an ordinary user must not be able to set the recording flags")
+
+	manager, _ := scopeContext(common.RoleRootUser, "")
+	assert.True(t, canManageAllTokens(manager))
+}

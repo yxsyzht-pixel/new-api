@@ -405,52 +405,6 @@ export function ApiKeysMutateDrawer({
                 icon={<KeyRound className="size-4" />}
                 iconTone="info"
               />
-              <FormField
-                control={form.control}
-                name="record_chat"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between gap-4 rounded-lg border p-3">
-                    <div className="space-y-0.5">
-                      <FormLabel>{t("Record conversations")}</FormLabel>
-                      <FormDescription>
-                        {t(
-                          "Off for keys that drive agents whose traffic is noise in a transcript.",
-                        )}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="feed_memory"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between gap-4 rounded-lg border p-3">
-                    <div className="space-y-0.5">
-                      <FormLabel>{t("Build memory from this key")}</FormLabel>
-                      <FormDescription>
-                        {t(
-                          "Only applies while conversations are being recorded, since a memory is built from the record.",
-                        )}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        disabled={!form.watch("record_chat")}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
 
               <FormField
                 control={form.control}
@@ -854,6 +808,49 @@ export function ApiKeysMutateDrawer({
                 </CollapsibleContent>
               </SideDrawerSection>
             </Collapsible>
+
+            {/* Whether a key's traffic is recorded is an operator's decision,
+                not the key holder's, so these appear only for someone who may
+                manage other people's keys. Everybody else's keys record. */}
+            {canManageAllKeys ? (
+              <div className="flex flex-col gap-3">
+                <FormField
+                  control={form.control}
+                  name="record_chat"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between gap-4 rounded-lg border p-3">
+                      <FormLabel className="font-normal">
+                        {t("Record conversations")}
+                      </FormLabel>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="feed_memory"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between gap-4 rounded-lg border p-3">
+                      <FormLabel className="font-normal">
+                        {t("Build memory from this key")}
+                      </FormLabel>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          disabled={!form.watch("record_chat")}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            ) : null}
           </form>
         </Form>
         <SheetFooter className={sideDrawerFooterClassName()}>
