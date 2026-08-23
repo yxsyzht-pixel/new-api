@@ -137,53 +137,62 @@ func canWriteFreeformStaffID(c *gin.Context) bool {
 	return c.GetInt("role") >= common.RoleAdminUser
 }
 
-// requireStaffDirectorySelection enforces the distinction between an
+// checkStaffDirectorySelection enforces the distinction between an
 // administrator, who may leave the field empty and receive an automatically
 // generated LS ID, and a regular user, who must use a directory-backed ID.
-func requireStaffDirectorySelection(c *gin.Context, staffID string) bool {
+//
+// It reports the reason rather than writing it, because the same rule has to
+// hold on two paths that answer differently: the page, which fails a request
+// outright, and the spreadsheet import, which reports per row and carries on.
+// A rule enforced on only one of them is not a rule — hiding the field in the
+// page is not a control when another endpoint writes the same column.
+func checkStaffDirectorySelection(c *gin.Context, staffID string) error {
 	if canWriteFreeformStaffID(c) {
-		return true
+		return nil
 	}
 
 	staffID = canonicalStaffID(staffID)
 	if staffID == "" {
-		common.ApiErrorMsg(c, "普通用户必须从人事目录选择工号")
-		return false
+		return errors.New("普通用户必须从人事目录选择工号")
 	}
 	if !staffdir.Configured() || !operation_setting.GetStaffDirectorySetting().RequireDirectory {
-		common.ApiErrorMsg(c, "人事目录未配置，普通用户无法保存工号")
-		return false
+		return errors.New("人事目录未配置，普通用户无法保存工号")
 	}
-	return requireKnownStaffID(c, staffID)
+	return checkKnownStaffID(c, staffID)
 }
 
-// requireKnownStaffID checks a staff number against the company directory.
+func requireStaffDirectorySelection(c *gin.Context, staffID string) bool {
+	if err := checkStaffDirectorySelection(c, staffID); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return false
+	}
+	return true
+}
+
+// checkKnownStaffID checks a staff number against the company directory.
 // Picking from the directory is the normal path; this is the backstop that
 // makes the page's picker a rule rather than a convenience.
-func requireKnownStaffID(c *gin.Context, staffID string) bool {
+func checkKnownStaffID(c *gin.Context, staffID string) error {
 	if !staffdir.Configured() || !operation_setting.GetStaffDirectorySetting().RequireDirectory {
-		return true
+		return nil
 	}
 	if canWriteFreeformStaffID(c) {
-		return true
+		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
-	person, known, err := staffdir.Lookup(ctx, staffID)
+	_, known, err := staffdir.Lookup(ctx, staffID)
 	if err != nil {
 		// Refusing here blocks key creation while HR is unreachable, which is
 		// visible and temporary. Letting it through would file a conversation
 		// under a staff number nobody checked, which is neither.
-		common.ApiErrorMsg(c, "暂时无法校验工号（人事目录读取失败："+err.Error()+"）")
-		return false
+		return errors.New("暂时无法校验工号（人事目录读取失败：" + err.Error() + "）")
 	}
 	if !known {
-		common.ApiErrorMsg(c, "工号 "+staffID+" 不在人事目录里，请从列表中选择")
-		return false
+		return errors.New("工号 " + staffID + " 不在人事目录里，请从列表中选择")
 	}
-	_ = person
-	return true
+	return nil
 }
 
 // validateStaffIDFormat enforces the safe shape used by transcript folders and

@@ -246,7 +246,7 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	if conversation == "" {
 		conversation = ConversationKey(turn.RequestBody)
 	}
-	turnKey := client.TurnID
+	turnKey := ClientTurnKey(turn.TokenID, client.TurnID)
 	if turnKey == "" {
 		turnKey = TurnKey(turn.TokenID, conversation, userMessage)
 	}
@@ -263,12 +263,20 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 
 	var recordID int64
 	var firstTimeForThisTurn bool
+	// The identifying columns are fixed width and several of these values are
+	// the client's own words — a model name, a session id, a thread source.
+	// Postgres does not shorten an oversized value, it refuses the row, so an
+	// unbounded one costs the whole turn rather than its own tail. Clipped here
+	// against the widths declared in schema.go; TestInsertArgumentsFitColumns
+	// keeps the two lists in step.
 	err := w.pool.QueryRow(writeCtx, insertStatement,
-		turn.RequestID, turn.UserID, turn.TokenID, turn.TokenName, turn.StaffID,
-		turn.ModelName, turn.Endpoint, turn.StatusCode,
+		clip(turn.RequestID, 64), turn.UserID, turn.TokenID,
+		clip(turn.TokenName, 128), clip(turn.StaffID, 64),
+		clip(turn.ModelName, 128), clip(turn.Endpoint, 128), turn.StatusCode,
 		userMessage, assistantReply, turn.CreatedAt, turnKey, max,
-		verdict.Source, verdict.Confidence, verdict.Signal,
-		client.Name, client.ThreadSource, client.TurnID, client.SessionID,
+		verdict.Source, verdict.Confidence, clip(verdict.Signal, 32),
+		clip(client.Name, 32), clip(client.ThreadSource, 32),
+		clip(client.TurnID, 64), clip(client.SessionID, 64),
 		Truncate(verdict.HumanText, max), sourceRank(verdict.Source)).
 		Scan(&recordID, &firstTimeForThisTurn)
 	if err != nil {
@@ -310,8 +318,9 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	attached := 0
 	for _, attachment := range stored {
 		if _, err := w.pool.Exec(writeCtx, insertFileStatement,
-			recordID, turn.StaffID, attachment.Kind, attachment.MediaType,
-			attachment.FileName, attachment.Size, attachment.SHA256,
+			recordID, clip(turn.StaffID, 64), clip(attachment.Kind, 16),
+			clip(attachment.MediaType, 128),
+			clip(attachment.FileName, 255), attachment.Size, attachment.SHA256,
 			attachment.Path, attachment.SourceURL, turn.CreatedAt); err != nil {
 			common.SysError("chat record: attachment row failed: " + err.Error())
 			continue

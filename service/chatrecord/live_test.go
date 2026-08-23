@@ -2,6 +2,7 @@ package chatrecord
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -499,4 +501,165 @@ func TestOnlyTheFirstRequestOfATurnIsNew(t *testing.T) {
 	if rows != 1 {
 		t.Errorf("the turn occupies %d rows, want 1", rows)
 	}
+}
+
+// liveWriter points the recorder at a scratch database and hands back a pool to
+// check what landed. The two tests below both need the whole path — the client
+// parsing, the key choice and the insert — not just the SQL.
+func liveWriter(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	dsn := os.Getenv("CHATRECORD_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set CHATRECORD_TEST_DSN to run the live storage test")
+	}
+	require.NoError(t, InitSchema(dsn))
+	pool, err := newPool(dsn)
+	require.NoError(t, err)
+
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := *cfg
+	t.Cleanup(func() {
+		*cfg = previous
+		Stop()
+		if os.Getenv("CHATRECORD_TEST_KEEP") == "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records")
+		}
+		pool.Close()
+	})
+	cfg.Enabled, cfg.DSN, cfg.StoreFiles = true, dsn, false
+	cfg.MemoryEnabled = false
+	return pool
+}
+
+func codexBody(turnID, sessionID, text string) []byte {
+	meta, _ := json.Marshal(map[string]string{
+		"thread_source": "user",
+		"request_kind":  "turn",
+		"turn_id":       turnID,
+		"session_id":    sessionID,
+	})
+	body, _ := json.Marshal(map[string]any{
+		"client_metadata": map[string]string{"x-codex-turn-metadata": string(meta)},
+		"messages":        []any{map[string]string{"role": "user", "content": text}},
+	})
+	return body
+}
+
+func awaitRow(t *testing.T, pool *pgxpool.Pool, requestID string) int64 {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	var id int64
+	var err error
+	for deadline := time.Now().Add(15 * time.Second); ; {
+		err = pool.QueryRow(ctx,
+			"SELECT id FROM chat_records WHERE request_id = $1", requestID).Scan(&id)
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	require.NoError(t, err, "the turn never reached the table")
+	return id
+}
+
+// A client naming its own turn is trusted about which requests belong
+// together, never about uniqueness: turn_key is unique across the whole table
+// and the id arrives in the request body. Taken at face value, two keys sending
+// the same one land on a single row — the second person's reply appended to the
+// first person's message, under the first person's staff number.
+func TestAClientsOwnTurnIdDoesNotMergeTwoKeys(t *testing.T) {
+	pool := liveWriter(t)
+
+	shared := "shared-turn-" + time.Now().Format("150405.000")
+	Submit(Turn{
+		RequestID: "mine-" + shared, UserID: 1, TokenID: 111,
+		TokenName: "A的key", StaffID: "10000001", ModelName: "gpt-5.6-sol",
+		Endpoint: "/v1/responses", StatusCode: 200, CreatedAt: time.Now(),
+		RequestBody:  codexBody(shared, "session-a", "A 说的话"),
+		ResponseBody: []byte(`{"choices":[{"message":{"content":"给 A 的回复"}}]}`),
+	})
+	Submit(Turn{
+		RequestID: "theirs-" + shared, UserID: 2, TokenID: 222,
+		TokenName: "B的key", StaffID: "10000002", ModelName: "gpt-5.6-sol",
+		Endpoint: "/v1/responses", StatusCode: 200, CreatedAt: time.Now(),
+		RequestBody:  codexBody(shared, "session-b", "B 说的话"),
+		ResponseBody: []byte(`{"choices":[{"message":{"content":"给 B 的回复"}}]}`),
+	})
+
+	mine := awaitRow(t, pool, "mine-"+shared)
+	theirs := awaitRow(t, pool, "theirs-"+shared)
+	assert.NotEqual(t, mine, theirs, "two keys sharing a turn id landed on one row")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var staffID, user, ai string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT staff_id, user_message, ai_message FROM chat_records WHERE id = $1`,
+		mine).Scan(&staffID, &user, &ai))
+	assert.Equal(t, "10000001", staffID)
+	assert.Equal(t, "A 说的话", user)
+	assert.NotContains(t, ai, "给 B 的回复", "B's answer was filed under A")
+
+	// The same key sending the same turn id must still fold, or the folding
+	// this key exists for is gone.
+	Submit(Turn{
+		RequestID: "again-" + shared, UserID: 1, TokenID: 111,
+		TokenName: "A的key", StaffID: "10000001", ModelName: "gpt-5.6-sol",
+		Endpoint: "/v1/responses", StatusCode: 200, CreatedAt: time.Now(),
+		RequestBody:  codexBody(shared, "session-a", "A 说的话"),
+		ResponseBody: []byte(`{"choices":[{"message":{"content":"接着说"}}]}`),
+	})
+	var folded int
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT request_count FROM chat_records WHERE id = $1`, mine).Scan(&folded))
+		if folded > 1 {
+			break
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	assert.Greater(t, folded, 1, "a second request of the same turn did not fold")
+}
+
+// Several identifying columns are fixed width and hold the client's own words.
+// Postgres does not shorten an oversized value, it refuses the row — so an
+// unbounded one costs the whole turn, silently, with only a line in the log.
+// prompt_cache_key is the one that bites: it is a documented request field that
+// callers set to whatever they like.
+func TestOversizedClientValuesDoNotCostTheTurn(t *testing.T) {
+	pool := liveWriter(t)
+
+	marker := "oversized-" + time.Now().Format("150405.000")
+	Submit(Turn{
+		RequestID: marker, UserID: 3, TokenID: 333,
+		TokenName: strings.Repeat("名", 300),
+		StaffID:   "10000003",
+		ModelName: strings.Repeat("m", 300),
+		Endpoint:  "/v1/responses", StatusCode: 200, CreatedAt: time.Now(),
+		RequestBody: codexBody(
+			strings.Repeat("t", 300),
+			strings.Repeat("s", 300),
+			"这句话必须留下来"),
+		ResponseBody: []byte(`{"choices":[{"message":{"content":"收到"}}]}`),
+	})
+
+	id := awaitRow(t, pool, marker)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var user, ai, sessionID, turnID, model string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT user_message, ai_message, client_session_id, client_turn_id, model_name
+		   FROM chat_records WHERE id = $1`, id).
+		Scan(&user, &ai, &sessionID, &turnID, &model))
+
+	assert.Equal(t, "这句话必须留下来", user, "the turn's content survived the clipping")
+	assert.Equal(t, "收到", ai)
+	assert.Len(t, []rune(sessionID), 64)
+	assert.Len(t, []rune(turnID), 64)
+	assert.Len(t, []rune(model), 128)
 }

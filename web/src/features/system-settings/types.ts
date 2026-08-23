@@ -384,6 +384,7 @@ export type OperationsSettings = {
   'chat_record_setting.memory_assistant_peer': string
   'chat_record_setting.memory_session_mode': 'person' | 'conversation'
   'chat_record_setting.memory_min_chars': number
+  'chat_record_setting.memory_max_chars': number
   'chat_record_setting.host': string
   'chat_record_setting.port': string
   'chat_record_setting.database': string

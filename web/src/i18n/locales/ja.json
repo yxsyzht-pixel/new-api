@@ -5403,6 +5403,8 @@
     "Follow the client’s conversations": "クライアントの会話単位に従う",
     "Per person lets the store build a picture across conversations; per conversation keeps them separate.": "人ごとにまとめると会話をまたいだ人物像が作れます。会話ごとなら独立します。",
     "Shortest remark worth remembering": "記憶する最短文字数",
+    "Longest remark the memory accepts": "記憶できる最大文字数",
+    "Anything longer is cut before it is sent. A memory store refuses an oversized message outright rather than keeping what fits, so leave this below its own limit — Honcho's is 25000.": "これを超える分は送信前に切り詰めます。メモリストアは長すぎるメッセージを部分的に保存せず丸ごと拒否するため、ストア側の上限より小さくしてください（Honcho は 25000）。",
     "Person peer name": "本人の peer 名",
     "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.": "この記憶が誰のものか。{staff_id} は送信したキーの社員番号に置き換わります。",
     "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.": "モデルの応答はここに保存され、文脈として扱われます。{staff_id} は残してください。共有すると各人のセッションごとに表現が作られ、peer 単位の問い合わせが全員の会話から答えてしまいます。",

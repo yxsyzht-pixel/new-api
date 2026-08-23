@@ -5403,6 +5403,8 @@
     "Follow the client’s conversations": "Следовать разговорам клиента",
     "Per person lets the store build a picture across conversations; per conversation keeps them separate.": "По человеку — портрет складывается из всех разговоров; по разговору — они остаются раздельными.",
     "Shortest remark worth remembering": "Минимальная длина для запоминания",
+    "Longest remark the memory accepts": "Максимальная длина для запоминания",
+    "Anything longer is cut before it is sent. A memory store refuses an oversized message outright rather than keeping what fits, so leave this below its own limit — Honcho's is 25000.": "Всё, что длиннее, обрезается перед отправкой. Хранилище памяти отклоняет слишком длинное сообщение целиком, а не сохраняет то, что помещается, — держите значение ниже его собственного предела (у Honcho это 25000).",
     "Person peer name": "Имя peer человека",
     "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.": "Чья это память. {staff_id} заменяется табельным номером ключа, отправившего сообщение.",
     "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.": "Ответы модели попадают сюда как контекст. Оставьте {staff_id}: общий ассистент накопит представление в сессии каждого и будет отвечать из разговоров всех сразу.",

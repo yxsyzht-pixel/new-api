@@ -5407,6 +5407,8 @@
     "Follow the client’s conversations": "Follow the client’s conversations",
     "Per person lets the store build a picture across conversations; per conversation keeps them separate.": "Per person lets the store build a picture across conversations; per conversation keeps them separate.",
     "Shortest remark worth remembering": "Shortest remark worth remembering",
+    "Longest remark the memory accepts": "Longest remark the memory accepts",
+    "Anything longer is cut before it is sent. A memory store refuses an oversized message outright rather than keeping what fits, so leave this below its own limit — Honcho's is 25000.": "Anything longer is cut before it is sent. A memory store refuses an oversized message outright rather than keeping what fits, so leave this below its own limit — Honcho's is 25000.",
     "Person peer name": "Person peer name",
     "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.": "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.",
     "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.": "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.",

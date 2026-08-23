@@ -86,6 +86,11 @@ type ChatRecordSetting struct {
 	MemorySessionMode string `json:"memory_session_mode"`
 	// MemoryMinChars skips remarks too short to be worth remembering.
 	MemoryMinChars int `json:"memory_min_chars"`
+	// MemoryMaxChars bounds what is sent to the memory store, which imposes a
+	// limit of its own and rejects the whole message when it is passed. That
+	// limit is smaller than MaxContentChars, so a long remark that the
+	// transcript stores happily is refused by the memory unless it is cut here.
+	MemoryMaxChars int `json:"memory_max_chars"`
 	// MemoryQueueSize and MemoryWorkers bound the delivery, which has its own
 	// queue: a slow memory store must not back up the transcript writer.
 	MemoryQueueSize int `json:"memory_queue_size"`
@@ -119,10 +124,13 @@ var chatRecordSetting = ChatRecordSetting{
 	MemoryAssistantPeer: "{agent}-{staff_id}",
 	MemorySessionMode:   "person",
 	MemoryMinChars:      4,
-	MemoryQueueSize:     2048,
-	MemoryWorkers:       2,
-	FileRoot:            "data/chat-record-files",
-	MaxFileBytes:        20 << 20,
+	// Honcho's own MAX_MESSAGE_SIZE is 25000 characters; staying under it
+	// leaves room for a memory store configured a little more tightly.
+	MemoryMaxChars:  20000,
+	MemoryQueueSize: 2048,
+	MemoryWorkers:   2,
+	FileRoot:        "data/chat-record-files",
+	MaxFileBytes:    20 << 20,
 }
 
 // AutomationModelList splits the operator's list of background-only models.
@@ -298,6 +306,13 @@ func (s *ChatRecordSetting) MemoryMinCharsOrDefault() int {
 		return 4
 	}
 	return s.MemoryMinChars
+}
+
+func (s *ChatRecordSetting) MemoryMaxCharsOrDefault() int {
+	if s.MemoryMaxChars <= 0 {
+		return 20000
+	}
+	return s.MemoryMaxChars
 }
 
 func (s *ChatRecordSetting) MemoryQueueSizeOrDefault() int {

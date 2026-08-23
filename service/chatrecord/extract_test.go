@@ -98,3 +98,61 @@ func TestTruncateCutsOnRuneBoundaries(t *testing.T) {
 	assert.Equal(t, "你好…", Truncate("你好世界", 2), "the cut must not split a character")
 	assert.Equal(t, "abc", Truncate("abc", 0), "no limit means no cut")
 }
+
+// A client that names its own turn is believed about which requests belong
+// together — but not about uniqueness. The id arrives in the request body and
+// turn_key is unique across the whole table, so an id taken at face value lets
+// one key's turn land on another key's row: the second person's words append to
+// the first person's message, under the first person's staff number.
+func TestClientTurnKeyIsScopedToTheKey(t *testing.T) {
+	const shared = "01997b0e-0000-7000-8000-000000000000"
+
+	mine := ClientTurnKey(74, shared)
+	theirs := ClientTurnKey(87, shared)
+	if mine == theirs {
+		t.Fatalf("two keys sending the same turn id produced the same row key: %s", mine)
+	}
+	if ClientTurnKey(74, shared) != mine {
+		t.Error("the same key and turn id must keep folding onto one row")
+	}
+	if ClientTurnKey(74, "") != "" {
+		t.Error("no turn id means no client-named turn")
+	}
+
+	// It also has to fit turn_key VARCHAR(64) whatever the client sent.
+	long := ClientTurnKey(74, strings.Repeat("z", 5000))
+	if len(long) != 64 {
+		t.Errorf("turn key is %d characters; the column holds 64", len(long))
+	}
+
+	// And it must not collide with an ordinary hashed turn, including the one
+	// case that looks contrived but is reachable: a conversation named exactly
+	// like this function's own prefix.
+	if ClientTurnKey(74, "x") == TurnKey(74, "client-turn", "x") {
+		t.Error("a client-named turn collided with a hashed one")
+	}
+}
+
+// clip exists because Truncate marks the cut with an ellipsis and so returns
+// one rune more than it was asked for — one too many for the column it was
+// measured against.
+func TestClipBoundsWithoutAddingToTheTail(t *testing.T) {
+	if got := Truncate(strings.Repeat("a", 70), 64); len([]rune(got)) != 65 {
+		t.Fatalf("Truncate returned %d runes; this test's premise is wrong", len([]rune(got)))
+	}
+	if got := clip(strings.Repeat("a", 70), 64); len([]rune(got)) != 64 {
+		t.Errorf("clip returned %d runes; want 64", len([]rune(got)))
+	}
+	if got := clip("短", 64); got != "短" {
+		t.Errorf("clip shortened a value that already fitted: %q", got)
+	}
+	// Cutting has to land on a rune boundary, or the tail becomes a broken
+	// character and Postgres rejects the row for a different reason.
+	got := clip("工号一二三四五", 3)
+	if got != "工号一" {
+		t.Errorf("clip = %q; want 工号一", got)
+	}
+	if clip("anything", 0) != "" {
+		t.Error("a zero width holds nothing")
+	}
+}

@@ -200,6 +200,10 @@ func ImportTokens(c *gin.Context) {
 		return
 	}
 
+	// Worked out once for the whole sheet rather than per row: it is the same
+	// answer every time, and it decides the same two columns every time.
+	manages := canManageAllTokens(c)
+
 	columns := headerPositions(rows[0])
 	updated, skipped := 0, 0
 	problems := make([]string, 0, 8)
@@ -209,7 +213,7 @@ func ImportTokens(c *gin.Context) {
 		if isBlankRow(row) {
 			continue
 		}
-		if err := applySheetRow(c, scope, columns, row); err != nil {
+		if err := applySheetRow(c, scope, manages, columns, row); err != nil {
 			skipped++
 			if len(problems) < 20 {
 				problems = append(problems, fmt.Sprintf("第 %d 行：%s", line, err.Error()))
@@ -267,7 +271,7 @@ func filledCell(columns map[string]int, row []string, name string) (string, bool
 	return value, value != ""
 }
 
-func applySheetRow(c *gin.Context, scope model.TokenScope, columns map[string]int, row []string) error {
+func applySheetRow(c *gin.Context, scope model.TokenScope, manages bool, columns map[string]int, row []string) error {
 	raw, ok := filledCell(columns, row, "id")
 	if !ok || raw == "" {
 		return fmt.Errorf("没有 id，无法定位要更新的密钥")
@@ -282,8 +286,18 @@ func applySheetRow(c *gin.Context, scope model.TokenScope, columns map[string]in
 		return fmt.Errorf("找不到 id=%d 的密钥，或它不属于你", id)
 	}
 
-	if staffID, ok := filledCell(columns, row, "staff_id"); ok {
-		staffID, _, err = prepareTokenStaffID(staffID, token.Id)
+	if requested, ok := filledCell(columns, row, "staff_id"); ok {
+		// Same rule as the page, and for the same reason: a regular user may
+		// only name someone the directory knows. Checked only when the number
+		// actually changes, so a key belonging to someone who has since left
+		// stays editable — matching UpdateToken rather than being stricter
+		// here by accident.
+		if canonicalStaffID(requested) != canonicalStaffID(token.StaffId) {
+			if err := checkStaffDirectorySelection(c, requested); err != nil {
+				return err
+			}
+		}
+		staffID, _, err := prepareTokenStaffID(requested, token.Id)
 		if err != nil {
 			return err
 		}
@@ -308,19 +322,31 @@ func applySheetRow(c *gin.Context, scope model.TokenScope, columns map[string]in
 	for _, flag := range []struct {
 		column string
 		target *bool
+		// managed marks the switches only a key manager may move. The page
+		// hides them from everyone else; hiding a control is not enforcing it
+		// while another endpoint writes the same column, and these two decide
+		// whether someone's own traffic is recorded at all.
+		managed bool
 	}{
-		{"skip_chat_record", &token.SkipChatRecord},
-		{"skip_memory", &token.SkipMemory},
-		{"unlimited_quota", &token.UnlimitedQuota},
-		{"model_limits_enabled", &token.ModelLimitsEnabled},
+		{"skip_chat_record", &token.SkipChatRecord, true},
+		{"skip_memory", &token.SkipMemory, true},
+		{"unlimited_quota", &token.UnlimitedQuota, false},
+		{"model_limits_enabled", &token.ModelLimitsEnabled, false},
 	} {
-		if value, ok := filledCell(columns, row, flag.column); ok {
-			parsed, err := parseSheetBool(value)
-			if err != nil {
-				return fmt.Errorf("%s 的值 %q 无法识别（用 true/false）", flag.column, value)
-			}
-			*flag.target = parsed
+		value, ok := filledCell(columns, row, flag.column)
+		if !ok {
+			continue
 		}
+		parsed, err := parseSheetBool(value)
+		if err != nil {
+			return fmt.Errorf("%s 的值 %q 无法识别（用 true/false）", flag.column, value)
+		}
+		// Refused only when the value would actually change, so re-importing
+		// an untouched export still works for everyone.
+		if flag.managed && !manages && parsed != *flag.target {
+			return fmt.Errorf("只有管理员能修改 %s", flag.column)
+		}
+		*flag.target = parsed
 	}
 	if value, ok := filledCell(columns, row, "remain_quota"); ok {
 		quota, err := strconv.Atoi(value)

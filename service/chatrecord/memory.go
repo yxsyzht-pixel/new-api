@@ -47,9 +47,34 @@ type memoryQueue struct {
 	cancel  context.CancelFunc
 	address string
 
+	// silenced remembers which assistants have already been quietened, so the
+	// extra call happens once per session instead of once per turn. It belongs
+	// to the queue rather than to the package: stopping the writer, or aiming
+	// it at another store, has to forget what it knew, or the new store keeps
+	// deriving a picture of the assistant that nobody ever asked it to stop.
+	silenced sync.Map
+	marks    atomic.Int64
+
 	Sent    atomic.Int64
 	Dropped atomic.Int64
 	Failed  atomic.Int64
+}
+
+// silencedCap bounds that map. In "conversation" mode the session names follow
+// the client's own conversations, which never stop arriving, so the map has no
+// natural ceiling. Forgetting the lot occasionally costs one redundant call per
+// live session — much cheaper than a map that only ever grows.
+const silencedCap = 20000
+
+// forgetSilenced empties the map in place. Ranging and deleting rather than
+// assigning a fresh sync.Map: workers may be reading it right now, and a
+// sync.Map is safe to share but not to overwrite.
+func (m *memoryQueue) forgetSilenced() {
+	m.silenced.Range(func(key, _ any) bool {
+		m.silenced.Delete(key)
+		return true
+	})
+	m.marks.Store(0)
 }
 
 var memory = &memoryQueue{}
@@ -78,6 +103,15 @@ func SubmitMemory(turn MemoryTurn) {
 	if !cfg.MemoryReady() {
 		return
 	}
+	// Bounded before it is queued rather than on the way out. The memory store
+	// refuses an oversized message outright instead of storing what fits, and
+	// its limit is below the transcript's — so a long remark the transcript
+	// keeps happily would be lost to the memory entirely. Queueing the cut
+	// version also keeps a waiting turn from pinning the whole body.
+	max := cfg.MemoryMaxCharsOrDefault()
+	turn.Spoken = Truncate(turn.Spoken, max)
+	turn.Reply = Truncate(turn.Reply, max)
+
 	address := strings.TrimRight(strings.TrimSpace(cfg.MemoryBaseURL), "/")
 
 	running := memory.ensure(cfg, address)
@@ -101,6 +135,8 @@ func (m *memoryQueue) ensure(cfg *operation_setting.ChatRecordSetting, address s
 	if m.cancel != nil {
 		m.cancel()
 	}
+	// A different store has quietened nobody.
+	m.forgetSilenced()
 	ctx, cancel := context.WithCancel(context.Background())
 	m.queue, m.cancel, m.address = make(chan MemoryTurn, cfg.MemoryQueueSizeOrDefault()), cancel, address
 
@@ -118,6 +154,7 @@ func StopMemory() {
 	if memory.cancel != nil {
 		memory.cancel()
 	}
+	memory.forgetSilenced()
 	memory.queue, memory.cancel, memory.address = nil, nil, ""
 }
 
@@ -235,19 +272,24 @@ func (m *memoryQueue) deliver(ctx context.Context, turn MemoryTurn) {
 	}
 }
 
-// configured remembers which sessions have already had the assistant quietened,
-// so the extra call happens once rather than on every turn.
-var configured sync.Map
-
 func (m *memoryQueue) silenceAssistant(ctx context.Context, cfg *operation_setting.ChatRecordSetting, session, assistant string) {
-	mark := session + "\x00" + assistant
-	if _, done := configured.LoadOrStore(mark, true); done {
+	// The workspace is part of the mark: a store can be repointed at another
+	// workspace without its address changing, and the assistants over there
+	// have not been quietened.
+	workspace := cfg.MemoryWorkspaceOrDefault()
+	mark := workspace + "\x00" + session + "\x00" + assistant
+
+	if m.marks.Load() >= silencedCap {
+		m.forgetSilenced()
+	}
+	if _, done := m.silenced.LoadOrStore(mark, true); done {
 		return
 	}
+	m.marks.Add(1)
 
 	url := fmt.Sprintf("%s/v3/workspaces/%s/sessions/%s/peers/%s/config",
 		strings.TrimRight(strings.TrimSpace(cfg.MemoryBaseURL), "/"),
-		cfg.MemoryWorkspaceOrDefault(), session, assistant)
+		workspace, session, assistant)
 	body, err := json.Marshal(map[string]any{"observe_me": false})
 	if err != nil {
 		return
@@ -263,13 +305,20 @@ func (m *memoryQueue) silenceAssistant(ctx context.Context, cfg *operation_setti
 	if err != nil {
 		// Not worth a retry: the memory is already written, and the only cost
 		// of failing here is derivation work nobody reads.
-		configured.Delete(mark)
+		m.forget(mark)
 		return
 	}
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
 	if response.StatusCode >= 300 {
-		configured.Delete(mark)
+		m.forget(mark)
+	}
+}
+
+// forget drops one mark so the next turn tries again.
+func (m *memoryQueue) forget(mark string) {
+	if _, loaded := m.silenced.LoadAndDelete(mark); loaded {
+		m.marks.Add(-1)
 	}
 }
 

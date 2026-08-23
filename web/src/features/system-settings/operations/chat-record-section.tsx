@@ -58,6 +58,7 @@ const schema = z.object({
   memoryAssistantPeer: z.string(),
   memorySessionMode: z.enum(["person", "conversation"]),
   memoryMinChars: z.coerce.number().int().min(1),
+  memoryMaxChars: z.coerce.number().int().min(1),
   queueSize: z.coerce.number().int().min(1),
   workers: z.coerce.number().int().min(1),
   maxContentChars: z.coerce.number().int().min(1),
@@ -266,6 +267,11 @@ export function ChatRecordSection({
       "chat_record_setting.memory_min_chars",
       values.memoryMinChars,
       saved.memoryMinChars,
+    );
+    push(
+      "chat_record_setting.memory_max_chars",
+      values.memoryMaxChars,
+      saved.memoryMaxChars,
     );
     if (values.maxFileMb !== saved.maxFileMb) {
       updates.push({
@@ -771,6 +777,25 @@ export function ChatRecordSection({
                 <FormControl>
                   <Input type="number" min={1} {...field} />
                 </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="memoryMaxChars"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("Longest remark the memory accepts")}</FormLabel>
+                <FormControl>
+                  <Input type="number" min={1} {...field} />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    "Anything longer is cut before it is sent. A memory store refuses an oversized message outright rather than keeping what fits, so leave this below its own limit — Honcho's is 25000.",
+                  )}
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}

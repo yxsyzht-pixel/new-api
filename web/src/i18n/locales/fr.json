@@ -5403,6 +5403,8 @@
     "Follow the client’s conversations": "Suivre les conversations du client",
     "Per person lets the store build a picture across conversations; per conversation keeps them separate.": "Par personne, la mémoire construit un portrait à travers les conversations ; par conversation, elles restent séparées.",
     "Shortest remark worth remembering": "Longueur minimale à mémoriser",
+    "Longest remark the memory accepts": "Longueur maximale mémorisable",
+    "Anything longer is cut before it is sent. A memory store refuses an oversized message outright rather than keeping what fits, so leave this below its own limit — Honcho's is 25000.": "Tout ce qui dépasse est coupé avant l'envoi. Un magasin de mémoire refuse un message trop long au lieu d'en garder une partie : restez sous sa propre limite — celle de Honcho est 25000.",
     "Person peer name": "Nom du peer de la personne",
     "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.": "À qui appartient cette mémoire. {staff_id} est remplacé par le matricule de la clé émettrice.",
     "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.": "Les réponses du modèle sont classées ici comme contexte. Conservez {staff_id} : un assistant partagé accumulerait une représentation dans la session de chacun.",

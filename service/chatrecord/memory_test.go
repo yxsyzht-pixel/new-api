@@ -1,14 +1,19 @@
 package chatrecord
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+
+	"github.com/stretchr/testify/require"
 )
 
 // The bar for telling a memory something about a person is higher than the bar
@@ -169,5 +174,179 @@ func TestPeerNamesCannotEscapeThePath(t *testing.T) {
 		if strings.ContainsAny(got, "/%. ") {
 			t.Errorf("sanitizePeer(%q) = %q, still not safe in a path", unsafe, got)
 		}
+	}
+}
+
+// The memory store refuses an oversized message outright rather than keeping
+// what fits, and its ceiling is below the transcript's — so a long remark the
+// transcript stores happily was being lost to the memory entirely.
+func TestLongRemarksAreCutToWhatTheMemoryAccepts(t *testing.T) {
+	seen := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		select {
+		case seen <- body:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("[]"))
+	}))
+	defer server.Close()
+
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := *cfg
+	t.Cleanup(func() { *cfg = previous; StopMemory() })
+	cfg.MemoryEnabled = true
+	cfg.MemoryBaseURL = server.URL
+	cfg.MemoryAPIKey = "test-key"
+	cfg.MemoryWorkspace = "yxsy"
+	cfg.MemoryPeerTemplate = "{staff_id}"
+	cfg.MemoryAssistantPeer = "newapi-{staff_id}"
+	cfg.MemoryMaxChars = 50
+	StopMemory()
+
+	SubmitMemory(MemoryTurn{
+		StaffID: "10018037", Session: "staff-10018037",
+		Spoken:    strings.Repeat("长", 400),
+		Reply:     strings.Repeat("答", 400),
+		CreatedAt: time.Now(),
+	})
+
+	select {
+	case body := <-seen:
+		messages, _ := body["messages"].([]any)
+		if len(messages) != 2 {
+			t.Fatalf("sent %d messages", len(messages))
+		}
+		for _, raw := range messages {
+			message, _ := raw.(map[string]any)
+			content, _ := message["content"].(string)
+			// Truncate marks the cut, so the bound is the limit plus that mark.
+			if length := len([]rune(content)); length > 51 {
+				t.Errorf("a %d character message was sent to a store that takes 50", length)
+			}
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("nothing reached the memory store")
+	}
+}
+
+// Quietening an assistant is remembered so it happens once per session rather
+// than once per turn. The mark has to name the workspace too: a store can be
+// repointed at another workspace without its address changing, and the
+// assistants over there have not been quietened — every reply would then be
+// observed, costing an inference each to describe something that is not a
+// person.
+//
+// Driven directly rather than through the queue, so the two configurations are
+// separate values and the test does not have to mutate shared settings while a
+// worker reads them.
+func TestAnAssistantIsQuietenedOncePerSessionAndWorkspace(t *testing.T) {
+	var silenced atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/config") {
+			silenced.Add(1)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	settings := func(workspace string) *operation_setting.ChatRecordSetting {
+		return &operation_setting.ChatRecordSetting{
+			MemoryBaseURL: server.URL, MemoryAPIKey: "test-key", MemoryWorkspace: workspace,
+		}
+	}
+	here, elsewhere := settings("yxsy"), settings("somewhere-else")
+
+	queue := &memoryQueue{}
+	ctx := context.Background()
+
+	queue.silenceAssistant(ctx, here, "staff-10018037", "codex-10018037")
+	require.Equal(t, int64(1), silenced.Load(), "the first turn of a session must quieten the assistant")
+
+	queue.silenceAssistant(ctx, here, "staff-10018037", "codex-10018037")
+	queue.silenceAssistant(ctx, here, "staff-10018037", "codex-10018037")
+	require.Equal(t, int64(1), silenced.Load(), "repeating it on every turn is the cost this map exists to avoid")
+
+	queue.silenceAssistant(ctx, here, "staff-10053662", "codex-10053662")
+	require.Equal(t, int64(2), silenced.Load(), "another session is another assistant to quieten")
+
+	queue.silenceAssistant(ctx, elsewhere, "staff-10018037", "codex-10018037")
+	require.Equal(t, int64(3), silenced.Load(), "another workspace has quietened nobody")
+}
+
+// Stopping the writer has to forget what it knew, or a memory store brought up
+// again — or swapped for another one — keeps deriving a picture of an assistant
+// that nobody ever asked it to stop.
+func TestStoppingTheWriterForgetsWhatWasQuietened(t *testing.T) {
+	var silenced atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/config") {
+			silenced.Add(1)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("[]"))
+	}))
+	defer server.Close()
+
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := *cfg
+	t.Cleanup(func() { *cfg = previous; StopMemory() })
+	cfg.MemoryEnabled = true
+	cfg.MemoryBaseURL = server.URL
+	cfg.MemoryAPIKey = "test-key"
+	cfg.MemoryWorkspace = "yxsy"
+	cfg.MemoryPeerTemplate = "{staff_id}"
+	cfg.MemoryAssistantPeer = "newapi-{staff_id}"
+	StopMemory()
+
+	send := func() {
+		SubmitMemory(MemoryTurn{
+			StaffID: "10018037", Session: "staff-10018037",
+			Spoken: "一句话", Reply: "一句回答", CreatedAt: time.Now(),
+		})
+	}
+	waitFor := func(want int64, why string) {
+		t.Helper()
+		for i := 0; i < 100; i++ {
+			if silenced.Load() == want {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatalf("%s: quietened %d times, want %d", why, silenced.Load(), want)
+	}
+
+	send()
+	waitFor(1, "the first turn of a session")
+	send()
+	time.Sleep(300 * time.Millisecond)
+	require.Equal(t, int64(1), silenced.Load(), "a second turn quietened the same assistant again")
+
+	StopMemory()
+	send()
+	waitFor(2, "after the writer was restarted")
+}
+
+// In "conversation" mode the session names follow the client's own
+// conversations, which never stop arriving, so the map that remembers them
+// needs a ceiling or it is a leak that only shows up after weeks.
+func TestTheSilencedMapDoesNotGrowForever(t *testing.T) {
+	queue := &memoryQueue{}
+	for i := 0; i < silencedCap+10; i++ {
+		queue.silenced.Store(strconv.Itoa(i), true)
+	}
+	queue.marks.Store(silencedCap + 10)
+
+	queue.forgetSilenced()
+
+	left := 0
+	queue.silenced.Range(func(any, any) bool { left++; return true })
+	if left != 0 {
+		t.Errorf("%d marks survived being forgotten", left)
+	}
+	if queue.marks.Load() != 0 {
+		t.Errorf("the counter says %d after forgetting everything", queue.marks.Load())
 	}
 }

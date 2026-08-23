@@ -125,6 +125,25 @@ func TurnKey(tokenID int, conversation, userMessage string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// ClientTurnKey names a turn the client named itself. The id is hashed with the
+// token rather than used as it stands, for two reasons that both bite.
+//
+// It arrives in the request body, and turn_key is unique across the whole
+// table: two keys sending the same id would fold two people's conversations
+// into one row, the second person's words landing under the first one's staff
+// number. Hashing also bounds the result to the column, whatever length the
+// client chose to send.
+//
+// The prefix keeps this out of TurnKey's space: without it an id would collide
+// with an ordinary key whose conversation happened to be "client-turn".
+func ClientTurnKey(tokenID int, turnID string) string {
+	if turnID == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte("client-turn\x00" + strconv.Itoa(tokenID) + "\x00" + turnID))
+	return hex.EncodeToString(sum[:])
+}
+
 // textFromContent flattens the several shapes a message body takes: a plain
 // string, or a list of parts of which only the textual ones are wanted.
 func textFromContent(content gjson.Result) string {
@@ -241,4 +260,23 @@ func Truncate(s string, max int) string {
 		return s
 	}
 	return string([]rune(s)[:max]) + "…"
+}
+
+// clip bounds a value to a fixed-width column. Unlike Truncate it adds nothing
+// to the tail: Truncate marks the cut with an ellipsis and so returns max+1
+// runes, which is one too many for the column it was measured against, and an
+// ellipsis inside an identifier is wrong anyway.
+//
+// Postgres does not truncate an oversized value, it refuses the whole row. The
+// values these columns hold include ones the client chose — a session id, a
+// model name — so an unbounded one costs the entire turn.
+func clip(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max])
 }

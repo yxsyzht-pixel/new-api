@@ -175,6 +175,8 @@ const OPERATIONS_SECTIONS = [
           memorySessionMode:
             settings["chat_record_setting.memory_session_mode"] ?? "person",
           memoryMinChars: settings["chat_record_setting.memory_min_chars"] ?? 4,
+          memoryMaxChars:
+            settings["chat_record_setting.memory_max_chars"] ?? 20000,
           queueSize: settings["chat_record_setting.queue_size"] ?? 4096,
           workers: settings["chat_record_setting.workers"] ?? 4,
           maxContentChars:

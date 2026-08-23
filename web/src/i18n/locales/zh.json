@@ -5407,6 +5407,8 @@
     "Follow the client’s conversations": "跟随客户端的会话边界",
     "Per person lets the store build a picture across conversations; per conversation keeps them separate.": "按人归档便于跨对话形成人物画像;按会话归档则各自独立。",
     "Shortest remark worth remembering": "最短记忆字数",
+    "Longest remark the memory accepts": "最长记忆字数",
+    "Anything longer is cut before it is sent. A memory store refuses an oversized message outright rather than keeping what fits, so leave this below its own limit — Honcho's is 25000.": "超过就先截断再发送。记忆存储遇到超长消息是整条拒收,不会只留能放下的部分,所以这个值要低于它自己的上限——Honcho 是 25000。",
     "Person peer name": "人的 peer 名称",
     "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.": "这份记忆算在谁头上。{staff_id} 会替换成发消息那个密钥的工号。",
     "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.": "模型的回复挂在这里,只作为上下文参与,不会变成关于这个人的事实。**保留 {staff_id}**:共用一个助手 peer 的话,它会在每个人的会话里各建一份表征,而且 peer 级查询会把所有人的对话混在一起答。",
