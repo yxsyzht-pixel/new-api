@@ -54,7 +54,9 @@ const schema = z.object({
   memoryBaseUrl: z.string(),
   memoryApiKey: z.string(),
   memoryWorkspace: z.string(),
+  memoryPeerTemplate: z.string(),
   memoryAssistantPeer: z.string(),
+  memoryObserveAssistant: z.boolean(),
   memorySessionMode: z.enum(["person", "conversation"]),
   memoryMinChars: z.coerce.number().int().min(1),
   queueSize: z.coerce.number().int().min(1),
@@ -219,9 +221,19 @@ export function ChatRecordSection({
       saved.memoryWorkspace,
     );
     push(
+      "chat_record_setting.memory_peer_template",
+      values.memoryPeerTemplate,
+      saved.memoryPeerTemplate,
+    );
+    push(
       "chat_record_setting.memory_assistant_peer",
       values.memoryAssistantPeer,
       saved.memoryAssistantPeer,
+    );
+    push(
+      "chat_record_setting.memory_observe_assistant",
+      values.memoryObserveAssistant,
+      saved.memoryObserveAssistant,
     );
     push(
       "chat_record_setting.memory_session_mode",
@@ -631,16 +643,34 @@ export function ChatRecordSection({
             />
             <FormField
               control={form.control}
+              name="memoryPeerTemplate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t("Person peer name")}</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="{staff_id}" />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.",
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
               name="memoryAssistantPeer"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>{t("Assistant peer name")}</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="newapi" />
+                    <Input {...field} placeholder="newapi-{staff_id}" />
                   </FormControl>
                   <FormDescription>
                     {t(
-                      "The model’s replies are filed under this name, so they read as context instead of becoming facts about the person.",
+                      "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.",
                     )}
                   </FormDescription>
                   <FormMessage />
@@ -677,6 +707,29 @@ export function ChatRecordSection({
                 </FormDescription>
                 <FormMessage />
               </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="memoryObserveAssistant"
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t("Also profile the assistant")}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      "Off by default. Leaving it on costs a second inference for every reply, to build a picture of something that is not a person.",
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
             )}
           />
 

@@ -5406,6 +5406,11 @@
     "One running session per person": "Одна长 сессия на человека",
     "Follow the client’s conversations": "Следовать разговорам клиента",
     "Per person lets the store build a picture across conversations; per conversation keeps them separate.": "По человеку — портрет складывается из всех разговоров; по разговору — они остаются раздельными.",
-    "Shortest remark worth remembering": "Минимальная длина для запоминания"
+    "Shortest remark worth remembering": "Минимальная длина для запоминания",
+    "Person peer name": "Имя peer человека",
+    "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.": "Чья это память. {staff_id} заменяется табельным номером ключа, отправившего сообщение.",
+    "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.": "Ответы модели попадают сюда как контекст. Оставьте {staff_id}: общий ассистент накопит представление в сессии каждого и будет отвечать из разговоров всех сразу.",
+    "Also profile the assistant": "Строить представление и об ассистенте",
+    "Off by default. Leaving it on costs a second inference for every reply, to build a picture of something that is not a person.": "По умолчанию выключено. Иначе каждый ответ стоит второго вывода — ради портрета того, кто не человек."
   }
 }

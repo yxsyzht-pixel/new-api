@@ -70,9 +70,21 @@ type ChatRecordSetting struct {
 	MemoryAPIKey string `json:"memory_api_key"`
 	// MemoryWorkspace is the honcho workspace to write into.
 	MemoryWorkspace string `json:"memory_workspace"`
-	// MemoryAssistantPeer is the name the model's replies are filed under, so
-	// they serve as context without becoming facts about the person.
+	// MemoryPeerTemplate names the peer a person's own words are filed under.
+	// "{staff_id}" is replaced with the staff number of the key that sent them,
+	// which is what makes the memory a memory of that person.
+	MemoryPeerTemplate string `json:"memory_peer_template"`
+	// MemoryAssistantPeer names the peer the model's replies are filed under,
+	// so they serve as context without becoming facts about the person. It
+	// takes the same placeholder: one assistant peer per person keeps each
+	// person's context to themselves, and stops the store from deriving a
+	// profile of the assistant in every session it appears in.
 	MemoryAssistantPeer string `json:"memory_assistant_peer"`
+	// MemoryObserveAssistant lets the store build a representation of the
+	// assistant too. Off by default: it doubles the derivation work — every
+	// reply costs a second inference — to describe something that is not a
+	// person and has no memory worth keeping.
+	MemoryObserveAssistant bool `json:"memory_observe_assistant"`
 	// MemorySessionMode is "person" for one running session per staff number,
 	// or "conversation" to follow the client's own conversation boundaries.
 	MemorySessionMode string `json:"memory_session_mode"`
@@ -107,7 +119,8 @@ var chatRecordSetting = ChatRecordSetting{
 	MaxQueuedBytes:      64 << 20,
 	StoreFiles:          true,
 	MemoryWorkspace:     "yxsy",
-	MemoryAssistantPeer: "newapi",
+	MemoryPeerTemplate:  "{staff_id}",
+	MemoryAssistantPeer: "newapi-{staff_id}",
 	MemorySessionMode:   "person",
 	MemoryMinChars:      4,
 	MemoryQueueSize:     2048,
@@ -243,11 +256,27 @@ func (s *ChatRecordSetting) MemoryWorkspaceOrDefault() string {
 	return "yxsy"
 }
 
+// MemoryPeerName resolves a peer template for one staff number.
+func MemoryPeerName(template, staffID string) string {
+	template = strings.TrimSpace(template)
+	if template == "" {
+		return staffID
+	}
+	return strings.ReplaceAll(template, "{staff_id}", staffID)
+}
+
+func (s *ChatRecordSetting) MemoryPeerTemplateOrDefault() string {
+	if v := strings.TrimSpace(s.MemoryPeerTemplate); v != "" {
+		return v
+	}
+	return "{staff_id}"
+}
+
 func (s *ChatRecordSetting) MemoryAssistantPeerOrDefault() string {
 	if v := strings.TrimSpace(s.MemoryAssistantPeer); v != "" {
 		return v
 	}
-	return "newapi"
+	return "newapi-{staff_id}"
 }
 
 func (s *ChatRecordSetting) MemoryMinCharsOrDefault() int {

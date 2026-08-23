@@ -165,8 +165,14 @@ const OPERATIONS_SECTIONS = [
           memoryApiKey: "",
           memoryWorkspace:
             settings["chat_record_setting.memory_workspace"] ?? "yxsy",
+          memoryPeerTemplate:
+            settings["chat_record_setting.memory_peer_template"] ??
+            "{staff_id}",
           memoryAssistantPeer:
-            settings["chat_record_setting.memory_assistant_peer"] ?? "newapi",
+            settings["chat_record_setting.memory_assistant_peer"] ??
+            "newapi-{staff_id}",
+          memoryObserveAssistant:
+            settings["chat_record_setting.memory_observe_assistant"] ?? false,
           memorySessionMode:
             settings["chat_record_setting.memory_session_mode"] ?? "person",
           memoryMinChars: settings["chat_record_setting.memory_min_chars"] ?? 4,

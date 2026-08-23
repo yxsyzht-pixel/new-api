@@ -63,7 +63,8 @@ func TestTheReplyIsFiledUnderTheAssistantNotThePerson(t *testing.T) {
 	cfg.MemoryBaseURL = server.URL
 	cfg.MemoryAPIKey = "test-key"
 	cfg.MemoryWorkspace = "yxsy"
-	cfg.MemoryAssistantPeer = "newapi"
+	cfg.MemoryPeerTemplate = "{staff_id}"
+	cfg.MemoryAssistantPeer = "newapi-{staff_id}"
 
 	SubmitMemory(MemoryTurn{
 		StaffID: "10018037", Session: "staff-10018037",
@@ -88,8 +89,8 @@ func TestTheReplyIsFiledUnderTheAssistantNotThePerson(t *testing.T) {
 		if first["peer_id"] != "10018037" || first["content"] != "登录不上去了" {
 			t.Errorf("the person's message = %+v", first)
 		}
-		if second["peer_id"] != "newapi" {
-			t.Errorf("the reply was filed under %v, not the assistant", second["peer_id"])
+		if second["peer_id"] != "newapi-10018037" {
+			t.Errorf("the reply was filed under %v, not this person's assistant", second["peer_id"])
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("nothing reached the memory store")
@@ -136,5 +137,37 @@ func TestSessionNaming(t *testing.T) {
 	// A session name becomes part of a URL path; it stays plain.
 	if got := MemorySessionName("person", "../../etc", ""); strings.Contains(got, "/") {
 		t.Errorf("= %q, must not escape the path", got)
+	}
+}
+
+// Both peer names are templates. A shared assistant peer would accumulate a
+// representation in every person's session — a second inference per reply, to
+// describe something that is not a person — and a peer-level question about it
+// would answer from everybody's conversations at once.
+func TestPeerNamesAreResolvedPerPerson(t *testing.T) {
+	cases := []struct {
+		template string
+		staffID  string
+		want     string
+	}{
+		{"{staff_id}", "10018037", "10018037"},
+		{"newapi-{staff_id}", "10018037", "newapi-10018037"},
+		{"", "10018037", "10018037"},
+		{"assistant", "10018037", "assistant"},
+	}
+	for _, tc := range cases {
+		if got := operation_setting.MemoryPeerName(tc.template, tc.staffID); got != tc.want {
+			t.Errorf("MemoryPeerName(%q, %q) = %q, want %q", tc.template, tc.staffID, got, tc.want)
+		}
+	}
+}
+
+// A staff number is typed by a person and ends up in a URL path.
+func TestPeerNamesCannotEscapeThePath(t *testing.T) {
+	for _, unsafe := range []string{"../../admin", "a/b", "peer name", "10018037%2f.."} {
+		got := sanitizePeer(unsafe)
+		if strings.ContainsAny(got, "/%. ") {
+			t.Errorf("sanitizePeer(%q) = %q, still not safe in a path", unsafe, got)
+		}
 	}
 }

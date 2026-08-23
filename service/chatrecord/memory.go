@@ -145,6 +145,14 @@ func (m *memoryQueue) deliver(ctx context.Context, turn MemoryTurn) {
 		return
 	}
 
+	person := sanitizePeer(operation_setting.MemoryPeerName(
+		cfg.MemoryPeerTemplateOrDefault(), turn.StaffID))
+	assistant := sanitizePeer(operation_setting.MemoryPeerName(
+		cfg.MemoryAssistantPeerOrDefault(), turn.StaffID))
+	if person == "" {
+		return
+	}
+
 	stamp := turn.CreatedAt.Format(time.RFC3339Nano)
 	shared := map[string]any{
 		"source":   "newapi",
@@ -153,7 +161,7 @@ func (m *memoryQueue) deliver(ctx context.Context, turn MemoryTurn) {
 	}
 
 	messages := []memoryMessage{{
-		PeerID:    turn.StaffID,
+		PeerID:    person,
 		Content:   turn.Spoken,
 		Metadata:  shared,
 		CreatedAt: stamp,
@@ -163,7 +171,7 @@ func (m *memoryQueue) deliver(ctx context.Context, turn MemoryTurn) {
 	// else's only as context — which is exactly the right place for it.
 	if reply := strings.TrimSpace(turn.Reply); reply != "" {
 		messages = append(messages, memoryMessage{
-			PeerID:    cfg.MemoryAssistantPeerOrDefault(),
+			PeerID:    assistant,
 			Content:   reply,
 			Metadata:  shared,
 			CreatedAt: stamp,
@@ -207,6 +215,70 @@ func (m *memoryQueue) deliver(ctx context.Context, turn MemoryTurn) {
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
 	m.Sent.Add(1)
+
+	// Ask the store not to build a picture of the assistant. Doing so costs a
+	// second inference for every reply, to describe something that is not a
+	// person. Once per session is enough.
+	if assistant != "" && !cfg.MemoryObserveAssistant {
+		m.silenceAssistant(writeCtx, cfg, turn.Session, assistant)
+	}
+}
+
+// configured remembers which sessions have already had the assistant quietened,
+// so the extra call happens once rather than on every turn.
+var configured sync.Map
+
+func (m *memoryQueue) silenceAssistant(ctx context.Context, cfg *operation_setting.ChatRecordSetting, session, assistant string) {
+	mark := session + "\x00" + assistant
+	if _, done := configured.LoadOrStore(mark, true); done {
+		return
+	}
+
+	url := fmt.Sprintf("%s/v3/workspaces/%s/sessions/%s/peers/%s/config",
+		strings.TrimRight(strings.TrimSpace(cfg.MemoryBaseURL), "/"),
+		cfg.MemoryWorkspaceOrDefault(), session, assistant)
+	body, err := json.Marshal(map[string]any{"observe_me": false})
+	if err != nil {
+		return
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(cfg.MemoryAPIKey))
+
+	response, err := memoryClient.Do(request)
+	if err != nil {
+		// Not worth a retry: the memory is already written, and the only cost
+		// of failing here is derivation work nobody reads.
+		configured.Delete(mark)
+		return
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
+	if response.StatusCode >= 300 {
+		configured.Delete(mark)
+	}
+}
+
+// sanitizePeer keeps a peer name to what is safe in a URL path and in the
+// memory store. A staff number is typed by a person and reaches here unescaped.
+func sanitizePeer(name string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			return r
+		case r == '-', r == '_':
+			return r
+		default:
+			return -1
+		}
+	}, name)
+	if len(cleaned) > 96 {
+		cleaned = cleaned[:96]
+	}
+	return cleaned
 }
 
 // MemorySessionName is the session a turn belongs to. Filing everything a
