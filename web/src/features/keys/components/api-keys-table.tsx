@@ -62,7 +62,23 @@ import { DataTableBulkActions } from "./data-table-bulk-actions";
 import { DataTableRowActions } from "./data-table-row-actions";
 
 const route = getRouteApi("/_authenticated/keys/");
-const API_KEYS_COLUMN_VISIBILITY_STORAGE_KEY = "api-keys:column-visibility";
+const API_KEYS_COLUMN_VISIBILITY_STORAGE_KEY = "api-keys:column-visibility:v2";
+const API_KEYS_INITIAL_COLUMN_VISIBILITY = {
+  staff_id: true,
+  name: true,
+  key: true,
+  status: true,
+  quota: false,
+  group: false,
+  model_limits: false,
+  allow_ips: false,
+  owner: true,
+  created_by: true,
+  accessed_time: true,
+  created_time: false,
+  updated_by: false,
+  expired_time: false,
+};
 const API_KEYS_MOBILE_SKELETON_IDS = Array.from(
   { length: 5 },
   (_, index) => `api-key-mobile-skeleton-${index + 1}`,
@@ -194,7 +210,7 @@ export function ApiKeysTable() {
     useApiKeys();
   const [now, setNow] = useState(() => Date.now());
   const showAllUsers = canManageAllKeys && allUsersScope;
-  const columns = useApiKeysColumns(now, showAllUsers);
+  const columns = useApiKeysColumns(now);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -288,6 +304,7 @@ export function ApiKeysTable() {
     columns,
     enableRowSelection: true,
     columnFilters,
+    initialColumnVisibility: API_KEYS_INITIAL_COLUMN_VISIBILITY,
     columnVisibilityStorageKey: API_KEYS_COLUMN_VISIBILITY_STORAGE_KEY,
     globalFilter,
     pagination,

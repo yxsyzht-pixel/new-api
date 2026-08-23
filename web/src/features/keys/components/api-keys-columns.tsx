@@ -83,12 +83,7 @@ function useGroupRatios(): Record<string, number | string> {
   return data ?? {};
 }
 
-export function useApiKeysColumns(
-  now: number,
-  // Shown only when the listing can span more than one account; on your own
-  // keys an owner column would say the same thing on every row.
-  showOwner = false,
-): ColumnDef<ApiKey>[] {
+export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
   const { t, i18n } = useTranslation();
   const groupRatios = useGroupRatios();
   const shouldReduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
@@ -142,47 +137,13 @@ export function useApiKeysColumns(
       size: 180,
       meta: { mobileTitle: true },
     },
-    ...(showOwner
-      ? [
-          {
-            id: "owner",
-            accessorKey: "username",
-            header: t("Owner"),
-            cell: ({ row }) => {
-              const username = row.original.username;
-              return username ? (
-                <span className="text-sm">{username}</span>
-              ) : (
-                <span className="text-muted-foreground">
-                  #{row.original.user_id}
-                </span>
-              );
-            },
-            size: 130,
-          } as ColumnDef<ApiKey>,
-        ]
-      : []),
     {
-      id: "created_by",
-      accessorKey: "created_by_name",
-      header: t("Created by"),
-      cell: ({ row }) =>
-        renderApiKeyActor(
-          row.original.created_by,
-          row.original.created_by_name,
-        ),
-      size: 130,
-    },
-    {
-      id: "updated_by",
-      accessorKey: "updated_by_name",
-      header: t("Updated by"),
-      cell: ({ row }) =>
-        renderApiKeyActor(
-          row.original.updated_by,
-          row.original.updated_by_name,
-        ),
-      size: 130,
+      id: "key",
+      accessorKey: "key",
+      header: t("API Key"),
+      cell: ({ row }) => <ApiKeyCell apiKey={row.original} />,
+      enableSorting: false,
+      size: 260,
     },
     {
       accessorKey: "status",
@@ -202,14 +163,6 @@ export function useApiKeysColumns(
       filterFn: (row, id, value) => value.includes(String(row.getValue(id))),
       size: 120,
       meta: { mobileBadge: true },
-    },
-    {
-      id: "key",
-      accessorKey: "key",
-      header: t("API Key"),
-      cell: ({ row }) => <ApiKeyCell apiKey={row.original} />,
-      enableSorting: false,
-      size: 260,
     },
     {
       id: "quota",
@@ -298,19 +251,31 @@ export function useApiKeysColumns(
       meta: { mobileHidden: true },
     },
     {
-      accessorKey: "created_time",
-      header: t("Created"),
-      cell: ({ row }) => (
-        <ApiKeyTimestampCell
-          timestamp={row.getValue("created_time")}
-          now={now}
-          locale={locale}
-          justNowLabel={justNowLabel}
-          className="text-muted-foreground"
-        />
-      ),
-      size: 180,
-      meta: { mobileHidden: true },
+      id: "owner",
+      accessorKey: "username",
+      header: t("Owner"),
+      cell: ({ row }) => {
+        const username = row.original.username;
+        return username ? (
+          <span className="text-sm">{username}</span>
+        ) : (
+          <span className="text-muted-foreground">
+            #{row.original.user_id}
+          </span>
+        );
+      },
+      size: 130,
+    },
+    {
+      id: "created_by",
+      accessorKey: "created_by_name",
+      header: t("Created by"),
+      cell: ({ row }) =>
+        renderApiKeyActor(
+          row.original.created_by,
+          row.original.created_by_name,
+        ),
+      size: 130,
     },
     {
       accessorKey: "accessed_time",
@@ -332,6 +297,32 @@ export function useApiKeysColumns(
       },
       size: 180,
       meta: { mobileHidden: true },
+    },
+    {
+      accessorKey: "created_time",
+      header: t("Created"),
+      cell: ({ row }) => (
+        <ApiKeyTimestampCell
+          timestamp={row.getValue("created_time")}
+          now={now}
+          locale={locale}
+          justNowLabel={justNowLabel}
+          className="text-muted-foreground"
+        />
+      ),
+      size: 180,
+      meta: { mobileHidden: true },
+    },
+    {
+      id: "updated_by",
+      accessorKey: "updated_by_name",
+      header: t("Updated by"),
+      cell: ({ row }) =>
+        renderApiKeyActor(
+          row.original.updated_by,
+          row.original.updated_by_name,
+        ),
+      size: 130,
     },
     {
       accessorKey: "expired_time",
