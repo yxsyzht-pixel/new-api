@@ -62,7 +62,7 @@ export function useStaffDirectory(keyword: string, enabled: boolean) {
       const { data } = await api.get<{ data?: Directory }>(
         `/api/token/staff-directory?${params.toString()}`,
       );
-      return data.data ?? { configured: false, freeform: true, items: [] };
+      return data.data ?? { configured: false, freeform: false, items: [] };
     },
     enabled,
     placeholderData: (previous) => previous,

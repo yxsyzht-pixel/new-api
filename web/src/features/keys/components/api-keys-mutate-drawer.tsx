@@ -108,10 +108,15 @@ export function ApiKeysMutateDrawer({
   const currentRowId = currentRow?.id;
   const { triggerRefresh, canManageAllKeys } = useApiKeys();
   const [staffPickerOpen, setStaffPickerOpen] = useState(false);
-  const { data: staffDirectory } = useStaffDirectory("", true);
-  // With nothing to pick from, typing is all there is.
-  const staffFreeform =
-    !staffDirectory?.configured || staffDirectory.freeform === true;
+  const {
+    data: staffDirectory,
+    isFetched: staffDirectoryFetched,
+    isFetching: staffDirectoryFetching,
+  } = useStaffDirectory("", true);
+  // Only callers granted the staff-id freeform capability (administrators by
+  // default) may type or leave this field empty. Regular users must choose a
+  // person from the directory.
+  const staffFreeform = staffDirectory?.freeform === true;
   // Editing someone else's key means their selectable groups, not the
   // administrator's — that is what the server checks the choice against.
   const autoGroupsOwnerId =
@@ -201,8 +206,8 @@ export function ApiKeysMutateDrawer({
       ? Number(autoGroupsData?.data?.max_count)
       : 5;
   const schema = useMemo(
-    () => getApiKeyFormSchema(t, maxAutoGroups),
-    [t, maxAutoGroups],
+    () => getApiKeyFormSchema(t, maxAutoGroups, !staffFreeform),
+    [t, maxAutoGroups, staffFreeform],
   );
 
   const form = useForm<ApiKeyFormValues>({
@@ -220,6 +225,8 @@ export function ApiKeysMutateDrawer({
       !groupsFetched ||
       groupsFetching ||
       !autoGroupsFetched ||
+      !staffDirectoryFetched ||
+      staffDirectoryFetching ||
       autoGroupsFetching
     ) {
       return;
@@ -259,6 +266,8 @@ export function ApiKeysMutateDrawer({
     groupsFetching,
     autoGroupsFetched,
     autoGroupsFetching,
+    staffDirectoryFetched,
+    staffDirectoryFetching,
     apiKeyData,
     apiKeyFetched,
     apiKeyFetching,
@@ -271,9 +280,7 @@ export function ApiKeysMutateDrawer({
     isUpdate && currentRow ? `update:${currentRow.id}` : "create";
   const isFormInitialized = initializedTarget === formTarget;
   const selectedGroup = form.watch("group");
-  const selectedStaffID = form.watch("staff_id");
-  const staffDirectorySelectionLocked =
-    !staffFreeform && Boolean(selectedStaffID?.trim());
+  const staffDirectorySelectionLocked = !staffFreeform;
 
   // Correct group after groups load: if the form value is not in available groups, fall back
   useEffect(() => {
@@ -440,7 +447,9 @@ export function ApiKeysMutateDrawer({
                           />
                         </FormControl>
                         <FormDescription>
-                          {t("Leave empty to auto-generate LS + 6 digits")}
+                          {staffFreeform
+                            ? t("Leave empty to auto-generate LS + 6 digits")
+                            : t("Pick from the staff directory")}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

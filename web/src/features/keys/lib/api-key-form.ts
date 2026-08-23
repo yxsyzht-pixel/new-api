@@ -28,7 +28,11 @@ import type { ApiKey, ApiKeyFormData } from "../types";
 // Form Schema
 // ============================================================================
 
-export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
+export function getApiKeyFormSchema(
+  t: TFunction,
+  maxAutoGroups = 5,
+  requireStaffID = false,
+) {
   const autoGroupLimit =
     Number.isInteger(maxAutoGroups) && maxAutoGroups > 0 ? maxAutoGroups : 5;
 
@@ -90,6 +94,14 @@ export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
             message: t("Auto groups must not contain duplicates"),
           });
         }
+      }
+
+      if (requireStaffID && data.staff_id.trim() === "") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["staff_id"],
+          message: t("Please choose a staff member from the directory"),
+        });
       }
 
       if (data.unlimited_quota) {

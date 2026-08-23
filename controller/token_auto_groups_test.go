@@ -67,6 +67,7 @@ func baseAutoTokenRequest(name string) map[string]any {
 func newTokenAutoGroupsAuthenticatedContext(t *testing.T, method string, target string, body any, userID int) (*gin.Context, *httptest.ResponseRecorder) {
 	t.Helper()
 	ctx, recorder := newAuthenticatedContext(t, method, target, body, userID)
+	ctx.Set("role", common.RoleRootUser)
 	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
 	return ctx, recorder
 }

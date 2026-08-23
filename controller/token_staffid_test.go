@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -98,4 +99,23 @@ func TestPrepareTokenStaffIDAllowsTheTokenKeepingItsOwnStaffID(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, generated)
 	assert.Equal(t, "A001", staffID)
+}
+
+func TestRegularUserMustChooseStaffID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/token/", nil)
+	c.Set("id", 7)
+	c.Set("role", common.RoleCommonUser)
+
+	assert.False(t, requireStaffDirectorySelection(c, ""))
+	assert.Contains(t, recorder.Body.String(), "必须从人事目录选择工号")
+
+	recorder = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/token/", nil)
+	c.Set("id", 7)
+	c.Set("role", common.RoleRootUser)
+	assert.True(t, requireStaffDirectorySelection(c, ""))
 }

@@ -7,7 +7,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/service/staffdir"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,7 +18,7 @@ func SearchStaffDirectory(c *gin.Context) {
 	if !staffdir.Configured() {
 		common.ApiSuccess(c, gin.H{
 			"configured": false,
-			"freeform":   true, // nothing to pick from, so typing is all there is
+			"freeform":   canWriteFreeformStaffID(c),
 			"items":      []any{},
 		})
 		return
@@ -42,7 +41,7 @@ func SearchStaffDirectory(c *gin.Context) {
 	}
 	common.ApiSuccess(c, gin.H{
 		"configured": true,
-		"freeform":   canWriteFreeformStaffID(c) || !operation_setting.GetStaffDirectorySetting().RequireDirectory,
+		"freeform":   canWriteFreeformStaffID(c),
 		"items":      people,
 	})
 }

@@ -191,15 +191,21 @@ describe("API key Auto group form mapping", () => {
     );
   });
 
-  test("a key must name the person it belongs to", () => {
-    const withoutStaffID = getApiKeyFormSchema(t).safeParse({
+  test("only freeform users may leave the staff ID empty", () => {
+    const adminEmptyStaffID = getApiKeyFormSchema(t).safeParse({
       ...getApiKeyFormDefaultValues(true),
       name: "some key",
     });
-    expect(withoutStaffID.success).toBe(false);
-    if (withoutStaffID.success) return;
+    expect(adminEmptyStaffID.success).toBe(true);
+
+    const userWithoutStaffID = getApiKeyFormSchema(t, 5, true).safeParse({
+      ...getApiKeyFormDefaultValues(true),
+      name: "some key",
+    });
+    expect(userWithoutStaffID.success).toBe(false);
+    if (userWithoutStaffID.success) return;
     expect(
-      withoutStaffID.error.issues.some((issue) => issue.path[0] === "staff_id"),
+      userWithoutStaffID.error.issues.some((issue) => issue.path[0] === "staff_id"),
     ).toBe(true);
 
     // It becomes a folder name and a memory peer name, so it stays plain.

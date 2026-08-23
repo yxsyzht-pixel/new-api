@@ -131,10 +131,30 @@ func canManageAllTokens(c *gin.Context) bool {
 // held to characters that are safe in both.
 var staffIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// canWriteFreeformStaffID asks whether this caller may enter a staff number the
-// company directory does not list.
+// canWriteFreeformStaffID is intentionally role-based: only administrators
+// may type a staff ID or leave it empty for automatic LS ID generation.
 func canWriteFreeformStaffID(c *gin.Context) bool {
-	return authz.Can(c.GetInt("id"), c.GetInt("role"), authz.TokenStaffIDFreeform)
+	return c.GetInt("role") >= common.RoleAdminUser
+}
+
+// requireStaffDirectorySelection enforces the distinction between an
+// administrator, who may leave the field empty and receive an automatically
+// generated LS ID, and a regular user, who must use a directory-backed ID.
+func requireStaffDirectorySelection(c *gin.Context, staffID string) bool {
+	if canWriteFreeformStaffID(c) {
+		return true
+	}
+
+	staffID = canonicalStaffID(staffID)
+	if staffID == "" {
+		common.ApiErrorMsg(c, "普通用户必须从人事目录选择工号")
+		return false
+	}
+	if !staffdir.Configured() || !operation_setting.GetStaffDirectorySetting().RequireDirectory {
+		common.ApiErrorMsg(c, "人事目录未配置，普通用户无法保存工号")
+		return false
+	}
+	return requireKnownStaffID(c, staffID)
 }
 
 // requireKnownStaffID checks a staff number against the company directory.
@@ -549,15 +569,16 @@ func AddToken(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
 	}
-	staffID, generated, err := prepareTokenStaffID(token.StaffId, 0)
+	requestedStaffID := canonicalStaffID(token.StaffId)
+	if !requireStaffDirectorySelection(c, requestedStaffID) {
+		return
+	}
+	staffID, _, err := prepareTokenStaffID(requestedStaffID, 0)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	token.StaffId = staffID
-	if !generated && !requireKnownStaffID(c, token.StaffId) {
-		return
-	}
 	ownerId, ok := newTokenOwner(c, token.UserId)
 	if !ok {
 		return
@@ -690,15 +711,16 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.Status = token.Status
 	} else {
 		// If you add more fields, please also update token.Update()
-		staffID, generated, err := prepareTokenStaffID(token.StaffId, cleanToken.Id)
+		requestedStaffID := canonicalStaffID(token.StaffId)
+		if !requireStaffDirectorySelection(c, requestedStaffID) {
+			return
+		}
+		staffID, _, err := prepareTokenStaffID(requestedStaffID, cleanToken.Id)
 		if err != nil {
 			common.ApiError(c, err)
 			return
 		}
 		cleanToken.Name = token.Name
-		if !generated && !requireKnownStaffID(c, staffID) {
-			return
-		}
 		cleanToken.StaffId = staffID
 		// Opting a key out of the transcript is a key-manager's decision. For
 		// anyone else the stored values stand, whatever the request carried —
