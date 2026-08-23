@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Search, UserRound } from "lucide-react";
+import { Loader2, RefreshCw, Search } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -29,6 +29,29 @@ type Directory = {
   freeform: boolean;
   items: StaffPerson[];
 };
+
+// HR's basic people list carries no photo, and the fuller endpoint that does
+// also drags every contract, social-insurance and education record along with
+// it — a great deal of somebody's private file to pull into a gateway to draw a
+// 36-pixel picture. A name on a colour of its own is enough to tell rows apart.
+const tileColours = [
+  "bg-sky-500",
+  "bg-emerald-500",
+  "bg-violet-500",
+  "bg-amber-500",
+  "bg-rose-500",
+  "bg-teal-500",
+];
+
+function tileColour(seed: string) {
+  let sum = 0;
+  for (const character of seed) sum += character.codePointAt(0) ?? 0;
+  return tileColours[sum % tileColours.length];
+}
+
+function initial(name: string) {
+  return [...name.trim()][0] ?? "?";
+}
 
 export function useStaffDirectory(keyword: string, enabled: boolean) {
   return useQuery({
@@ -88,14 +111,16 @@ export function StaffPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[80vh] flex-col gap-0 p-0 sm:max-w-lg">
-        <DialogHeader className="flex-row items-center justify-between gap-2 border-b p-4">
-          <DialogTitle>{t("Pick a person")}</DialogTitle>
+      <DialogContent className="flex flex-col gap-0 p-0 sm:max-w-lg">
+        <DialogHeader className="flex-row items-center gap-2 border-b p-4 pe-14">
+          <DialogTitle className="flex-1">{t("Pick a person")}</DialogTitle>
+          {/* Kept clear of the dialog's own close button, which sits in the
+              top corner: two icons in one spot is one icon nobody can hit. */}
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="size-8"
+            className="size-8 shrink-0"
             disabled={refreshing}
             title={t("Refresh from HR")}
             onClick={onRefresh}
@@ -117,7 +142,10 @@ export function StaffPickerDialog({
           </div>
         </div>
 
-        <ScrollArea className="flex-1 overflow-y-auto">
+        {/* A fixed height, not one that follows the results. Searching narrows a
+            list constantly, and a box that resizes under the cursor moves the
+            row you were about to click. */}
+        <ScrollArea className="h-[min(60vh,26rem)] overflow-y-auto">
           {people.length === 0 ? (
             <p className="text-muted-foreground p-8 text-center text-sm">
               {isFetching ? t("Searching…") : t("Nobody matches")}
@@ -137,8 +165,13 @@ export function StaffPickerDialog({
                       person.code === selected && "bg-muted",
                     )}
                   >
-                    <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-md">
-                      <UserRound className="size-5" />
+                    <span
+                      className={cn(
+                        "flex size-9 shrink-0 items-center justify-center rounded-md text-sm font-medium text-white",
+                        tileColour(person.code),
+                      )}
+                    >
+                      {initial(person.name)}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">

@@ -412,55 +412,62 @@ export function ApiKeysMutateDrawer({
                 iconTone="info"
               />
 
-              <FormField
-                control={form.control}
-                name="staff_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("Staff ID")}</FormLabel>
-                    <div className="flex gap-2">
+              {/* The staff number and the name are one fact about one person,
+                  filled by one choice. Framing them together says so, and stops
+                  the pair being edited into disagreeing with each other. */}
+              <div className="rounded-lg border p-3">
+                <div className="flex items-end gap-2">
+                  <FormField
+                    control={form.control}
+                    name="staff_id"
+                    render={({ field }) => (
+                      <FormItem className="flex-1">
+                        <FormLabel>{t("Staff ID")}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            readOnly={!staffFreeform}
+                            className={cn(!staffFreeform && "bg-muted/50")}
+                            placeholder={
+                              staffFreeform
+                                ? t("Enter a staff ID")
+                                : t("Pick from the staff directory")
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0"
+                    onClick={() => setStaffPickerOpen(true)}
+                  >
+                    {t("Choose")}
+                  </Button>
+                </div>
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem className="mt-3">
+                      <FormLabel>{t("Name")}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
-                          value={field.value ?? ""}
-                          // Without the freehand grant the number comes from the
-                          // directory and nowhere else; read-only says so plainly
-                          // rather than accepting keystrokes the server will reject.
                           readOnly={!staffFreeform}
-                          placeholder={
-                            staffFreeform
-                              ? t("Enter a staff ID")
-                              : t("Pick from the staff directory")
-                          }
+                          className={cn(!staffFreeform && "bg-muted/50")}
+                          placeholder={t("Enter a name")}
                         />
                       </FormControl>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="shrink-0"
-                        onClick={() => setStaffPickerOpen(true)}
-                      >
-                        {t("Choose")}
-                      </Button>
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("Name")}</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder={t("Enter a name")} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               {canManageAllKeys && !isUpdate ? (
                 <FormField
