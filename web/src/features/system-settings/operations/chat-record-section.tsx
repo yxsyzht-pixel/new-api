@@ -49,6 +49,7 @@ const schema = z.object({
   fileRoot: z.string(),
   maxFileMb: z.coerce.number().int().min(1),
   autoMessagePatterns: z.string(),
+  automationModels: z.string(),
   queueSize: z.coerce.number().int().min(1),
   workers: z.coerce.number().int().min(1),
   maxContentChars: z.coerce.number().int().min(1),
@@ -173,6 +174,11 @@ export function ChatRecordSection({
       "chat_record_setting.auto_message_patterns",
       values.autoMessagePatterns,
       saved.autoMessagePatterns,
+    );
+    push(
+      "chat_record_setting.automation_models",
+      values.automationModels,
+      saved.automationModels,
     );
     if (values.maxFileMb !== saved.maxFileMb) {
       updates.push({
@@ -472,6 +478,25 @@ export function ChatRecordSection({
                 <FormDescription>
                   {t(
                     "One per line. A message containing any of these is filed as sent by a program rather than typed by a person. Bracketed tags, XML envelopes and system prompts sent as user turns are recognised without help — this is for your own prompt templates, which read like ordinary instructions.",
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="automationModels"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("Background-only models")}</FormLabel>
+                <FormControl>
+                  <Textarea rows={4} className="font-mono text-sm" {...field} />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.",
                   )}
                 </FormDescription>
                 <FormMessage />

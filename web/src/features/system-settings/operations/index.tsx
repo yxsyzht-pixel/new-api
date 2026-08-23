@@ -71,6 +71,7 @@ const defaultOperationsSettings: OperationsSettings = {
   "chat_record_setting.max_file_bytes": 20 * 1024 * 1024,
   "chat_record_setting.auto_message_patterns": "",
   "chat_record_setting.max_queued_bytes": 64 * 1024 * 1024,
+  "chat_record_setting.automation_models": "",
 };
 
 export function OperationsSettings() {

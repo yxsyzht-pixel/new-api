@@ -65,6 +65,10 @@ type ChatRecordSetting struct {
 	// ordinary instructions and can only be recognised by the operator who
 	// wrote them.
 	AutoMessagePatterns string `json:"auto_message_patterns"`
+	// AutomationModels names models the operator keeps for background work —
+	// summarisers, approval reviewers, title generators. Their traffic is never
+	// a person talking, whatever the words look like.
+	AutomationModels string `json:"automation_models"`
 }
 
 var chatRecordSetting = ChatRecordSetting{
@@ -81,19 +85,29 @@ var chatRecordSetting = ChatRecordSetting{
 	MaxFileBytes:    20 << 20,
 }
 
+// AutomationModelList splits the operator's list of background-only models.
+func (s *ChatRecordSetting) AutomationModelList() []string {
+	return splitList(s.AutomationModels)
+}
+
 // AutoPatterns splits the operator's list into usable patterns.
 func (s *ChatRecordSetting) AutoPatterns() []string {
-	if strings.TrimSpace(s.AutoMessagePatterns) == "" {
+	return splitList(s.AutoMessagePatterns)
+}
+
+// splitList reads one entry per line, ignoring blanks.
+func splitList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
 		return nil
 	}
-	lines := strings.Split(s.AutoMessagePatterns, "\n")
-	patterns := make([]string, 0, len(lines))
+	lines := strings.Split(raw, "\n")
+	entries := make([]string, 0, len(lines))
 	for _, line := range lines {
 		if trimmed := strings.TrimSpace(line); trimmed != "" {
-			patterns = append(patterns, trimmed)
+			entries = append(entries, trimmed)
 		}
 	}
-	return patterns
+	return entries
 }
 
 func init() {

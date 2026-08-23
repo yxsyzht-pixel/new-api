@@ -231,17 +231,36 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	writeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	client := DetectClient(turn.RequestBody)
+	verdict := Classify(turn.RequestBody, userMessage, turn.ModelName,
+		cfg.AutoPatterns(), cfg.AutomationModelList())
+
 	// Every request an agent makes while working on one question carries the
 	// same newest user message, so they all resolve to the same turn and fold
-	// into one row.
-	turnKey := TurnKey(turn.TokenID, ConversationKey(turn.RequestBody), userMessage)
+	// into one row. A client that names its own turn is believed over the hash:
+	// two requests of one turn share that id exactly, whatever the text does.
+	conversation := client.SessionID
+	if conversation == "" {
+		conversation = ConversationKey(turn.RequestBody)
+	}
+	turnKey := client.TurnID
+	if turnKey == "" {
+		turnKey = TurnKey(turn.TokenID, conversation, userMessage)
+	}
+	// Background work is not a conversation, and folding repeated invocations of
+	// the same prompt would stack unrelated answers into one row. Each stands
+	// alone.
+	if verdict.Source == SourceAuto && client.TurnID == "" {
+		turnKey = ""
+	}
 
 	var recordID int64
 	err := w.pool.QueryRow(writeCtx, insertStatement,
 		turn.RequestID, turn.UserID, turn.TokenID, turn.TokenName, turn.StaffID,
 		turn.ModelName, turn.Endpoint, turn.StatusCode,
 		userMessage, assistantReply, turn.CreatedAt, turnKey, max,
-		ClassifySource(userMessage, cfg.AutoPatterns())).Scan(&recordID)
+		verdict.Source, verdict.Confidence, verdict.Signal,
+		client.Name, client.ThreadSource, client.TurnID, client.SessionID).Scan(&recordID)
 	if err != nil {
 		w.totals.Failed.Add(1)
 		common.SysError("chat record: write failed: " + err.Error())

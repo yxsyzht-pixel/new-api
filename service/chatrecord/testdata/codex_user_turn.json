@@ -1,0 +1,65 @@
+{
+  "model": "gpt-5.6-sol",
+  "client_metadata": {
+    "session_id": "01a02c85-41ef-7770-8376-aad6aad19f2b",
+    "turn_id": "01a02c85-4244-76d2-a668-3f11830d4a3c",
+    "x-codex-installation-id": "996e4cee-7bda-4158-a1ce-6dd542d1fb8c",
+    "thread_id": "01a02c85-41ef-7770-8376-aad6aad19f2b",
+    "x-codex-turn-metadata": "{\"installation_id\":\"996e4cee-7bda-4158-a1ce-6dd542d1fb8c\",\"session_id\":\"01a02c85-41ef-7770-8376-aad6aad19f2b\",\"thread_id\":\"01a02c85-41ef-7770-8376-aad6aad19f2b\",\"turn_id\":\"01a02c85-4244-76d2-a668-3f11830d4a3c\",\"window_id\":\"01a02c85-41ef-7770-8376-aad6aad19f2b:0\",\"request_kind\":\"turn\",\"thread_source\":\"user\",\"sandbox\":\"seatbelt\",\"turn_started_at_unix_ms\":1787453325893}",
+    "x-codex-window-id": "01a02c85-41ef-7770-8376-aad6aad19f2b:0"
+  },
+  "prompt_cache_key": "01a02c85-41ef-7770-8376-aad6aad19f2b",
+  "stream": true,
+  "tools": [
+    {
+      "name": "exec_command"
+    },
+    {
+      "name": "write_stdin"
+    }
+  ],
+  "input": [
+    {
+      "role": "developer",
+      "type": "message",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or writte"
+        },
+        {
+          "type": "input_text",
+          "text": "<apps_instructions>\n## Apps (Connectors)\nApps (Connectors) can be explicitly triggered in "
+        },
+        {
+          "type": "input_text",
+          "text": "<skills_instructions>\n## Skills\nA skill is a set of instructions provided through a `SKILL"
+        },
+        {
+          "type": "input_text",
+          "text": "<plugins_instructions>\n## Plugins\nA plugin is a local bundle of skills, MCP servers, and a"
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "type": "message",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "<environment_context>\n  <cwd>/Users/zht/Documents/Claude/newapi</cwd>\n  <shell>zsh</shell>"
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "type": "message",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "请用 shell 命令创建文件 /tmp/codex-probe-test.txt,内容是 hello。需要写权限就申请升级。"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "model": "gpt-5.6-sol",
+  "stream": true,
+  "tools": [
+    {
+      "name": "function"
+    },
+    {
+      "name": "function"
+    }
+  ],
+  "messages": [
+    {
+      "role": "developer",
+      "content": "You are Hermes Agent, an intelligent AI assistant created by Nous Research. You are helpfu"
+    },
+    {
+      "role": "user",
+      "content": "回答两个字:收到"
+    }
+  ]
+}

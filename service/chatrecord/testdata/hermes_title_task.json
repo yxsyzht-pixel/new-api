@@ -1,0 +1,32 @@
+{
+  "model": "deepseek-v4-flash",
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "session_title",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "You name chat sessions. Given the user's opening message, write a title that lets them fin"
+    },
+    {
+      "role": "user",
+      "content": "回答两个字:收到"
+    }
+  ]
+}

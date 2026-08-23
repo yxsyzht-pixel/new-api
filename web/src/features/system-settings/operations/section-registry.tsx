@@ -157,6 +157,8 @@ const OPERATIONS_SECTIONS = [
           ),
           autoMessagePatterns:
             settings["chat_record_setting.auto_message_patterns"] ?? "",
+          automationModels:
+            settings["chat_record_setting.automation_models"] ?? "",
           queueSize: settings["chat_record_setting.queue_size"] ?? 4096,
           workers: settings["chat_record_setting.workers"] ?? 4,
           maxContentChars:

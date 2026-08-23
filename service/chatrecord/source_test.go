@@ -22,8 +22,8 @@ func TestClassifySourceOnRealOpeners(t *testing.T) {
 		"",
 	}
 	for _, message := range machine {
-		if got := ClassifySource(message, nil); got != SourceAuto {
-			t.Errorf("ClassifySource(%.48q) = %s, want %s", message, got, SourceAuto)
+		if got := classifyText(message, nil); got != SourceAuto {
+			t.Errorf("classifyText(%.48q) = %s, want %s", message, got, SourceAuto)
 		}
 	}
 
@@ -40,8 +40,8 @@ func TestClassifySourceOnRealOpeners(t *testing.T) {
 		"<3 nice work",
 	}
 	for _, message := range people {
-		if got := ClassifySource(message, nil); got != SourceHuman {
-			t.Errorf("ClassifySource(%.48q) = %s, want %s", message, got, SourceHuman)
+		if got := classifyText(message, nil); got != SourceHuman {
+			t.Errorf("classifyText(%.48q) = %s, want %s", message, got, SourceHuman)
 		}
 	}
 }
@@ -59,10 +59,10 @@ func TestOperatorPatternsCatchHouseTemplates(t *testing.T) {
 	}
 
 	for _, message := range templates {
-		if got := ClassifySource(message, nil); got != SourceHuman {
+		if got := classifyText(message, nil); got != SourceHuman {
 			t.Fatalf("without the operator's list %.40q should read as a person's words", message)
 		}
-		if got := ClassifySource(message, patterns); got != SourceAuto {
+		if got := classifyText(message, patterns); got != SourceAuto {
 			t.Errorf("with the operator's list, %.40q = %s, want %s", message, got, SourceAuto)
 		}
 	}

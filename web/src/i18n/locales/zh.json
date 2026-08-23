@@ -5389,6 +5389,8 @@
     "Largest attachment kept (MB)": "单个附件上限(MB)",
     "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{files}} files · {{dropped}} dropped · {{failed}} failed": "写入进程运行中 · 队列 {{queued}}/{{capacity}} · 占用 {{heldMb}} MB · 已写入 {{written}} · 附件 {{files}} · 已丢弃 {{dropped}} · 失败 {{failed}}",
     "Machine-message markers": "机器消息标记",
-    "One per line. A message containing any of these is filed as sent by a program rather than typed by a person. Bracketed tags, XML envelopes and system prompts sent as user turns are recognised without help — this is for your own prompt templates, which read like ordinary instructions.": "一行一条。命中任意一条的消息会被标为「程序发送」而不是「人工输入」。方括号标签、XML 信封、以用户身份发来的系统提示词已自动识别,这里填的是你自己的提示词模板——它们读起来和普通指令没有区别,只有你知道。"
+    "One per line. A message containing any of these is filed as sent by a program rather than typed by a person. Bracketed tags, XML envelopes and system prompts sent as user turns are recognised without help — this is for your own prompt templates, which read like ordinary instructions.": "一行一条。命中任意一条的消息会被标为「程序发送」而不是「人工输入」。方括号标签、XML 信封、以用户身份发来的系统提示词已自动识别,这里填的是你自己的提示词模板——它们读起来和普通指令没有区别,只有你知道。",
+    "Background-only models": "仅后台使用的模型",
+    "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "一行一个模型名。这些模型上的流量一律不算人在说话——摘要、审批、起标题这类后台任务会把人的原话一字不差地重放,任何文本规则都分不出来。"
   }
 }

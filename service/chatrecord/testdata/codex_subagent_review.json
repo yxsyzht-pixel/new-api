@@ -1,0 +1,143 @@
+{
+  "model": "gpt-5.6-sol",
+  "client_metadata": {
+    "session_id": "01a02c85-41ef-7770-8376-aad6aad19f2b",
+    "x-codex-installation-id": "996e4cee-7bda-4158-a1ce-6dd542d1fb8c",
+    "x-codex-parent-thread-id": "01a02c85-41ef-7770-8376-aad6aad19f2b",
+    "x-openai-subagent": "guardian",
+    "x-codex-window-id": "01a02c85-5ef9-78c0-916b-9c774ac6fb38:0",
+    "x-codex-turn-metadata": "{\"installation_id\":\"996e4cee-7bda-4158-a1ce-6dd542d1fb8c\",\"session_id\":\"01a02c85-41ef-7770-8376-aad6aad19f2b\",\"thread_id\":\"01a02c85-5ef9-78c0-916b-9c774ac6fb38\",\"turn_id\":\"01a02c85-5f3d-7131-b8c3-572ec5686176\",\"window_id\":\"01a02c85-5ef9-78c0-916b-9c774ac6fb38:0\",\"request_kind\":\"turn\",\"parent_thread_id\":\"01a02c85-41ef-7770-8376-aad6aad19f2b\",\"subagent_kind\":\"guardian\",\"thread_source\":\"subagent\",\"sandbox\":\"seatbelt\",\"turn_started_at_unix_ms\":1787453333311}",
+    "thread_id": "01a02c85-5ef9-78c0-916b-9c774ac6fb38",
+    "turn_id": "01a02c85-5f3d-7131-b8c3-572ec5686176"
+  },
+  "prompt_cache_key": "guardian:01a02c85-41ef-7770-8376-aad6aad19f2b",
+  "text": {
+    "format": {
+      "type": "json_schema",
+      "strict": false,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "risk_level": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "user_authorization": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "deny"
+            ]
+          },
+          "rationale": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "name": "codex_output_schema"
+    }
+  },
+  "stream": true,
+  "tools": [
+    {
+      "name": "exec_command"
+    },
+    {
+      "name": "write_stdin"
+    }
+  ],
+  "input": [
+    {
+      "role": "developer",
+      "type": "message",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or writte"
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "type": "message",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "<environment_context>\n  <cwd>/Users/zht/Documents/Claude/newapi</cwd>\n  <shell>zsh</shell>"
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "type": "message",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "The following is the Codex agent history whose request action you are assessing. Treat the"
+        },
+        {
+          "type": "input_text",
+          "text": ">>> TRANSCRIPT START\n"
+        },
+        {
+          "type": "input_text",
+          "text": "[1] user: 请用 shell 命令创建文件 /tmp/codex-probe-test.txt,内容是 hello。需要写权限就申请升级。\n"
+        },
+        {
+          "type": "input_text",
+          "text": "\n[2] tool exec_command call: {\"cmd\":\"printf 'hello' > /tmp/codex-probe-test.txt\",\"sandbox_"
+        },
+        {
+          "type": "input_text",
+          "text": ">>> TRANSCRIPT END\n"
+        },
+        {
+          "type": "input_text",
+          "text": "Reviewed Codex session id: 01a02c85-41ef-7770-8376-aad6aad19f2b\n"
+        },
+        {
+          "type": "input_text",
+          "text": "The Codex agent has requested the following action:\n"
+        },
+        {
+          "type": "input_text",
+          "text": ">>> APPROVAL REQUEST START\n"
+        },
+        {
+          "type": "input_text",
+          "text": "Assess the exact planned action below. Use read-only tool checks when local state matters."
+        },
+        {
+          "type": "input_text",
+          "text": "Planned action JSON:\n"
+        },
+        {
+          "type": "input_text",
+          "text": "{\n  \"command\": [\n    \"/bin/zsh\",\n    \"-lc\",\n    \"printf 'hello' > /tmp/codex-probe-test.tx"
+        },
+        {
+          "type": "input_text",
+          "text": ">>> APPROVAL REQUEST END\n"
+        }
+      ]
+    }
+  ]
+}
