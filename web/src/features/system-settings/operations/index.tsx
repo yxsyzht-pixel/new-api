@@ -72,6 +72,12 @@ const defaultOperationsSettings: OperationsSettings = {
   "chat_record_setting.auto_message_patterns": "",
   "chat_record_setting.max_queued_bytes": 64 * 1024 * 1024,
   "chat_record_setting.automation_models": "",
+  "chat_record_setting.memory_enabled": false,
+  "chat_record_setting.memory_base_url": "",
+  "chat_record_setting.memory_workspace": "yxsy",
+  "chat_record_setting.memory_assistant_peer": "newapi",
+  "chat_record_setting.memory_session_mode": "person",
+  "chat_record_setting.memory_min_chars": 4,
 };
 
 export function OperationsSettings() {

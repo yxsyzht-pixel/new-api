@@ -5394,6 +5394,18 @@
     "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "По одной модели в строке. Их трафик никогда не считается речью человека: суммаризаторы и генераторы заголовков дословно повторяют текст пользователя.",
     "Please enter a staff ID": "Укажите табельный номер",
     "Letters, digits, _ and - only": "Только буквы, цифры, _ и -",
-    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "Обязательно. Записи и вложения этого ключа хранятся под ним, и по нему строится персональная память."
+    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "Обязательно. Записи и вложения этого ключа хранятся под ним, и по нему строится персональная память.",
+    "Feed a memory store": "Передавать в систему памяти",
+    "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.": "Передаёт каждый ход в память honcho под табельным номером ключа. Отправляются только ходы, которые клиент явно объявил речью человека. У доставки своя очередь: медленная память теряет воспоминания, но не записи.",
+    "Memory service address": "Адрес сервиса памяти",
+    "Memory API key": "Ключ API памяти",
+    "Workspace": "Рабочее пространство",
+    "Assistant peer name": "Имя peer ассистента",
+    "The model’s replies are filed under this name, so they read as context instead of becoming facts about the person.": "Ответы модели сохраняются под этим именем — как контекст, а не как факты о человеке.",
+    "Memory session grouping": "Группировка сессий памяти",
+    "One running session per person": "Одна长 сессия на человека",
+    "Follow the client’s conversations": "Следовать разговорам клиента",
+    "Per person lets the store build a picture across conversations; per conversation keeps them separate.": "По человеку — портрет складывается из всех разговоров; по разговору — они остаются раздельными.",
+    "Shortest remark worth remembering": "Минимальная длина для запоминания"
   }
 }

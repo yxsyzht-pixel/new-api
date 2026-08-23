@@ -5394,6 +5394,18 @@
     "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.",
     "Please enter a staff ID": "Please enter a staff ID",
     "Letters, digits, _ and - only": "Letters, digits, _ and - only",
-    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from."
+    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.",
+    "Feed a memory store": "Feed a memory store",
+    "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.": "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.",
+    "Memory service address": "Memory service address",
+    "Memory API key": "Memory API key",
+    "Workspace": "Workspace",
+    "Assistant peer name": "Assistant peer name",
+    "The model’s replies are filed under this name, so they read as context instead of becoming facts about the person.": "The model’s replies are filed under this name, so they read as context instead of becoming facts about the person.",
+    "Memory session grouping": "Memory session grouping",
+    "One running session per person": "One running session per person",
+    "Follow the client’s conversations": "Follow the client’s conversations",
+    "Per person lets the store build a picture across conversations; per conversation keeps them separate.": "Per person lets the store build a picture across conversations; per conversation keeps them separate.",
+    "Shortest remark worth remembering": "Shortest remark worth remembering"
   }
 }

@@ -96,6 +96,9 @@ func TestChatRecordConnection(c *gin.Context) {
 func GetChatRecordStatus(c *gin.Context) {
 	cfg := operation_setting.GetChatRecordSetting()
 	data := chatrecord.Stats()
+	data["memory"] = chatrecord.MemoryStats()
+	data["memory_key_configured"] = strings.TrimSpace(
+		operation_setting.GetChatRecordSetting().MemoryAPIKey) != ""
 	data["connection"] = cfg.Describe()
 	data["dsn_configured"] = cfg.ResolvedDSN() != ""
 	data["password_set"] = cfg.Password != ""

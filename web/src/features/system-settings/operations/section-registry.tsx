@@ -159,6 +159,17 @@ const OPERATIONS_SECTIONS = [
             settings["chat_record_setting.auto_message_patterns"] ?? "",
           automationModels:
             settings["chat_record_setting.automation_models"] ?? "",
+          memoryEnabled:
+            settings["chat_record_setting.memory_enabled"] ?? false,
+          memoryBaseUrl: settings["chat_record_setting.memory_base_url"] ?? "",
+          memoryApiKey: "",
+          memoryWorkspace:
+            settings["chat_record_setting.memory_workspace"] ?? "yxsy",
+          memoryAssistantPeer:
+            settings["chat_record_setting.memory_assistant_peer"] ?? "newapi",
+          memorySessionMode:
+            settings["chat_record_setting.memory_session_mode"] ?? "person",
+          memoryMinChars: settings["chat_record_setting.memory_min_chars"] ?? 4,
           queueSize: settings["chat_record_setting.queue_size"] ?? 4096,
           workers: settings["chat_record_setting.workers"] ?? 4,
           maxContentChars:

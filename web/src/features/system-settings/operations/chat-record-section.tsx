@@ -50,6 +50,13 @@ const schema = z.object({
   maxFileMb: z.coerce.number().int().min(1),
   autoMessagePatterns: z.string(),
   automationModels: z.string(),
+  memoryEnabled: z.boolean(),
+  memoryBaseUrl: z.string(),
+  memoryApiKey: z.string(),
+  memoryWorkspace: z.string(),
+  memoryAssistantPeer: z.string(),
+  memorySessionMode: z.enum(["person", "conversation"]),
+  memoryMinChars: z.coerce.number().int().min(1),
   queueSize: z.coerce.number().int().min(1),
   workers: z.coerce.number().int().min(1),
   maxContentChars: z.coerce.number().int().min(1),
@@ -67,6 +74,15 @@ type ChatRecordStatus = {
   failed?: number;
   files?: number;
   queued_bytes?: number;
+  memory_key_configured?: boolean;
+  memory?: {
+    running: boolean;
+    queued: number;
+    capacity: number;
+    sent?: number;
+    dropped?: number;
+    failed?: number;
+  };
   connection: string;
   dsn_configured: boolean;
   password_set: boolean;
@@ -179,6 +195,43 @@ export function ChatRecordSection({
       "chat_record_setting.automation_models",
       values.automationModels,
       saved.automationModels,
+    );
+    push(
+      "chat_record_setting.memory_enabled",
+      values.memoryEnabled,
+      saved.memoryEnabled,
+    );
+    push(
+      "chat_record_setting.memory_base_url",
+      values.memoryBaseUrl,
+      saved.memoryBaseUrl,
+    );
+    // Blank means "leave the stored key alone", the same as the password.
+    if (values.memoryApiKey !== "") {
+      updates.push({
+        key: "chat_record_setting.memory_api_key",
+        value: values.memoryApiKey,
+      });
+    }
+    push(
+      "chat_record_setting.memory_workspace",
+      values.memoryWorkspace,
+      saved.memoryWorkspace,
+    );
+    push(
+      "chat_record_setting.memory_assistant_peer",
+      values.memoryAssistantPeer,
+      saved.memoryAssistantPeer,
+    );
+    push(
+      "chat_record_setting.memory_session_mode",
+      values.memorySessionMode,
+      saved.memorySessionMode,
+    );
+    push(
+      "chat_record_setting.memory_min_chars",
+      values.memoryMinChars,
+      saved.memoryMinChars,
     );
     if (values.maxFileMb !== saved.maxFileMb) {
       updates.push({
@@ -499,6 +552,143 @@ export function ChatRecordSection({
                     "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.",
                   )}
                 </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="memoryEnabled"
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t("Feed a memory store")}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.",
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              control={form.control}
+              name="memoryBaseUrl"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t("Memory service address")}</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="http://192.168.18.46:8000" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="memoryApiKey"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t("Memory API key")}</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder={
+                        status?.memory_key_configured
+                          ? t("Saved — leave empty to keep it")
+                          : ""
+                      }
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="memoryWorkspace"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t("Workspace")}</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="yxsy" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="memoryAssistantPeer"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t("Assistant peer name")}</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="newapi" />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      "The model’s replies are filed under this name, so they read as context instead of becoming facts about the person.",
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <FormField
+            control={form.control}
+            name="memorySessionMode"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("Memory session grouping")}</FormLabel>
+                <FormControl>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-full sm:w-72">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="person">
+                        {t("One running session per person")}
+                      </SelectItem>
+                      <SelectItem value="conversation">
+                        {t("Follow the client’s conversations")}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    "Per person lets the store build a picture across conversations; per conversation keeps them separate.",
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="memoryMinChars"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("Shortest remark worth remembering")}</FormLabel>
+                <FormControl>
+                  <Input type="number" min={1} {...field} />
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )}

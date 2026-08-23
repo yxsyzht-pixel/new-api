@@ -5394,6 +5394,18 @@
     "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "1 行に 1 つのモデル名。これらのモデルの通信は人の発言とは見なしません。要約・承認・タイトル生成は本人の文言をそのまま再送するため、テキストでは区別できません。",
     "Please enter a staff ID": "社員番号を入力してください",
     "Letters, digits, _ and - only": "英数字とアンダースコア・ハイフンのみ",
-    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "必須。このキーのチャット記録と添付はこの番号の下に保存され、人ごとの記憶もこれを基準に作られます。"
+    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "必須。このキーのチャット記録と添付はこの番号の下に保存され、人ごとの記憶もこれを基準に作られます。",
+    "Feed a memory store": "メモリシステムに連携",
+    "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.": "各ターンを honcho のメモリに転送し、キーの社員番号に紐付けます。クライアントが「人が話している」と明示したターンのみ送ります。配送は専用キューで、メモリ側が遅くても記録には影響しません。",
+    "Memory service address": "メモリサービスのアドレス",
+    "Memory API key": "メモリ API キー",
+    "Workspace": "ワークスペース",
+    "Assistant peer name": "アシスタントの peer 名",
+    "The model’s replies are filed under this name, so they read as context instead of becoming facts about the person.": "モデルの応答はこの名前で保存され、文脈として扱われ、その人に関する事実にはなりません。",
+    "Memory session grouping": "メモリのセッション分割",
+    "One running session per person": "1 人につき 1 つの継続セッション",
+    "Follow the client’s conversations": "クライアントの会話単位に従う",
+    "Per person lets the store build a picture across conversations; per conversation keeps them separate.": "人ごとにまとめると会話をまたいだ人物像が作れます。会話ごとなら独立します。",
+    "Shortest remark worth remembering": "記憶する最短文字数"
   }
 }

@@ -58,6 +58,31 @@ type ChatRecordSetting struct {
 	// MaxFileBytes skips any single attachment larger than this.
 	MaxFileBytes int `json:"max_file_bytes"`
 
+	// A memory store is fed from the same turns, but under a far stricter rule
+	// than the transcript: only what a client positively declared to be a
+	// person speaking, and only when the key names whose person it is. A
+	// transcript can carry a misfiled line and still be read; a memory turns
+	// one into a lasting false fact about someone.
+	MemoryEnabled bool `json:"memory_enabled"`
+	// MemoryBaseURL is the honcho service, e.g. http://192.168.18.46:8000
+	MemoryBaseURL string `json:"memory_base_url"`
+	// MemoryAPIKey authenticates to it. Withheld from the options API.
+	MemoryAPIKey string `json:"memory_api_key"`
+	// MemoryWorkspace is the honcho workspace to write into.
+	MemoryWorkspace string `json:"memory_workspace"`
+	// MemoryAssistantPeer is the name the model's replies are filed under, so
+	// they serve as context without becoming facts about the person.
+	MemoryAssistantPeer string `json:"memory_assistant_peer"`
+	// MemorySessionMode is "person" for one running session per staff number,
+	// or "conversation" to follow the client's own conversation boundaries.
+	MemorySessionMode string `json:"memory_session_mode"`
+	// MemoryMinChars skips remarks too short to be worth remembering.
+	MemoryMinChars int `json:"memory_min_chars"`
+	// MemoryQueueSize and MemoryWorkers bound the delivery, which has its own
+	// queue: a slow memory store must not back up the transcript writer.
+	MemoryQueueSize int `json:"memory_queue_size"`
+	MemoryWorkers   int `json:"memory_workers"`
+
 	// AutoMessagePatterns marks messages as machine-sent when they contain one
 	// of these, one per line. Structural giveaways — a bracketed tag, an XML
 	// envelope, a system prompt handed over as a user turn — are recognised
@@ -72,17 +97,23 @@ type ChatRecordSetting struct {
 }
 
 var chatRecordSetting = ChatRecordSetting{
-	Enabled:         false,
-	Port:            "5432",
-	SSLMode:         "disable",
-	QueueSize:       4096,
-	Workers:         4,
-	MaxContentChars: 32000,
-	MaxCaptureBytes: 1 << 20,
-	MaxQueuedBytes:  64 << 20,
-	StoreFiles:      true,
-	FileRoot:        "data/chat-record-files",
-	MaxFileBytes:    20 << 20,
+	Enabled:             false,
+	Port:                "5432",
+	SSLMode:             "disable",
+	QueueSize:           4096,
+	Workers:             4,
+	MaxContentChars:     32000,
+	MaxCaptureBytes:     1 << 20,
+	MaxQueuedBytes:      64 << 20,
+	StoreFiles:          true,
+	MemoryWorkspace:     "yxsy",
+	MemoryAssistantPeer: "newapi",
+	MemorySessionMode:   "person",
+	MemoryMinChars:      4,
+	MemoryQueueSize:     2048,
+	MemoryWorkers:       2,
+	FileRoot:            "data/chat-record-files",
+	MaxFileBytes:        20 << 20,
 }
 
 // AutomationModelList splits the operator's list of background-only models.
@@ -203,6 +234,48 @@ func (s *ChatRecordSetting) MaxQueuedBytesOrDefault() int64 {
 		return 64 << 20
 	}
 	return int64(s.MaxQueuedBytes)
+}
+
+func (s *ChatRecordSetting) MemoryWorkspaceOrDefault() string {
+	if v := strings.TrimSpace(s.MemoryWorkspace); v != "" {
+		return v
+	}
+	return "yxsy"
+}
+
+func (s *ChatRecordSetting) MemoryAssistantPeerOrDefault() string {
+	if v := strings.TrimSpace(s.MemoryAssistantPeer); v != "" {
+		return v
+	}
+	return "newapi"
+}
+
+func (s *ChatRecordSetting) MemoryMinCharsOrDefault() int {
+	if s.MemoryMinChars <= 0 {
+		return 4
+	}
+	return s.MemoryMinChars
+}
+
+func (s *ChatRecordSetting) MemoryQueueSizeOrDefault() int {
+	if s.MemoryQueueSize <= 0 {
+		return 2048
+	}
+	return s.MemoryQueueSize
+}
+
+func (s *ChatRecordSetting) MemoryWorkersOrDefault() int {
+	if s.MemoryWorkers <= 0 {
+		return 2
+	}
+	return s.MemoryWorkers
+}
+
+// MemoryReady reports whether the memory store is configured enough to write to.
+func (s *ChatRecordSetting) MemoryReady() bool {
+	return s.MemoryEnabled &&
+		strings.TrimSpace(s.MemoryBaseURL) != "" &&
+		strings.TrimSpace(s.MemoryAPIKey) != ""
 }
 
 func (s *ChatRecordSetting) FileRootOrDefault() string {

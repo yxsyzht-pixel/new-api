@@ -5394,6 +5394,18 @@
     "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "Un modèle par ligne. Ce trafic n’est jamais une personne qui parle : les résumeurs et générateurs de titres rejouent mot pour mot le texte de l’utilisateur.",
     "Please enter a staff ID": "Saisissez le matricule",
     "Letters, digits, _ and - only": "Lettres, chiffres, _ et - uniquement",
-    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "Obligatoire. Les conversations et pièces jointes de cette clé y sont classées, et la mémoire par personne s’appuie dessus."
+    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "Obligatoire. Les conversations et pièces jointes de cette clé y sont classées, et la mémoire par personne s’appuie dessus.",
+    "Feed a memory store": "Alimenter une mémoire",
+    "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.": "Transmet chaque tour à une mémoire honcho, classé sous le matricule de la clé. Seuls les tours qu’un client a explicitement déclarés comme parole humaine sont envoyés. La livraison a sa propre file : une mémoire lente perd des souvenirs, jamais des transcriptions.",
+    "Memory service address": "Adresse du service mémoire",
+    "Memory API key": "Clé API de la mémoire",
+    "Workspace": "Espace de travail",
+    "Assistant peer name": "Nom du peer assistant",
+    "The model’s replies are filed under this name, so they read as context instead of becoming facts about the person.": "Les réponses du modèle sont classées sous ce nom : elles servent de contexte sans devenir des faits sur la personne.",
+    "Memory session grouping": "Regroupement des sessions",
+    "One running session per person": "Une session continue par personne",
+    "Follow the client’s conversations": "Suivre les conversations du client",
+    "Per person lets the store build a picture across conversations; per conversation keeps them separate.": "Par personne, la mémoire construit un portrait à travers les conversations ; par conversation, elles restent séparées.",
+    "Shortest remark worth remembering": "Longueur minimale à mémoriser"
   }
 }

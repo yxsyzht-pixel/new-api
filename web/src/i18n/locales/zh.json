@@ -5394,6 +5394,18 @@
     "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "一行一个模型名。这些模型上的流量一律不算人在说话——摘要、审批、起标题这类后台任务会把人的原话一字不差地重放,任何文本规则都分不出来。",
     "Please enter a staff ID": "请填写工号",
     "Letters, digits, _ and - only": "工号只能包含字母、数字、下划线和连字符",
-    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "必填。这个密钥产生的聊天记录和附件都归到这个工号下,按人做的记忆也是以它为准。"
+    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "必填。这个密钥产生的聊天记录和附件都归到这个工号下,按人做的记忆也是以它为准。",
+    "Feed a memory store": "接入记忆系统",
+    "Sends each turn on to a honcho memory, filed under the key’s staff ID. Only turns a client positively declared to be a person speaking are sent — a transcript can carry a misfiled line and still be read, but a memory turns one into a lasting false fact about someone. Delivery has its own queue: a slow memory store loses memories, never transcripts.": "把每轮对话转发给 honcho 记忆库,按密钥的工号归属。只发送客户端明确声明「是人在说话」的轮次——聊天记录判错一条还能事后筛掉,记忆判错会变成关于这个人的持久假事实。投递走独立队列:记忆库慢了只丢记忆,绝不影响聊天记录。",
+    "Memory service address": "记忆服务地址",
+    "Memory API key": "记忆服务密钥",
+    "Workspace": "工作区",
+    "Assistant peer name": "助手 peer 名称",
+    "The model’s replies are filed under this name, so they read as context instead of becoming facts about the person.": "模型的回复挂在这个名字下,这样它只作为上下文参与,不会变成关于这个人的事实。",
+    "Memory session grouping": "记忆会话划分",
+    "One running session per person": "每人一个长会话",
+    "Follow the client’s conversations": "跟随客户端的会话边界",
+    "Per person lets the store build a picture across conversations; per conversation keeps them separate.": "按人归档便于跨对话形成人物画像;按会话归档则各自独立。",
+    "Shortest remark worth remembering": "最短记忆字数"
   }
 }

@@ -93,7 +93,8 @@ func GetOptions(c *gin.Context) {
 			// both carry the transcript database's password; the page reads a
 			// redacted description from /api/option/chat_record/status instead
 			k == "chat_record_setting.dsn" ||
-			k == "chat_record_setting.password"
+			k == "chat_record_setting.password" ||
+			k == "chat_record_setting.memory_api_key"
 		if isSensitiveKey {
 			continue
 		}

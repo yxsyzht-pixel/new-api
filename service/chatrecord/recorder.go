@@ -273,6 +273,21 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	}
 	w.totals.Written.Add(1)
 
+	// The memory store is told only what a client positively declared to be a
+	// person speaking, and only when the key names whose person it is. It has
+	// its own queue: a slow memory store loses memories, never transcripts.
+	if cfg.MemoryReady() && EligibleForMemory(verdict, turn.StaffID, cfg.MemoryMinCharsOrDefault()) {
+		SubmitMemory(MemoryTurn{
+			StaffID:   turn.StaffID,
+			Session:   MemorySessionName(cfg.MemorySessionMode, turn.StaffID, conversation),
+			Spoken:    verdict.HumanText,
+			Reply:     assistantReply,
+			Model:     turn.ModelName,
+			Endpoint:  turn.Endpoint,
+			CreatedAt: turn.CreatedAt,
+		})
+	}
+
 	// The attachments are already on disk; the rows only say where. A failure
 	// here costs the link to a file, not the transcript.
 	for _, attachment := range stored {
