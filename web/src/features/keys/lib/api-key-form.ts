@@ -62,7 +62,6 @@ export function getApiKeyFormSchema(
       auto_groups_mode: z.enum(["inherit", "custom"]),
       auto_groups: z.array(z.string()),
       cross_group_retry: z.boolean().optional(),
-      tokenCount: z.number().min(1).optional(),
     })
     .superRefine((data, ctx) => {
       if (data.group === "auto") {
@@ -144,7 +143,6 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   auto_groups_mode: "inherit",
   auto_groups: [],
   cross_group_retry: true,
-  tokenCount: 1,
 };
 
 export function getApiKeyFormDefaultValues(
@@ -235,6 +233,5 @@ export function transformApiKeyToFormDefaults(
     auto_groups_mode: autoGroupsMode,
     auto_groups: autoGroups,
     cross_group_retry: !!apiKey.cross_group_retry,
-    tokenCount: 1,
   };
 }

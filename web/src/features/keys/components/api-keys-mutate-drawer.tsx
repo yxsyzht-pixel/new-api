@@ -318,35 +318,16 @@ export function ApiKeysMutateDrawer({
           toast.error(result.message || t(ERROR_MESSAGES.UPDATE_FAILED));
         }
       } else {
-        // Create mode - handle batch creation
-        const count = data.tokenCount || 1;
-        let successCount = 0;
-
-        for (let i = 0; i < count; i++) {
-          const result = await createApiKey({
-            ...basePayload,
-            name:
-              i === 0 && data.name
-                ? data.name
-                : `${data.name || "default"}-${Math.random().toString(36).slice(2, 8)}`,
-          });
-          if (result.success) {
-            successCount++;
-          } else {
-            toast.error(result.message || t(ERROR_MESSAGES.CREATE_FAILED));
-            break;
-          }
+        // One key per person: the staff number is unique, so asking for
+        // several at once could only ever produce one key and a rejection.
+        const result = await createApiKey(basePayload);
+        if (!result.success) {
+          toast.error(result.message || t(ERROR_MESSAGES.CREATE_FAILED));
+          return;
         }
-
-        if (successCount > 0) {
-          toast.success(
-            t("Successfully created {{count}} API Key(s)", {
-              count: successCount,
-            }),
-          );
-          onOpenChange(false);
-          triggerRefresh();
-        }
+        toast.success(t(SUCCESS_MESSAGES.API_KEY_CREATED));
+        onOpenChange(false);
+        triggerRefresh();
       }
     } catch {
       toast.error(t(ERROR_MESSAGES.UNEXPECTED));
@@ -664,37 +645,6 @@ export function ApiKeysMutateDrawer({
                   </FormItem>
                 )}
               />
-
-              {!isUpdate && (
-                <FormField
-                  control={form.control}
-                  name="tokenCount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t("Quantity")}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type="number"
-                          min="1"
-                          placeholder={t("Number of keys to create")}
-                          onChange={(e) =>
-                            field.onChange(
-                              Number.parseInt(e.target.value, 10) || 1,
-                            )
-                          }
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        {t(
-                          "Create multiple API keys at once (random suffix will be added to names)",
-                        )}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
             </SideDrawerSection>
 
             <SideDrawerSection>

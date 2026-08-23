@@ -151,9 +151,7 @@ function findButton(text: string, required = true): HTMLButtonElement | null {
   return button ?? null;
 }
 
-function getControlByLabel(
-  labelText: "Name" | "Quantity" | "Staff ID",
-): HTMLInputElement;
+function getControlByLabel(labelText: "Name" | "Staff ID"): HTMLInputElement;
 function getControlByLabel(labelText: "Group"): HTMLButtonElement;
 function getControlByLabel(labelText: "Auto group order"): HTMLElement;
 function getControlByLabel(labelText: string): HTMLElement {
@@ -206,7 +204,7 @@ afterEach(() => {
 });
 
 describe("API keys mutate drawer Auto group integration", () => {
-  test("inherits the root Auto order and sends an empty override for every batch-created key", async () => {
+  test("inherits the root Auto order and sends an empty override", async () => {
     const createdPayloads: Array<Record<string, unknown>> = [];
     installApiFixtures(createdPayloads);
     await renderCreateDrawer();
@@ -227,17 +225,15 @@ describe("API keys mutate drawer Auto group integration", () => {
 
     changeInput(getControlByLabel("Staff ID"), "10018037");
     changeInput(getControlByLabel("Name"), "batch");
-    changeInput(getControlByLabel("Quantity"), "2");
     fireEvent.click(findButton("Save changes", true));
-    await waitFor(() => expect(createdPayloads).toHaveLength(2));
+    // One key per person: the staff number is unique, so the drawer creates
+    // exactly one and never loops.
+    await waitFor(() => expect(createdPayloads).toHaveLength(1));
 
-    expect(createdPayloads.length).toBe(2);
     expect(createdPayloads[0]?.name).toBe("batch");
-    for (const payload of createdPayloads) {
-      expect(payload.group).toBe("auto");
-      expect(payload.auto_groups).toEqual([]);
-      expect(payload.cross_group_retry).toBe(true);
-    }
+    expect(createdPayloads[0]?.group).toBe("auto");
+    expect(createdPayloads[0]?.auto_groups).toEqual([]);
+    expect(createdPayloads[0]?.cross_group_retry).toBe(true);
   });
 
   test("preserves an unsaved custom order and mode after Auto to ordinary to Auto changes", async () => {
