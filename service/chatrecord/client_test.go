@@ -68,9 +68,14 @@ func TestClassifyBelievesTheClientOverTheWords(t *testing.T) {
 func TestHermesBackgroundTaskIsCaughtByShapeNotWords(t *testing.T) {
 	const sameWords = "回答两个字:收到"
 
+	// Hermes declares nothing, so its real conversation cannot be certified as
+	// a person speaking — but it must not be mistaken for background work.
 	chat := Classify(fixture(t, "hermes_chat.json"), sameWords, "gpt-5.6-sol", nil, nil)
-	if chat.Source != SourceHuman {
-		t.Errorf("the real conversation = %+v, want human", chat)
+	if chat.Source == SourceAuto {
+		t.Errorf("the real conversation was filed as background work: %+v", chat)
+	}
+	if chat.HumanText != sameWords {
+		t.Errorf("the words were dropped: %+v", chat)
 	}
 
 	title := Classify(fixture(t, "hermes_title_task.json"), sameWords, "deepseek-v4-flash", nil, nil)
@@ -99,9 +104,9 @@ func TestAutomationModelsAreNeverAPerson(t *testing.T) {
 // Everything else is a guess about wording, and must say so.
 func TestTextShapeVerdictsAreMarkedSoft(t *testing.T) {
 	body := []byte(`{"messages":[{"role":"user","content":"帮我改一下这个页面"}]}`)
-	human := Classify(body, "帮我改一下这个页面", "gpt-5.6-sol", nil, nil)
-	if human.Source != SourceHuman || human.Confidence != ConfidenceSoft {
-		t.Errorf("= %+v, want human/soft", human)
+	guess := Classify(body, "帮我改一下这个页面", "gpt-5.6-sol", nil, nil)
+	if guess.Confidence != ConfidenceSoft {
+		t.Errorf("= %+v, want soft", guess)
 	}
 
 	// The two openers found misfiled as human in production.
@@ -113,5 +118,121 @@ func TestTextShapeVerdictsAreMarkedSoft(t *testing.T) {
 		if got.Source != SourceAuto {
 			t.Errorf("%q = %+v, want auto", opener[:24], got)
 		}
+	}
+}
+
+// Every image message observed in production — 107 of 107 — carried the
+// client's description in front of the person's real question. Labelling the
+// whole thing machine-written threw away the only part worth remembering.
+func TestAWrappedMessageKeepsThePersonsOwnWords(t *testing.T) {
+	cases := []struct {
+		name    string
+		message string
+		spoken  string
+	}{
+		{
+			"hermes image description",
+			"[The user sent an image~ Here's what I can see:\nThe image is a screenshot of a login page]\n登录不上去了",
+			"登录不上去了",
+		},
+		{
+			"nested brackets inside the wrapper",
+			"[The user sent an image~ path=[Image #1] size=2MB]\nsmart-bi 的销售没有更新，先找到根因",
+			"smart-bi 的销售没有更新，先找到根因",
+		},
+		{
+			"xml envelope",
+			"<environment_context>\n  <cwd>/Users/zht</cwd>\n</environment_context>\n帮我看下这个项目",
+			"帮我看下这个项目",
+		},
+		{
+			"stacked wrappers",
+			"【工作模式】\n[Workspace::v1: /home/wip]\n这个接口怎么调",
+			"这个接口怎么调",
+		},
+		{
+			// Observed in production: the label is a markdown link, and its
+			// target is part of the label, not the first thing anyone said.
+			"labelled with a link",
+			"[Workspace::v1: /home/wip/webui-workspace]\n[@CS商品补单员](bot:5)\n请直接处理今天的补货申请",
+			"请直接处理今天的补货申请",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			wrapped, spoken := splitClientWrapper(tc.message)
+			if !wrapped {
+				t.Fatalf("no wrapper recognised in %q", tc.message[:30])
+			}
+			if spoken != tc.spoken {
+				t.Errorf("spoken = %q, want %q", spoken, tc.spoken)
+			}
+		})
+	}
+
+	// A wrapper with nothing after it is not a person speaking.
+	for _, onlyWrapper := range []string{
+		"<environment_context>\n  <cwd>/Users/zht</cwd>\n</environment_context>",
+		"[Workspace::v1: /home/wip/webui-workspace]",
+	} {
+		wrapped, spoken := splitClientWrapper(onlyWrapper)
+		if !wrapped || spoken != "" {
+			t.Errorf("%q: wrapped=%v spoken=%q, want wrapped with nothing spoken",
+				onlyWrapper[:20], wrapped, spoken)
+		}
+	}
+}
+
+func TestMixedIsLabelledAndSplit(t *testing.T) {
+	body := fixture(t, "codex_user_turn.json") // thread_source = user
+	message := "[The user sent an image~ Here's what I can see: a login page]\n登录不上去了"
+
+	got := Classify(body, message, "gpt-5.6-sol", nil, nil)
+	if got.Source != SourceMixed {
+		t.Errorf("source = %q, want mixed", got.Source)
+	}
+	if got.Confidence != ConfidenceHard {
+		t.Errorf("confidence = %q, want hard", got.Confidence)
+	}
+	if got.HumanText != "登录不上去了" {
+		t.Errorf("human text = %q, want just the person's words", got.HumanText)
+	}
+}
+
+// Looking like prose is not evidence a person wrote it. Without a hard signal
+// the honest answer is "unknown" — a memory built on guesses acquires false
+// facts about people and repeats them forever.
+func TestNoHardSignalNeverClaimsHuman(t *testing.T) {
+	body := []byte(`{"messages":[{"role":"user","content":"帮我改一下这个页面"}]}`)
+	got := Classify(body, "帮我改一下这个页面", "gpt-5.6-sol", nil, nil)
+	if got.Source != SourceUnknown {
+		t.Errorf("source = %q, want unknown", got.Source)
+	}
+	if got.HumanText == "" {
+		t.Error("the text is still worth keeping, just not certified")
+	}
+}
+
+// A turn that moved because a tool finished is not someone speaking.
+func TestToolRoundTripIsItsOwnKind(t *testing.T) {
+	body := []byte(`{"input":[
+	  {"role":"user","content":[{"type":"input_text","text":"跑一下测试"}]},
+	  {"type":"function_call_output","call_id":"c1","output":"ok"}]}`)
+	got := Classify(body, "跑一下测试", "gpt-5.6-sol", nil, nil)
+	if got.Source != SourceTool {
+		t.Errorf("source = %q, want tool", got.Source)
+	}
+}
+
+// Folding must not let a tool round-trip demote the question that started it.
+func TestFoldingKeepsTheStrongestLabel(t *testing.T) {
+	if sourceRank(SourceHuman) <= sourceRank(SourceTool) {
+		t.Error("a person's turn must outrank a tool round-trip")
+	}
+	if sourceRank(SourceMixed) <= sourceRank(SourceAuto) {
+		t.Error("a person's words wrapped in context must outrank machine output")
+	}
+	if sourceRank(SourceUnknown) >= sourceRank(SourceAuto) {
+		t.Error("unknown must not displace a known verdict")
 	}
 }

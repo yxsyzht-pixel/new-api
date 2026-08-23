@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS chat_records (
     endpoint     VARCHAR(128) NOT NULL DEFAULT '',
     status_code  INT          NOT NULL DEFAULT 0,
     user_message TEXT         NOT NULL DEFAULT '',
+    human_message TEXT        NOT NULL DEFAULT '',
+    source_rank  INT          NOT NULL DEFAULT 0,
     ai_message   TEXT         NOT NULL DEFAULT '',
     turn_key     VARCHAR(64)  NOT NULL DEFAULT '',
     source       VARCHAR(16)  NOT NULL DEFAULT '',
@@ -58,6 +60,11 @@ ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS thread_source     VARCHAR(32) 
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS client_turn_id    VARCHAR(64) NOT NULL DEFAULT '';
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS client_session_id VARCHAR(64) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_chat_records_confidence ON chat_records (source_confidence);
+-- What the person actually typed, with any wrapper the client added taken off.
+-- A memory should be told this and never user_message: every observed image
+-- message carried a client's description in front of the real question.
+ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS human_message TEXT NOT NULL DEFAULT '';
+ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS source_rank INT NOT NULL DEFAULT 0;
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS request_count INT NOT NULL DEFAULT 1;
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
 -- One row per user turn. Partial, so rows written before this existed (and any
@@ -98,8 +105,9 @@ const insertStatement = `
 INSERT INTO chat_records
   (request_id, user_id, token_id, token_name, staff_id, model_name, endpoint,
    status_code, user_message, ai_message, created_at, updated_at, turn_key, source,
-   source_confidence, source_signal, client_name, thread_source, client_turn_id, client_session_id)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12,$14,$15,$16,$17,$18,$19,$20)
+   source_confidence, source_signal, client_name, thread_source, client_turn_id,
+   client_session_id, human_message, source_rank)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12,$14,$15,$16,$17,$18,$19,$20,$21,$22)
 ON CONFLICT (turn_key) WHERE turn_key <> '' DO UPDATE SET
   ai_message = CASE
     WHEN EXCLUDED.ai_message = '' THEN chat_records.ai_message
@@ -111,9 +119,18 @@ ON CONFLICT (turn_key) WHERE turn_key <> '' DO UPDATE SET
   END,
   model_name    = EXCLUDED.model_name,
   status_code   = EXCLUDED.status_code,
-  source            = EXCLUDED.source,
-  source_confidence = EXCLUDED.source_confidence,
-  source_signal     = EXCLUDED.source_signal,
+  -- A turn folds many requests into one row. It keeps the strongest thing any
+  -- of them was: a person's question is still a person's question after fifty
+  -- tool round-trips land on top of it. $22 carries the incoming rank.
+  source            = CASE WHEN $22 > chat_records.source_rank
+                           THEN EXCLUDED.source ELSE chat_records.source END,
+  source_confidence = CASE WHEN $22 > chat_records.source_rank
+                           THEN EXCLUDED.source_confidence ELSE chat_records.source_confidence END,
+  source_signal     = CASE WHEN $22 > chat_records.source_rank
+                           THEN EXCLUDED.source_signal ELSE chat_records.source_signal END,
+  human_message     = CASE WHEN chat_records.human_message = ''
+                           THEN EXCLUDED.human_message ELSE chat_records.human_message END,
+  source_rank       = greatest(chat_records.source_rank, $22),
   client_name       = EXCLUDED.client_name,
   thread_source     = EXCLUDED.thread_source,
   client_turn_id    = EXCLUDED.client_turn_id,

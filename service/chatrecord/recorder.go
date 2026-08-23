@@ -247,10 +247,14 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	if turnKey == "" {
 		turnKey = TurnKey(turn.TokenID, conversation, userMessage)
 	}
-	// Background work is not a conversation, and folding repeated invocations of
-	// the same prompt would stack unrelated answers into one row. Each stands
-	// alone.
-	if verdict.Source == SourceAuto && client.TurnID == "" {
+	// Folding needs a reason to believe two requests belong together. A client
+	// that names the turn or the conversation has given one. Without that, the
+	// only thing joining them is identical text — which is right for an agent
+	// working through a person's question, and wrong for a background task
+	// invoked repeatedly with the same prompt, where each run is its own event
+	// and merging them stacks unrelated answers into one row.
+	knowsTheConversation := client.TurnID != "" || client.SessionID != ""
+	if !knowsTheConversation && verdict.Source != SourceHuman && verdict.Source != SourceMixed {
 		turnKey = ""
 	}
 
@@ -260,7 +264,8 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 		turn.ModelName, turn.Endpoint, turn.StatusCode,
 		userMessage, assistantReply, turn.CreatedAt, turnKey, max,
 		verdict.Source, verdict.Confidence, verdict.Signal,
-		client.Name, client.ThreadSource, client.TurnID, client.SessionID).Scan(&recordID)
+		client.Name, client.ThreadSource, client.TurnID, client.SessionID,
+		Truncate(verdict.HumanText, max), sourceRank(verdict.Source)).Scan(&recordID)
 	if err != nil {
 		w.totals.Failed.Add(1)
 		common.SysError("chat record: write failed: " + err.Error())

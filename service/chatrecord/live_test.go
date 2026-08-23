@@ -255,3 +255,106 @@ func TestAnAgentLoopFoldsIntoOneRow(t *testing.T) {
 		}
 	}
 }
+
+// A person asks something; the agent then makes a dozen tool round-trips on the
+// same turn. Those later requests must not demote the row: the turn is still a
+// person's question, and a memory built from these rows would otherwise never
+// see it.
+func TestToolRoundTripsDoNotDemoteAPersonsTurn(t *testing.T) {
+	dsn := os.Getenv("CHATRECORD_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set CHATRECORD_TEST_DSN to run the live storage test")
+	}
+	if err := InitSchema(dsn); err != nil {
+		t.Fatalf("InitSchema: %v", err)
+	}
+	pool, err := newPool(dsn)
+	if err != nil {
+		t.Fatalf("newPool: %v", err)
+	}
+	defer pool.Close()
+	if os.Getenv("CHATRECORD_TEST_KEEP") == "" {
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records")
+		}()
+	}
+
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := *cfg
+	t.Cleanup(func() { *cfg = previous; Stop() })
+	cfg.Enabled, cfg.DSN, cfg.Host, cfg.StoreFiles = true, dsn, "", false
+
+	question := "代码审查一遍 " + time.Now().Format("150405.000")
+	turnID := "turn-" + time.Now().Format("150405.000")
+	meta := `{"thread_source":"user","request_kind":"turn","turn_id":"` + turnID +
+		`","session_id":"sess-1"}`
+
+	body := func(toolRounds int) []byte {
+		out := `{"client_metadata":{"x-codex-turn-metadata":` + strconvQuote(meta) + `},"input":[` +
+			`{"role":"user","content":[{"type":"input_text","text":"` + question + `"}]}`
+		for i := 0; i < toolRounds; i++ {
+			out += `,{"type":"function_call_output","call_id":"c","output":"done"}`
+		}
+		return []byte(out + `]}`)
+	}
+
+	for i := 0; i < 6; i++ {
+		Submit(Turn{
+			RequestID: "req", TokenID: 4243, TokenName: "live-test-key", StaffID: "A1024",
+			ModelName: "gpt-5.6-sol", Endpoint: "/v1/responses", StatusCode: 200,
+			CreatedAt: time.Now(), RequestBody: body(i),
+			ResponseBody: []byte(`{"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"看完了"}]}]}`),
+		})
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var rows int
+	var source, confidence, human string
+	for deadline := time.Now().Add(20 * time.Second); ; {
+		err = pool.QueryRow(ctx, `SELECT count(*), coalesce(max(source),''),
+		    coalesce(max(source_confidence),''), coalesce(max(human_message),'')
+		  FROM chat_records WHERE user_message = $1`, question).
+			Scan(&rows, &source, &confidence, &human)
+		if err == nil && rows == 1 && source != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("reading the turn back: %v", err)
+	}
+	if rows != 1 {
+		t.Fatalf("the turn is on %d rows, want 1", rows)
+	}
+	if source != SourceHuman {
+		t.Errorf("source = %q after the tool round-trips, want human", source)
+	}
+	if confidence != ConfidenceHard {
+		t.Errorf("confidence = %q, want hard", confidence)
+	}
+	if human != question {
+		t.Errorf("human_message = %q, want the question itself", human)
+	}
+}
+
+// strconvQuote embeds the metadata the way a client does: a JSON string holding
+// JSON.
+func strconvQuote(s string) string {
+	out := make([]byte, 0, len(s)+2)
+	out = append(out, '"')
+	for i := 0; i < len(s); i++ {
+		if s[i] == '"' || s[i] == '\\' {
+			out = append(out, '\\')
+		}
+		out = append(out, s[i])
+	}
+	return string(append(out, '"'))
+}
