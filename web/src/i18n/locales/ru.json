@@ -5391,6 +5391,9 @@
     "Machine-message markers": "Метки машинных сообщений",
     "One per line. A message containing any of these is filed as sent by a program rather than typed by a person. Bracketed tags, XML envelopes and system prompts sent as user turns are recognised without help — this is for your own prompt templates, which read like ordinary instructions.": "По одному в строке. Сообщение с любым из них помечается как отправленное программой, а не человеком. Теги в скобках, XML и системные подсказки распознаются сами — сюда впишите свои шаблоны промптов.",
     "Background-only models": "Модели только для фоновых задач",
-    "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "По одной модели в строке. Их трафик никогда не считается речью человека: суммаризаторы и генераторы заголовков дословно повторяют текст пользователя."
+    "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "По одной модели в строке. Их трафик никогда не считается речью человека: суммаризаторы и генераторы заголовков дословно повторяют текст пользователя.",
+    "Please enter a staff ID": "Укажите табельный номер",
+    "Letters, digits, _ and - only": "Только буквы, цифры, _ и -",
+    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "Обязательно. Записи и вложения этого ключа хранятся под ним, и по нему строится персональная память."
   }
 }

@@ -111,15 +111,6 @@ export function useApiKeysColumns(
       size: 40,
     },
     {
-      accessorKey: "name",
-      header: t("Name"),
-      cell: ({ row }) => (
-        <span className="font-medium">{row.getValue("name")}</span>
-      ),
-      size: 180,
-      meta: { mobileTitle: true },
-    },
-    {
       accessorKey: "staff_id",
       header: t("Staff ID"),
       cell: ({ row }) => {
@@ -131,6 +122,16 @@ export function useApiKeysColumns(
         );
       },
       size: 110,
+    },
+
+    {
+      accessorKey: "name",
+      header: t("Name"),
+      cell: ({ row }) => (
+        <span className="font-medium">{row.getValue("name")}</span>
+      ),
+      size: 180,
+      meta: { mobileTitle: true },
     },
     ...(showOwner
       ? [

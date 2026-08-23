@@ -117,7 +117,10 @@ describe("API key Auto group form mapping", () => {
     expect(defaults.auto_groups_mode).toBe("custom");
     expect(defaults.auto_groups).toEqual([]);
 
-    const result = getApiKeyFormSchema(t, 2).safeParse(defaults);
+    const result = getApiKeyFormSchema(t, 2).safeParse({
+      ...defaults,
+      staff_id: "10018037",
+    });
     expect(result.success).toBe(false);
     if (result.success) return;
     expect(result.error.issues[0]?.path).toEqual(["auto_groups"]);
@@ -156,6 +159,7 @@ describe("API key Auto group form mapping", () => {
   test("rejects snapshots over the configured limit", () => {
     const result = getApiKeyFormSchema(t, 1).safeParse({
       ...getApiKeyFormDefaultValues(true),
+      staff_id: "10018037",
       name: "limited token",
       auto_groups_mode: "custom",
       auto_groups: ["default", "vip"],
@@ -172,6 +176,7 @@ describe("API key Auto group form mapping", () => {
   test("rejects duplicate custom groups", () => {
     const result = getApiKeyFormSchema(t).safeParse({
       ...getApiKeyFormDefaultValues(true),
+      staff_id: "10018037",
       name: "duplicate token",
       auto_groups_mode: "custom",
       auto_groups: ["vip", "vip"],
@@ -182,5 +187,34 @@ describe("API key Auto group form mapping", () => {
     expect(result.error.issues[0]?.message).toBe(
       "Auto groups must not contain duplicates",
     );
+  });
+
+  test("a key must name the person it belongs to", () => {
+    const withoutStaffID = getApiKeyFormSchema(t).safeParse({
+      ...getApiKeyFormDefaultValues(true),
+      name: "some key",
+    });
+    expect(withoutStaffID.success).toBe(false);
+    if (withoutStaffID.success) return;
+    expect(
+      withoutStaffID.error.issues.some((issue) => issue.path[0] === "staff_id"),
+    ).toBe(true);
+
+    // It becomes a folder name and a memory peer name, so it stays plain.
+    for (const unsafe of ["../etc", "工号 1", "a".repeat(65)]) {
+      const result = getApiKeyFormSchema(t).safeParse({
+        ...getApiKeyFormDefaultValues(true),
+        staff_id: unsafe,
+        name: "some key",
+      });
+      expect(result.success).toBe(false);
+    }
+
+    const valid = getApiKeyFormSchema(t).safeParse({
+      ...getApiKeyFormDefaultValues(true),
+      staff_id: "10018037",
+      name: "some key",
+    });
+    expect(valid.success).toBe(true);
   });
 });

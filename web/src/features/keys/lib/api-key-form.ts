@@ -35,7 +35,13 @@ export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
   return z
     .object({
       name: z.string().min(1, t("Please enter a name")),
-      staff_id: z.string().optional(),
+      // The staff number is what joins a key to a person: transcripts are
+      // attributed by it and memories are built per person from it. It also
+      // becomes a folder name, so it is held to safe characters.
+      staff_id: z
+        .string()
+        .min(1, t("Please enter a staff ID"))
+        .regex(/^[A-Za-z0-9_-]{1,64}$/, t("Letters, digits, _ and - only")),
       owner_user_id: z.string().optional(),
       remain_quota_dollars: z.number().optional(),
       expired_time: z.date().optional(),

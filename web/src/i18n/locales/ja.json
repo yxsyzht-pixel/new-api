@@ -5391,6 +5391,9 @@
     "Machine-message markers": "自動送信メッセージの目印",
     "One per line. A message containing any of these is filed as sent by a program rather than typed by a person. Bracketed tags, XML envelopes and system prompts sent as user turns are recognised without help — this is for your own prompt templates, which read like ordinary instructions.": "1 行に 1 つ。いずれかを含むメッセージは「人が入力した」ではなく「プログラムが送信した」として記録されます。角括弧のタグ、XML、ユーザーとして送られるシステムプロンプトは自動で判別されます。ここには自社のプロンプトテンプレートを入れてください。",
     "Background-only models": "バックグラウンド専用モデル",
-    "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "1 行に 1 つのモデル名。これらのモデルの通信は人の発言とは見なしません。要約・承認・タイトル生成は本人の文言をそのまま再送するため、テキストでは区別できません。"
+    "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "1 行に 1 つのモデル名。これらのモデルの通信は人の発言とは見なしません。要約・承認・タイトル生成は本人の文言をそのまま再送するため、テキストでは区別できません。",
+    "Please enter a staff ID": "社員番号を入力してください",
+    "Letters, digits, _ and - only": "英数字とアンダースコア・ハイフンのみ",
+    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "必須。このキーのチャット記録と添付はこの番号の下に保存され、人ごとの記憶もこれを基準に作られます。"
   }
 }

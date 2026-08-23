@@ -151,7 +151,9 @@ function findButton(text: string, required = true): HTMLButtonElement | null {
   return button ?? null;
 }
 
-function getControlByLabel(labelText: "Name" | "Quantity"): HTMLInputElement;
+function getControlByLabel(
+  labelText: "Name" | "Quantity" | "Staff ID",
+): HTMLInputElement;
 function getControlByLabel(labelText: "Group"): HTMLButtonElement;
 function getControlByLabel(labelText: "Auto group order"): HTMLElement;
 function getControlByLabel(labelText: string): HTMLElement {
@@ -223,6 +225,7 @@ describe("API keys mutate drawer Auto group integration", () => {
     ).toEqual(["vip", "default"]);
     expect(findButton("Restore global Auto", true).disabled).toBe(true);
 
+    changeInput(getControlByLabel("Staff ID"), "10018037");
     changeInput(getControlByLabel("Name"), "batch");
     changeInput(getControlByLabel("Quantity"), "2");
     fireEvent.click(findButton("Save changes", true));
@@ -274,6 +277,7 @@ describe("API keys mutate drawer Auto group integration", () => {
     );
     expect(findButton("Restore global Auto", true).disabled).toBe(false);
 
+    changeInput(getControlByLabel("Staff ID"), "10018037");
     changeInput(getControlByLabel("Name"), "custom");
     fireEvent.click(findButton("Save changes", true));
     await waitFor(() => expect(createdPayloads).toHaveLength(1));

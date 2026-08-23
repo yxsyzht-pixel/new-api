@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -103,6 +104,27 @@ func buildMaskedTokenResponses(tokens []*model.Token) []*tokenResponse {
 // keys. Own keys never need it.
 func canManageAllTokens(c *gin.Context) bool {
 	return authz.Can(c.GetInt("id"), c.GetInt("role"), authz.TokenManageAll)
+}
+
+// staffIDPattern is what a staff number may contain. It becomes a directory
+// name under the attachment root and a peer name in the memory store, so it is
+// held to characters that are safe in both.
+var staffIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// requireStaffID enforces that every key names the person it belongs to.
+// Without it a transcript cannot be attributed and a memory cannot be built:
+// the staff number is the only thing joining a key to a human being.
+func requireStaffID(c *gin.Context, staffID string) bool {
+	staffID = strings.TrimSpace(staffID)
+	if staffID == "" {
+		common.ApiErrorMsg(c, "请填写工号")
+		return false
+	}
+	if !staffIDPattern.MatchString(staffID) {
+		common.ApiErrorMsg(c, "工号只能包含字母、数字、下划线和连字符，最长 64 位")
+		return false
+	}
+	return true
 }
 
 // newTokenOwner decides whose account a new key lands on. Left unset it is the
@@ -388,6 +410,10 @@ func AddToken(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
 	}
+	if !requireStaffID(c, token.StaffId) {
+		return
+	}
+	token.StaffId = strings.TrimSpace(token.StaffId)
 	ownerId, ok := newTokenOwner(c, token.UserId)
 	if !ok {
 		return
@@ -516,8 +542,11 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.Status = token.Status
 	} else {
 		// If you add more fields, please also update token.Update()
+		if !requireStaffID(c, token.StaffId) {
+			return
+		}
 		cleanToken.Name = token.Name
-		cleanToken.StaffId = token.StaffId
+		cleanToken.StaffId = strings.TrimSpace(token.StaffId)
 		cleanToken.ExpiredTime = token.ExpiredTime
 		cleanToken.RemainQuota = token.RemainQuota
 		cleanToken.UnlimitedQuota = token.UnlimitedQuota

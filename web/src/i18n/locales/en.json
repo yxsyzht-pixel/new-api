@@ -5391,6 +5391,9 @@
     "Machine-message markers": "Machine-message markers",
     "One per line. A message containing any of these is filed as sent by a program rather than typed by a person. Bracketed tags, XML envelopes and system prompts sent as user turns are recognised without help — this is for your own prompt templates, which read like ordinary instructions.": "One per line. A message containing any of these is filed as sent by a program rather than typed by a person. Bracketed tags, XML envelopes and system prompts sent as user turns are recognised without help — this is for your own prompt templates, which read like ordinary instructions.",
     "Background-only models": "Background-only models",
-    "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart."
+    "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.",
+    "Please enter a staff ID": "Please enter a staff ID",
+    "Letters, digits, _ and - only": "Letters, digits, _ and - only",
+    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from."
   }
 }

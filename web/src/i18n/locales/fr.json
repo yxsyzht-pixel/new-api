@@ -5391,6 +5391,9 @@
     "Machine-message markers": "Marqueurs de messages automatiques",
     "One per line. A message containing any of these is filed as sent by a program rather than typed by a person. Bracketed tags, XML envelopes and system prompts sent as user turns are recognised without help — this is for your own prompt templates, which read like ordinary instructions.": "Un par ligne. Un message contenant l’un d’eux est classé comme envoyé par un programme plutôt que saisi par une personne. Les balises entre crochets, les enveloppes XML et les invites système sont reconnues automatiquement — ceci concerne vos propres modèles d’invite.",
     "Background-only models": "Modèles réservés aux tâches de fond",
-    "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "Un modèle par ligne. Ce trafic n’est jamais une personne qui parle : les résumeurs et générateurs de titres rejouent mot pour mot le texte de l’utilisateur."
+    "One model name per line. Traffic on these is never a person talking, whatever the words say — summarisers, approval reviewers and title generators replay the person’s own text verbatim, so no text rule can tell them apart.": "Un modèle par ligne. Ce trafic n’est jamais une personne qui parle : les résumeurs et générateurs de titres rejouent mot pour mot le texte de l’utilisateur.",
+    "Please enter a staff ID": "Saisissez le matricule",
+    "Letters, digits, _ and - only": "Lettres, chiffres, _ et - uniquement",
+    "Required. Transcripts and attachments from this key are filed under it, and it is what a per-person memory is built from.": "Obligatoire. Les conversations et pièces jointes de cette clé y sont classées, et la mémoire par personne s’appuie dessus."
   }
 }

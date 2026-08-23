@@ -406,6 +406,29 @@ export function ApiKeysMutateDrawer({
               />
               <FormField
                 control={form.control}
+                name="staff_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t("Staff ID")}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        value={field.value ?? ""}
+                        placeholder={t("Enter a staff ID")}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        "Recorded alongside each chat transcript from this key.",
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
                 name="name"
                 render={({ field }) => (
                   <FormItem>
@@ -448,29 +471,6 @@ export function ApiKeysMutateDrawer({
                   })}
                 </p>
               ) : null}
-
-              <FormField
-                control={form.control}
-                name="staff_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("Staff ID")}</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        value={field.value ?? ""}
-                        placeholder={t("Enter a staff ID")}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t(
-                        "Recorded alongside each chat transcript from this key.",
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
 
               <FormField
                 control={form.control}
