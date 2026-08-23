@@ -301,6 +301,7 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 
 	// The attachments are already on disk; the rows only say where. A failure
 	// here costs the link to a file, not the transcript.
+	attached := 0
 	for _, attachment := range stored {
 		if _, err := w.pool.Exec(writeCtx, insertFileStatement,
 			recordID, turn.StaffID, attachment.Kind, attachment.MediaType,
@@ -309,7 +310,18 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 			common.SysError("chat record: attachment row failed: " + err.Error())
 			continue
 		}
+		attached++
 		w.totals.Files.Add(1)
+	}
+
+	// Keep the turn's own tally in step, so a reader can tell from the row
+	// whether anything came with it. Counted from the table rather than added
+	// up here: an agent replays its conversation, so the same picture arrives
+	// again and again and is only stored once.
+	if attached > 0 {
+		if _, err := w.pool.Exec(writeCtx, countFilesStatement, recordID); err != nil {
+			common.SysError("chat record: could not update the attachment tally: " + err.Error())
+		}
 	}
 }
 

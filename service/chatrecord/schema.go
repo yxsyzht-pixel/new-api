@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS chat_records (
     client_turn_id    VARCHAR(64) NOT NULL DEFAULT '',
     client_session_id VARCHAR(64) NOT NULL DEFAULT '',
     request_count INT         NOT NULL DEFAULT 1,
+    file_count   INT          NOT NULL DEFAULT 0,
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -93,6 +94,37 @@ CREATE INDEX IF NOT EXISTS idx_chat_record_files_created  ON chat_record_files (
 -- arrives with every one of them. One row per file per turn.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_record_files_once
     ON chat_record_files (record_id, sha256) WHERE sha256 <> '';
+
+-- The attachments belong to a turn, and the database should be the one saying
+-- so. Without the constraint the link is a convention: nothing stops a row
+-- pointing at a turn that was deleted, and nothing cleans up when one is.
+-- Guarded because ALTER TABLE ... ADD CONSTRAINT has no IF NOT EXISTS.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_chat_record_files_record'
+          AND conrelid = 'chat_record_files'::regclass
+    ) THEN
+        -- Rows written before the constraint existed may point nowhere; drop
+        -- those rather than fail the migration and leave the table unguarded.
+        DELETE FROM chat_record_files f
+        WHERE f.record_id <> 0
+          AND NOT EXISTS (SELECT 1 FROM chat_records r WHERE r.id = f.record_id);
+        DELETE FROM chat_record_files WHERE record_id = 0;
+
+        ALTER TABLE chat_record_files
+            ADD CONSTRAINT fk_chat_record_files_record
+            FOREIGN KEY (record_id) REFERENCES chat_records (id) ON DELETE CASCADE;
+    END IF;
+END $$;
+
+-- So a reader can tell from the turn itself whether anything came with it,
+-- instead of having to go and ask the other table.
+ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS file_count INT NOT NULL DEFAULT 0;
+UPDATE chat_records r SET file_count = c.total
+  FROM (SELECT record_id, count(*) AS total FROM chat_record_files GROUP BY record_id) c
+ WHERE c.record_id = r.id AND r.file_count <> c.total;
 `
 
 // insertStatement records a turn, or folds this request into the turn already
@@ -154,6 +186,12 @@ WHERE ($1 = '' OR staff_id = $1)
 ORDER BY id DESC LIMIT $2 OFFSET $3`
 
 // fileLookupStatement finds one stored attachment for the serving endpoint.
+// countFilesStatement keeps the turn's own tally in step with its attachments.
+const countFilesStatement = `
+UPDATE chat_records SET file_count =
+  (SELECT count(*) FROM chat_record_files WHERE record_id = $1)
+WHERE id = $1`
+
 const fileLookupStatement = `
 SELECT path, media_type, file_name, file_size, source_url
 FROM chat_record_files WHERE id = $1`

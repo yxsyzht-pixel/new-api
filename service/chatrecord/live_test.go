@@ -358,3 +358,80 @@ func strconvQuote(s string) string {
 	}
 	return string(append(out, '"'))
 }
+
+// The attachments belong to a turn, and the database should be the one saying
+// so. Left as a convention, nothing stops a row pointing at a turn that was
+// deleted, and nothing cleans up when one is.
+func TestAttachmentsAreTiedToTheirTurn(t *testing.T) {
+	dsn := os.Getenv("CHATRECORD_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set CHATRECORD_TEST_DSN to run the live storage test")
+	}
+	if err := InitSchema(dsn); err != nil {
+		t.Fatalf("InitSchema: %v", err)
+	}
+	pool, err := newPool(dsn)
+	if err != nil {
+		t.Fatalf("newPool: %v", err)
+	}
+	defer pool.Close()
+	if os.Getenv("CHATRECORD_TEST_KEEP") == "" {
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records")
+		}()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var recordID int64
+	err = pool.QueryRow(ctx, `INSERT INTO chat_records
+	  (request_id, user_id, token_id, token_name, staff_id, model_name, endpoint,
+	   status_code, user_message, ai_message, created_at, updated_at, turn_key)
+	  VALUES ('fk-probe',1,1,'k','A1','m','/v1/x',200,'hi','there',now(),now(),'')
+	  RETURNING id`).Scan(&recordID)
+	if err != nil {
+		t.Fatalf("inserting a turn: %v", err)
+	}
+
+	// An attachment on a turn that does not exist must be refused outright.
+	_, err = pool.Exec(ctx, insertFileStatement,
+		recordID+9_000_000, "A1", "image", "image/png", "x.png", 10, "deadbeef", "p/x.png", "", time.Now())
+	if err == nil {
+		t.Error("an attachment pointing at a turn that does not exist was accepted")
+	}
+
+	// A real one is accepted and counted on the turn.
+	_, err = pool.Exec(ctx, insertFileStatement,
+		recordID, "A1", "image", "image/png", "x.png", 10, "cafebabe", "p/x.png", "", time.Now())
+	if err != nil {
+		t.Fatalf("inserting an attachment: %v", err)
+	}
+	if _, err := pool.Exec(ctx, countFilesStatement, recordID); err != nil {
+		t.Fatalf("updating the tally: %v", err)
+	}
+	var tally int
+	if err := pool.QueryRow(ctx, `SELECT file_count FROM chat_records WHERE id = $1`, recordID).Scan(&tally); err != nil {
+		t.Fatal(err)
+	}
+	if tally != 1 {
+		t.Errorf("file_count = %d, want 1 — the turn cannot say it has an attachment", tally)
+	}
+
+	// Removing the turn takes its attachments with it, instead of leaving rows
+	// pointing at nothing.
+	if _, err := pool.Exec(ctx, `DELETE FROM chat_records WHERE id = $1`, recordID); err != nil {
+		t.Fatalf("deleting the turn: %v", err)
+	}
+	var left int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM chat_record_files WHERE record_id = $1`, recordID).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Errorf("%d attachment rows outlived their turn", left)
+	}
+}
