@@ -77,7 +77,6 @@ const defaultOperationsSettings: OperationsSettings = {
   "chat_record_setting.memory_workspace": "yxsy",
   "chat_record_setting.memory_peer_template": "{staff_id}",
   "chat_record_setting.memory_assistant_peer": "{agent}-{staff_id}",
-  "chat_record_setting.memory_observe_assistant": false,
   "chat_record_setting.memory_session_mode": "person",
   "chat_record_setting.memory_min_chars": 4,
 };

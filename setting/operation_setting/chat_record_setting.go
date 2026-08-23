@@ -81,11 +81,6 @@ type ChatRecordSetting struct {
 	// person's context to themselves, and stops the store from deriving a
 	// profile of the assistant in every session it appears in.
 	MemoryAssistantPeer string `json:"memory_assistant_peer"`
-	// MemoryObserveAssistant lets the store build a representation of the
-	// assistant too. Off by default: it doubles the derivation work — every
-	// reply costs a second inference — to describe something that is not a
-	// person and has no memory worth keeping.
-	MemoryObserveAssistant bool `json:"memory_observe_assistant"`
 	// MemorySessionMode is "person" for one running session per staff number,
 	// or "conversation" to follow the client's own conversation boundaries.
 	MemorySessionMode string `json:"memory_session_mode"`

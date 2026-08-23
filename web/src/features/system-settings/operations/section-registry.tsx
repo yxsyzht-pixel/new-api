@@ -171,8 +171,6 @@ const OPERATIONS_SECTIONS = [
           memoryAssistantPeer:
             settings["chat_record_setting.memory_assistant_peer"] ??
             "{agent}-{staff_id}",
-          memoryObserveAssistant:
-            settings["chat_record_setting.memory_observe_assistant"] ?? false,
           memorySessionMode:
             settings["chat_record_setting.memory_session_mode"] ?? "person",
           memoryMinChars: settings["chat_record_setting.memory_min_chars"] ?? 4,

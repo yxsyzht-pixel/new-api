@@ -5410,8 +5410,6 @@
     "Person peer name": "Nom du peer de la personne",
     "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.": "À qui appartient cette mémoire. {staff_id} est remplacé par le matricule de la clé émettrice.",
     "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.": "Les réponses du modèle sont classées ici comme contexte. Conservez {staff_id} : un assistant partagé accumulerait une représentation dans la session de chacun.",
-    "Also profile the assistant": "Profiler aussi l’assistant",
-    "Off by default. Leaving it on costs a second inference for every reply, to build a picture of something that is not a person.": "Désactivé par défaut. Sinon chaque réponse coûte une seconde inférence pour dresser le portrait de ce qui n’est pas une personne.",
     "Staff ID + key name": "Matricule + nom de clé",
     "Key name": "Nom de la clé",
     "Agent, per person": "Agent, par personne",

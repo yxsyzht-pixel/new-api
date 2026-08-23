@@ -5410,8 +5410,6 @@
     "Person peer name": "Person peer name",
     "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.": "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.",
     "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.": "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.",
-    "Also profile the assistant": "Also profile the assistant",
-    "Off by default. Leaving it on costs a second inference for every reply, to build a picture of something that is not a person.": "Off by default. Leaving it on costs a second inference for every reply, to build a picture of something that is not a person.",
     "Staff ID + key name": "Staff ID + key name",
     "Key name": "Key name",
     "Agent, per person": "Agent, per person",

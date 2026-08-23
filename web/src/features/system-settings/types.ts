@@ -378,7 +378,6 @@ export type OperationsSettings = {
   'chat_record_setting.memory_workspace': string
   'chat_record_setting.memory_peer_template': string
   'chat_record_setting.memory_assistant_peer': string
-  'chat_record_setting.memory_observe_assistant': boolean
   'chat_record_setting.memory_session_mode': 'person' | 'conversation'
   'chat_record_setting.memory_min_chars': number
   'chat_record_setting.host': string

@@ -56,7 +56,6 @@ const schema = z.object({
   memoryWorkspace: z.string(),
   memoryPeerTemplate: z.string(),
   memoryAssistantPeer: z.string(),
-  memoryObserveAssistant: z.boolean(),
   memorySessionMode: z.enum(["person", "conversation"]),
   memoryMinChars: z.coerce.number().int().min(1),
   queueSize: z.coerce.number().int().min(1),
@@ -257,11 +256,6 @@ export function ChatRecordSection({
       "chat_record_setting.memory_assistant_peer",
       values.memoryAssistantPeer,
       saved.memoryAssistantPeer,
-    );
-    push(
-      "chat_record_setting.memory_observe_assistant",
-      values.memoryObserveAssistant,
-      saved.memoryObserveAssistant,
     );
     push(
       "chat_record_setting.memory_session_mode",
@@ -765,29 +759,6 @@ export function ChatRecordSection({
                 </FormDescription>
                 <FormMessage />
               </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="memoryObserveAssistant"
-            render={({ field }) => (
-              <SettingsSwitchItem>
-                <SettingsSwitchContent>
-                  <FormLabel>{t("Also profile the assistant")}</FormLabel>
-                  <FormDescription>
-                    {t(
-                      "Off by default. Leaving it on costs a second inference for every reply, to build a picture of something that is not a person.",
-                    )}
-                  </FormDescription>
-                </SettingsSwitchContent>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </SettingsSwitchItem>
             )}
           />
 

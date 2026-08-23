@@ -226,10 +226,11 @@ func (m *memoryQueue) deliver(ctx context.Context, turn MemoryTurn) {
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
 	m.Sent.Add(1)
 
-	// Ask the store not to build a picture of the assistant. Doing so costs a
-	// second inference for every reply, to describe something that is not a
-	// person. Once per session is enough.
-	if assistant != "" && !cfg.MemoryObserveAssistant {
+	// Ask the store not to build a picture of the assistant. Its default is to
+	// observe every peer, which would cost a second inference for every reply
+	// to describe something that is not a person and has no memory worth
+	// keeping. Once per session is enough.
+	if assistant != "" {
 		m.silenceAssistant(writeCtx, cfg, turn.Session, assistant)
 	}
 }
