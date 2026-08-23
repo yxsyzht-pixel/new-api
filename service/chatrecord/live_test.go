@@ -435,3 +435,68 @@ func TestAttachmentsAreTiedToTheirTurn(t *testing.T) {
 		t.Errorf("%d attachment rows outlived their turn", left)
 	}
 }
+
+// An agent sends the same turn again on every tool round-trip. The transcript
+// folds those into one row; the memory writer has to be told which of them was
+// the first, or the same sentence is fed to the memory once per round-trip and
+// the same fact is derived over and over.
+func TestOnlyTheFirstRequestOfATurnIsNew(t *testing.T) {
+	dsn := os.Getenv("CHATRECORD_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set CHATRECORD_TEST_DSN to run the live storage test")
+	}
+	if err := InitSchema(dsn); err != nil {
+		t.Fatalf("InitSchema: %v", err)
+	}
+	pool, err := newPool(dsn)
+	if err != nil {
+		t.Fatalf("newPool: %v", err)
+	}
+	defer pool.Close()
+	if os.Getenv("CHATRECORD_TEST_KEEP") == "" {
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records")
+		}()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	turnKey := "probe-turn-" + time.Now().Format("150405.000")
+	write := func(reply string) bool {
+		var id int64
+		var inserted bool
+		err := pool.QueryRow(ctx, insertStatement,
+			"req", 1, 4242, "k", "A1024", "gpt-5.6-sol", "/v1/responses", 200,
+			"把首页改成奢品风格", reply, time.Now(), turnKey, 32000,
+			"human", "hard", "client.thread_source", "codex", "user", "t1", "s1",
+			"把首页改成奢品风格", 5).Scan(&id, &inserted)
+		if err != nil {
+			t.Fatalf("writing the turn: %v", err)
+		}
+		return inserted
+	}
+
+	if !write("先看现有版式") {
+		t.Fatal("the first request of a turn was not reported as new")
+	}
+	for i := 0; i < 4; i++ {
+		if write("") {
+			t.Fatalf("round-trip %d was reported as a new turn; the memory would "+
+				"receive the same sentence again", i+2)
+		}
+	}
+
+	// And the transcript still holds exactly one row for the turn.
+	var rows int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM chat_records WHERE turn_key = $1`, turnKey).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Errorf("the turn occupies %d rows, want 1", rows)
+	}
+}

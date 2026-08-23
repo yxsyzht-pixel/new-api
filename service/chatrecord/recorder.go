@@ -262,13 +262,15 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	}
 
 	var recordID int64
+	var firstTimeForThisTurn bool
 	err := w.pool.QueryRow(writeCtx, insertStatement,
 		turn.RequestID, turn.UserID, turn.TokenID, turn.TokenName, turn.StaffID,
 		turn.ModelName, turn.Endpoint, turn.StatusCode,
 		userMessage, assistantReply, turn.CreatedAt, turnKey, max,
 		verdict.Source, verdict.Confidence, verdict.Signal,
 		client.Name, client.ThreadSource, client.TurnID, client.SessionID,
-		Truncate(verdict.HumanText, max), sourceRank(verdict.Source)).Scan(&recordID)
+		Truncate(verdict.HumanText, max), sourceRank(verdict.Source)).
+		Scan(&recordID, &firstTimeForThisTurn)
 	if err != nil {
 		w.totals.Failed.Add(1)
 		common.SysError("chat record: write failed: " + err.Error())
@@ -279,7 +281,11 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	// The memory store is told only what a client positively declared to be a
 	// person speaking, and only when the key names whose person it is. It has
 	// its own queue: a slow memory store loses memories, never transcripts.
-	if !turn.SkipMemory && cfg.MemoryReady() &&
+	// Only the first request of a turn. The later ones carry the very same
+	// words — folding already collapsed them in the transcript, and telling a
+	// memory the same sentence five times would have it derive the same fact
+	// five times over.
+	if firstTimeForThisTurn && !turn.SkipMemory && cfg.MemoryReady() &&
 		EligibleForMemory(verdict, turn.StaffID, cfg.MemoryMinCharsOrDefault()) {
 		agent := client.Agent
 		if agent == "" {

@@ -169,7 +169,11 @@ ON CONFLICT (turn_key) WHERE turn_key <> '' DO UPDATE SET
   client_session_id = EXCLUDED.client_session_id,
   request_count = chat_records.request_count + 1,
   updated_at    = EXCLUDED.created_at
-RETURNING id`
+-- xmax is zero only on a freshly inserted row. An agent sends the same turn
+-- again on every tool round-trip, and the transcript folds those into this one
+-- row — so this flag is what tells the memory writer that a turn is new rather
+-- than the same question arriving for the fifth time.
+RETURNING id, (xmax = 0) AS inserted`
 
 const insertFileStatement = `
 INSERT INTO chat_record_files
