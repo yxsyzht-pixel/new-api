@@ -46,6 +46,7 @@ import { Switch } from "@/components/ui/switch";
 import { useTableUrlState } from "@/hooks/use-table-url-state";
 import { formatQuota } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth-store";
 
 import { getApiKeys, searchApiKeys } from "../api";
 import {
@@ -208,6 +209,7 @@ export function ApiKeysTable() {
   const { t } = useTranslation();
   const { refreshTrigger, canManageAllKeys, allUsersScope, setAllUsersScope } =
     useApiKeys();
+  const currentUserId = useAuthStore((state) => state.auth.user?.id);
   const [now, setNow] = useState(() => Date.now());
   const showAllUsers = canManageAllKeys && allUsersScope;
   const columns = useApiKeysColumns(now);
@@ -302,7 +304,8 @@ export function ApiKeysTable() {
   const { table } = useDataTable({
     data: apiKeys,
     columns,
-    enableRowSelection: true,
+    enableRowSelection: (row) =>
+      currentUserId !== undefined && row.original.created_by === currentUserId,
     columnFilters,
     initialColumnVisibility: API_KEYS_INITIAL_COLUMN_VISIBILITY,
     columnVisibilityStorageKey: API_KEYS_COLUMN_VISIBILITY_STORAGE_KEY,

@@ -30,9 +30,9 @@ func newTokenScopeDB(t *testing.T) {
 		{Id: 200, Username: "bob", AffCode: "bob-aff"},
 	}).Error)
 	require.NoError(t, db.Create(&[]Token{
-		{Id: 1, UserId: 100, Name: "alice-main", StaffId: "A001", Key: "k1"},
-		{Id: 2, UserId: 100, Name: "alice-spare", StaffId: "A001", Key: "k2"},
-		{Id: 3, UserId: 200, Name: "bob-main", StaffId: "B042", Key: "k3"},
+		{Id: 1, UserId: 100, CreatedBy: 100, Name: "alice-main", StaffId: "A001", Key: "k1"},
+		{Id: 2, UserId: 100, CreatedBy: 100, Name: "alice-spare", StaffId: "A001", Key: "k2"},
+		{Id: 3, UserId: 200, CreatedBy: 200, Name: "bob-main", StaffId: "B042", Key: "k3"},
 	}).Error)
 }
 
@@ -65,6 +65,26 @@ func TestFetchingOneKeyIsConfinedToItsScope(t *testing.T) {
 	token, err := GetTokenByIds(3, AllOwnersScope())
 	require.NoError(t, err)
 	assert.Equal(t, "bob-main", token.Name)
+}
+
+func TestCreatorScopeConfinesMutations(t *testing.T) {
+	newTokenScopeDB(t)
+
+	_, err := GetTokenByIds(3, CreatorScope(100))
+	assert.Error(t, err, "a non-creator must not fetch a key for mutation")
+
+	token, err := GetTokenByIds(1, CreatorScope(100))
+	require.NoError(t, err)
+	assert.Equal(t, 100, token.CreatedBy)
+
+	count, err := BatchDeleteTokens([]int{1, 3}, CreatorScope(100))
+	assert.Error(t, err, "a mixed batch must not delete someone else's key")
+	assert.Zero(t, count)
+
+	var stillThere Token
+	require.NoError(t, DB.First(&stillThere, 1).Error)
+	var bobStillThere Token
+	require.NoError(t, DB.First(&bobStillThere, 3).Error)
 }
 
 func TestDeletingIsConfinedToItsScope(t *testing.T) {

@@ -159,7 +159,7 @@ func ownerNamesFor(tokens []*model.Token) map[int]string {
 // the fields it will change — moving a key between accounts is not something a
 // spreadsheet edit should be able to do by accident.
 func ImportTokens(c *gin.Context) {
-	scope := mutateScope(c)
+	scope := tokenEditScope(c)
 
 	upload, err := c.FormFile("file")
 	if err != nil {

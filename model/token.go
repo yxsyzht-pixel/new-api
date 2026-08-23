@@ -513,6 +513,16 @@ func BatchDeleteTokens(ids []int, scope TokenScope) (int, error) {
 		tx.Rollback()
 		return 0, err
 	}
+	if scope.IsCreatorScope() {
+		uniqueIds := make(map[int]struct{}, len(ids))
+		for _, id := range ids {
+			uniqueIds[id] = struct{}{}
+		}
+		if len(tokens) != len(uniqueIds) {
+			tx.Rollback()
+			return 0, errors.New("只能删除自己创建的密钥")
+		}
+	}
 	if err := invalidateTokensCache(tokens); err != nil {
 		common.SysLog("failed to invalidate token cache before batch delete: " + err.Error())
 	}

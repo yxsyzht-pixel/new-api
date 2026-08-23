@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type Table } from "@tanstack/react-table";
+import type { Table } from "@tanstack/react-table";
 import { Copy, Trash2, Loader2 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
@@ -30,8 +30,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { copyToClipboard } from "@/lib/copy-to-clipboard";
+import { useAuthStore } from "@/stores/auth-store";
 
-import { type ApiKey } from "../types";
+import type { ApiKey } from "../types";
 import { ApiKeysMultiDeleteDialog } from "./api-keys-multi-delete-dialog";
 import { useApiKeys } from "./api-keys-provider";
 
@@ -44,9 +45,13 @@ export function DataTableBulkActions<TData>({
 }: DataTableBulkActionsProps<TData>) {
   const { t } = useTranslation();
   const { resolveRealKeysBatch } = useApiKeys();
+  const currentUserId = useAuthStore((state) => state.auth.user?.id);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const selectedRows = table.getFilteredSelectedRowModel().rows;
+  const hasUnmodifiableSelection = selectedRows.some(
+    (row) => (row.original as ApiKey).created_by !== currentUserId,
+  );
 
   const handleBatchCopy = useCallback(async () => {
     if (selectedRows.length === 0) return;
@@ -114,6 +119,7 @@ export function DataTableBulkActions<TData>({
                 variant="destructive"
                 size="icon"
                 onClick={() => setShowDeleteConfirm(true)}
+                disabled={hasUnmodifiableSelection}
                 className="size-8"
                 aria-label={t("Delete selected API keys")}
               />
@@ -123,7 +129,11 @@ export function DataTableBulkActions<TData>({
             <span className="sr-only">{t("Delete selected API keys")}</span>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{t("Delete selected API keys")}</p>
+            <p>
+              {hasUnmodifiableSelection
+                ? t("Only keys created by you can be modified")
+                : t("Delete selected API keys")}
+            </p>
           </TooltipContent>
         </Tooltip>
       </BulkActionsToolbar>

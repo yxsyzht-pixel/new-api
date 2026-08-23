@@ -329,13 +329,20 @@ func listScope(c *gin.Context) (model.TokenScope, bool) {
 	return model.OwnerScope(targetId), true
 }
 
-// mutateScope is the scope for acting on one key that was named by id. An
-// administrator may act on anyone's; everybody else only on their own.
+// mutateScope is the scope for viewing one key that was named by id. An
+// administrator may view anyone's; everybody else only their own.
 func mutateScope(c *gin.Context) model.TokenScope {
 	if canManageAllTokens(c) {
 		return model.AllOwnersScope()
 	}
 	return model.OwnerScope(c.GetInt("id"))
+}
+
+// tokenEditScope is deliberately narrower than mutateScope. Administrators may
+// view other people's keys, but only the user recorded in created_by may edit,
+// enable/disable, or delete a key.
+func tokenEditScope(c *gin.Context) model.TokenScope {
+	return model.CreatorScope(c.GetInt("id"))
 }
 
 // getTokenOwnerGroup resolves the group whose selectable groups a key may draw
@@ -657,7 +664,7 @@ func AddToken(c *gin.Context) {
 
 func DeleteToken(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	err := model.DeleteTokenById(id, mutateScope(c))
+	err := model.DeleteTokenById(id, tokenEditScope(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -692,7 +699,7 @@ func UpdateToken(c *gin.Context) {
 			return
 		}
 	}
-	cleanToken, err := model.GetTokenByIds(token.Id, mutateScope(c))
+	cleanToken, err := model.GetTokenByIds(token.Id, tokenEditScope(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -769,7 +776,7 @@ func DeleteTokenBatch(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	count, err := model.BatchDeleteTokens(tokenBatch.Ids, mutateScope(c))
+	count, err := model.BatchDeleteTokens(tokenBatch.Ids, tokenEditScope(c))
 	if err != nil {
 		common.ApiError(c, err)
 		return

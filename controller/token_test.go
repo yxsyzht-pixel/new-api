@@ -165,6 +165,8 @@ func seedToken(t *testing.T, db *gorm.DB, userID int, name string, rawKey string
 
 	token := &model.Token{
 		UserId:         userID,
+		CreatedBy:      userID,
+		UpdatedBy:      userID,
 		Name:           name,
 		Key:            rawKey,
 		Status:         common.TokenStatusEnabled,
