@@ -22,6 +22,7 @@ export type StaffPerson = {
   department: string;
   position: string;
   status: string;
+  avatar?: string;
 };
 
 type Directory = {
@@ -30,10 +31,9 @@ type Directory = {
   items: StaffPerson[];
 };
 
-// HR's basic people list carries no photo, and the fuller endpoint that does
-// also drags every contract, social-insurance and education record along with
-// it — a great deal of somebody's private file to pull into a gateway to draw a
-// 36-pixel picture. A name on a colour of its own is enough to tell rows apart.
+// The photo is what people actually recognise, but a directory always has
+// somebody with no picture and a CDN always has a bad day, so the coloured
+// initial stays as the fallback rather than leaving a hole in the row.
 const tileColours = [
   "bg-sky-500",
   "bg-emerald-500",
@@ -51,6 +51,32 @@ function tileColour(seed: string) {
 
 function initial(name: string) {
   return [...name.trim()][0] ?? "?";
+}
+
+function StaffAvatar({ person }: { person: StaffPerson }) {
+  const [broken, setBroken] = useState(false);
+  const showPhoto = Boolean(person.avatar) && !broken;
+
+  return (
+    <span
+      className={cn(
+        "flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md text-sm font-medium text-white",
+        showPhoto ? "bg-muted" : tileColour(person.code),
+      )}
+    >
+      {showPhoto ? (
+        <img
+          src={person.avatar}
+          alt=""
+          loading="lazy"
+          className="size-full object-cover"
+          onError={() => setBroken(true)}
+        />
+      ) : (
+        initial(person.name)
+      )}
+    </span>
+  );
 }
 
 export function useStaffDirectory(keyword: string, enabled: boolean) {
@@ -165,14 +191,7 @@ export function StaffPickerDialog({
                       person.code === selected && "bg-muted",
                     )}
                   >
-                    <span
-                      className={cn(
-                        "flex size-9 shrink-0 items-center justify-center rounded-md text-sm font-medium text-white",
-                        tileColour(person.code),
-                      )}
-                    >
-                      {initial(person.name)}
-                    </span>
+                    <StaffAvatar person={person} />
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
                         <span className="truncate font-medium">

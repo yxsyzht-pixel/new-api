@@ -140,6 +140,7 @@ func fetchAll(ctx context.Context, cfg *operation_setting.StaffDirectorySetting)
 				DepartmentName   string `json:"departmentName"`
 				Position         string `json:"position"`
 				PeopleStatusName string `json:"peopleStatusName"`
+				Avatar           string `json:"avatar"`
 			} `json:"items"`
 			NextCursor int  `json:"nextCursor"`
 			HasMore    bool `json:"hasMore"`
@@ -147,6 +148,10 @@ func fetchAll(ctx context.Context, cfg *operation_setting.StaffDirectorySetting)
 		err := call(ctx, cfg, "/api/open/hr/peoples-basic", map[string]any{
 			"minPeopleId": cursor,
 			"pageSize":    1000,
+			// Every company type, but only people who still work here: a
+			// picker offering someone who left is offering a mistake.
+			"isCompanyPeople": 0,
+			"peopleStatus":    1,
 		}, bearer, &batch)
 		if err != nil {
 			return nil, err
@@ -163,6 +168,7 @@ func fetchAll(ctx context.Context, cfg *operation_setting.StaffDirectorySetting)
 				Department: strings.TrimSpace(item.DepartmentName),
 				Position:   strings.TrimSpace(item.Position),
 				Status:     strings.TrimSpace(item.PeopleStatusName),
+				Avatar:     strings.TrimSpace(item.Avatar),
 			})
 		}
 		if !batch.HasMore || batch.NextCursor <= cursor {

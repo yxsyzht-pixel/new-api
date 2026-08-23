@@ -43,6 +43,14 @@ func fakeHR(t *testing.T, people int) (*httptest.Server, *atomic.Int64) {
 			}
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
+			// Only current employees are wanted; offering someone who left is
+			// offering a mistake.
+			if body["peopleStatus"] != float64(1) {
+				t.Errorf("peopleStatus = %v, want 1 (在职)", body["peopleStatus"])
+			}
+			if body["isCompanyPeople"] != float64(0) {
+				t.Errorf("isCompanyPeople = %v, want 0 (全部)", body["isCompanyPeople"])
+			}
 			cursor := 0
 			if raw, ok := body["minPeopleId"].(float64); ok {
 				cursor = int(raw)
@@ -51,6 +59,7 @@ func fakeHR(t *testing.T, people int) (*httptest.Server, *atomic.Int64) {
 			items := []map[string]string{}
 			for i := cursor; i < cursor+2 && i < people; i++ {
 				items = append(items, map[string]string{
+					"avatar":           "https://cdn.example.com/avatar/" + string(rune('0'+i%10)) + ".png",
 					"peopleName":       []string{"张三", "李四", "王五", "赵六"}[i%4],
 					"peopleCode":       "0010" + string(rune('0'+i%10)),
 					"departmentName":   "总裁办",
@@ -177,5 +186,24 @@ func TestAStaleCopyIsServedWhenHRGoesAway(t *testing.T) {
 	}
 	if len(people) == 0 {
 		t.Fatal("the picker would have come up empty")
+	}
+}
+
+// The directory now carries a photo, and the picker shows it.
+func TestAvatarsComeThrough(t *testing.T) {
+	server, _ := fakeHR(t, 4)
+	configure(t, server.URL)
+
+	people, err := Search(context.Background(), "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(people) == 0 {
+		t.Fatal("no people")
+	}
+	for _, person := range people {
+		if !strings.HasPrefix(person.Avatar, "https://") {
+			t.Fatalf("%s has no avatar: %q", person.Code, person.Avatar)
+		}
 	}
 }

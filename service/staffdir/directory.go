@@ -25,6 +25,7 @@ type Person struct {
 	Department string `json:"department"`
 	Position   string `json:"position"`
 	Status     string `json:"status"`
+	Avatar     string `json:"avatar"`
 }
 
 // The whole directory is held in memory and searched locally. It is a few
