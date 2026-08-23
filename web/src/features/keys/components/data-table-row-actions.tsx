@@ -85,9 +85,8 @@ export function DataTableRowActions<TData>({
   const { t } = useTranslation();
   const apiKey = apiKeySchema.parse(row.original);
   const currentUserId = useAuthStore((state) => state.auth.user?.id);
-  const canModify =
-    currentUserId !== undefined && apiKey.created_by === currentUserId;
   const {
+    canManageAllKeys,
     setOpen,
     setCurrentRow,
     triggerRefresh,
@@ -96,6 +95,9 @@ export function DataTableRowActions<TData>({
     resolvedKeys,
     loadingKeys,
   } = useApiKeys();
+  const canModify =
+    canManageAllKeys ||
+    (currentUserId !== undefined && apiKey.created_by === currentUserId);
   const isEnabled = apiKey.status === API_KEY_STATUS.ENABLED;
   const { chatPresets, serverAddress } = useChatPresets();
   const [isTogglingStatus, setIsTogglingStatus] = useState(false);

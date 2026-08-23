@@ -338,10 +338,12 @@ func mutateScope(c *gin.Context) model.TokenScope {
 	return model.OwnerScope(c.GetInt("id"))
 }
 
-// tokenEditScope is deliberately narrower than mutateScope. Administrators may
-// view other people's keys, but only the user recorded in created_by may edit,
-// enable/disable, or delete a key.
+// tokenEditScope allows administrators to manage all keys. Other users may
+// only edit, enable/disable, or delete keys they created themselves.
 func tokenEditScope(c *gin.Context) model.TokenScope {
+	if canManageAllTokens(c) {
+		return model.AllOwnersScope()
+	}
 	return model.CreatorScope(c.GetInt("id"))
 }
 

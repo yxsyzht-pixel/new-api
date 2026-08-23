@@ -44,14 +44,16 @@ export function DataTableBulkActions<TData>({
   table,
 }: DataTableBulkActionsProps<TData>) {
   const { t } = useTranslation();
-  const { resolveRealKeysBatch } = useApiKeys();
+  const { resolveRealKeysBatch, canManageAllKeys } = useApiKeys();
   const currentUserId = useAuthStore((state) => state.auth.user?.id);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const selectedRows = table.getFilteredSelectedRowModel().rows;
-  const hasUnmodifiableSelection = selectedRows.some(
-    (row) => (row.original as ApiKey).created_by !== currentUserId,
-  );
+  const hasUnmodifiableSelection =
+    !canManageAllKeys &&
+    selectedRows.some(
+      (row) => (row.original as ApiKey).created_by !== currentUserId,
+    );
 
   const handleBatchCopy = useCallback(async () => {
     if (selectedRows.length === 0) return;

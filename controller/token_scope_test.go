@@ -77,6 +77,16 @@ func TestMutateScopeIsOwnKeysUnlessPermitted(t *testing.T) {
 	assert.True(t, mutateScope(c).IsAllOwners())
 }
 
+func TestTokenEditScopeAllowsAdminsOrCreators(t *testing.T) {
+	c, _ := scopeContext(common.RoleCommonUser, "")
+	scope := tokenEditScope(c)
+	assert.True(t, scope.IsCreatorScope())
+
+	c, _ = scopeContext(common.RoleRootUser, "")
+	scope = tokenEditScope(c)
+	assert.True(t, scope.IsAllOwners())
+}
+
 // Creating a key on someone else's account is the same privilege.
 func TestNewTokenOwnerRefusesOtherAccountsWithoutPermission(t *testing.T) {
 	c, recorder := scopeContext(common.RoleCommonUser, "")
