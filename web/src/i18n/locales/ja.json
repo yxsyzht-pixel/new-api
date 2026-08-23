@@ -5420,6 +5420,11 @@
     "Record conversations": "会話を記録",
     "Off for keys that drive agents whose traffic is noise in a transcript.": "エージェント用のキーはオフに。記録にとってノイズになります。",
     "Build memory from this key": "このキーから記憶を作る",
-    "Only applies while conversations are being recorded, since a memory is built from the record.": "会話を記録している間のみ有効です。記憶は記録から作られます。"
+    "Only applies while conversations are being recorded, since a memory is built from the record.": "会話を記録している間のみ有効です。記憶は記録から作られます。",
+    "Owner account": "所有アカウント",
+    "Search by username…": "ユーザー名で検索…",
+    "No accounts found": "該当なし",
+    "Searching…": "検索中…",
+    "Create for yourself": "自分のアカウントに作成"
   }
 }

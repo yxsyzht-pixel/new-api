@@ -86,6 +86,7 @@ import {
   ApiKeyGroupCombobox,
   type ApiKeyGroupOption,
 } from "./api-key-group-combobox";
+import { ApiKeyOwnerCombobox } from "./api-key-owner-combobox";
 import { useApiKeys } from "./api-keys-provider";
 import { AutoGroupOrderEditor } from "./auto-group-order-editor";
 
@@ -494,13 +495,11 @@ export function ApiKeysMutateDrawer({
                   name="owner_user_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t("Owner user ID")}</FormLabel>
+                      <FormLabel>{t("Owner account")}</FormLabel>
                       <FormControl>
-                        <Input
-                          {...field}
+                        <ApiKeyOwnerCombobox
                           value={field.value ?? ""}
-                          inputMode="numeric"
-                          placeholder={t("Leave empty to create for yourself")}
+                          onValueChange={field.onChange}
                         />
                       </FormControl>
                       <FormDescription>

@@ -5420,6 +5420,11 @@
     "Record conversations": "记录聊天内容",
     "Off for keys that drive agents whose traffic is noise in a transcript.": "驱动 agent 的密钥可以关掉——它们的流量对聊天记录来说只是噪音。",
     "Build memory from this key": "参与记忆",
-    "Only applies while conversations are being recorded, since a memory is built from the record.": "只在「记录聊天内容」开着时有意义——记忆是从记录里长出来的。"
+    "Only applies while conversations are being recorded, since a memory is built from the record.": "只在「记录聊天内容」开着时有意义——记忆是从记录里长出来的。",
+    "Owner account": "所属用户",
+    "Search by username…": "按用户名搜索…",
+    "No accounts found": "没有匹配的用户",
+    "Searching…": "搜索中…",
+    "Create for yourself": "创建到自己名下"
   }
 }

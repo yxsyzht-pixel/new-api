@@ -5420,6 +5420,11 @@
     "Record conversations": "Record conversations",
     "Off for keys that drive agents whose traffic is noise in a transcript.": "Off for keys that drive agents whose traffic is noise in a transcript.",
     "Build memory from this key": "Build memory from this key",
-    "Only applies while conversations are being recorded, since a memory is built from the record.": "Only applies while conversations are being recorded, since a memory is built from the record."
+    "Only applies while conversations are being recorded, since a memory is built from the record.": "Only applies while conversations are being recorded, since a memory is built from the record.",
+    "Owner account": "Owner account",
+    "Search by username…": "Search by username…",
+    "No accounts found": "No accounts found",
+    "Searching…": "Searching…",
+    "Create for yourself": "Create for yourself"
   }
 }
