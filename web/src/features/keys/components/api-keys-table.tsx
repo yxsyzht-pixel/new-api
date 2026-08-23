@@ -306,7 +306,8 @@ export function ApiKeysTable() {
     columns,
     enableRowSelection: (row) =>
       canManageAllKeys ||
-      (currentUserId !== undefined && row.original.created_by === currentUserId),
+      (currentUserId !== undefined &&
+        row.original.created_by === currentUserId),
     columnFilters,
     initialColumnVisibility: API_KEYS_INITIAL_COLUMN_VISIBILITY,
     columnVisibilityStorageKey: API_KEYS_COLUMN_VISIBILITY_STORAGE_KEY,

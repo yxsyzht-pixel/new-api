@@ -42,10 +42,12 @@ export function getApiKeyFormSchema(
       // The staff number is what joins a key to a person: transcripts are
       // attributed by it and memories are built per person from it. It also
       // becomes a folder name, so it is held to safe characters.
-      staff_id: z.string().refine(
-        (value) => value === "" || /^[A-Za-z0-9_-]{1,64}$/.test(value),
-        t("Letters, digits, _ and - only"),
-      ),
+      staff_id: z
+        .string()
+        .refine(
+          (value) => value === "" || /^[A-Za-z0-9_-]{1,64}$/.test(value),
+          t("Letters, digits, _ and - only"),
+        ),
       owner_user_id: z.string().optional(),
       // Positive in the form because that is how a person reads a switch; the
       // stored field is the negation, so an unset value keeps recording.

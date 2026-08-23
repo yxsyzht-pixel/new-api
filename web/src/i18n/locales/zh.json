@@ -5450,6 +5450,12 @@
     "Nobody matches": "没有匹配的人员",
     "Pick a person": "选择人员",
     "Choose": "选择",
-    "Refresh from HR": "从人事系统刷新"
+    "Refresh from HR": "从人事系统刷新",
+    "Reset Key": "重置密钥",
+    "Resetting…": "重置中…",
+    "Reset this key’s secret?": "重置这个密钥?",
+    "Anything still using the old secret stops working immediately. The key keeps its quota, usage history, staff ID and settings — only the secret changes.": "还在用旧密钥的程序会立即失效。这个密钥的额度、用量记录、工号和各项设置都保留,变的只是密钥本身。",
+    "New key issued": "新密钥已生成",
+    "Copy it now — it is shown once. Everything else about this key is unchanged: quota, usage, staff ID, group and limits.": "现在复制——只显示这一次。这个密钥的其他一切都没变:额度、用量、工号、分组和限制。"
   }
 }

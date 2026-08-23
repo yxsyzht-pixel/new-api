@@ -205,7 +205,9 @@ describe("API key Auto group form mapping", () => {
     expect(userWithoutStaffID.success).toBe(false);
     if (userWithoutStaffID.success) return;
     expect(
-      userWithoutStaffID.error.issues.some((issue) => issue.path[0] === "staff_id"),
+      userWithoutStaffID.error.issues.some(
+        (issue) => issue.path[0] === "staff_id",
+      ),
     ).toBe(true);
 
     // It becomes a folder name and a memory peer name, so it stays plain.

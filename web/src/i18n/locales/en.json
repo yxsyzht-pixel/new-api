@@ -5450,6 +5450,12 @@
     "Nobody matches": "Nobody matches",
     "Pick a person": "Pick a person",
     "Choose": "Choose",
-    "Refresh from HR": "Refresh from HR"
+    "Refresh from HR": "Refresh from HR",
+    "Reset Key": "Reset Key",
+    "Resetting…": "Resetting…",
+    "Reset this key’s secret?": "Reset this key’s secret?",
+    "Anything still using the old secret stops working immediately. The key keeps its quota, usage history, staff ID and settings — only the secret changes.": "Anything still using the old secret stops working immediately. The key keeps its quota, usage history, staff ID and settings — only the secret changes.",
+    "New key issued": "New key issued",
+    "Copy it now — it is shown once. Everything else about this key is unchanged: quota, usage, staff ID, group and limits.": "Copy it now — it is shown once. Everything else about this key is unchanged: quota, usage, staff ID, group and limits."
   }
 }

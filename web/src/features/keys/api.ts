@@ -157,3 +157,13 @@ export async function importApiKeys(
   const res = await api.post("/api/token/import", form);
   return res.data;
 }
+
+// Issue a new secret for an existing key, keeping its quota, usage history and
+// everything else. The replacement is returned once, the same way a newly
+// created key is.
+export async function resetApiKey(
+  id: number,
+): Promise<ApiResponse<{ key: string }>> {
+  const res = await api.post(`/api/token/${id}/reset`, {});
+  return res.data;
+}

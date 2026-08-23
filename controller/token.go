@@ -811,3 +811,38 @@ func GetTokenKeysBatch(c *gin.Context) {
 	}
 	common.ApiSuccess(c, gin.H{"keys": keysMap})
 }
+
+// ResetTokenKey issues a new secret for a key without disturbing anything else
+// about it. Swapping a key used to mean deleting the row and making another,
+// which threw away its usage history and left every log that named it pointing
+// at something gone.
+func ResetTokenKey(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	// The same scope that governs editing: whoever may change a key may change
+	// its secret, and nobody else.
+	token, err := model.GetTokenByIds(id, tokenEditScope(c))
+	if err != nil {
+		common.ApiErrorMsg(c, "找不到这个密钥，或它不归你管理")
+		return
+	}
+
+	key, err := common.GenerateKey()
+	if err != nil {
+		common.SysLog("failed to generate a replacement key: " + err.Error())
+		common.ApiErrorI18n(c, i18n.MsgTokenGenerateFailed)
+		return
+	}
+	if err := token.ResetKey(key, c.GetInt("id")); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	// Shown once, the same way a newly created key is: this is the only moment
+	// the caller can copy it.
+	common.ApiSuccess(c, gin.H{"key": token.GetFullKey()})
+}

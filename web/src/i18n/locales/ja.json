@@ -5446,6 +5446,12 @@
     "Nobody matches": "該当者なし",
     "Pick a person": "担当者を選択",
     "Choose": "選択",
-    "Refresh from HR": "人事から更新"
+    "Refresh from HR": "人事から更新",
+    "Reset Key": "キーを再発行",
+    "Resetting…": "再発行中…",
+    "Reset this key’s secret?": "このキーを再発行しますか?",
+    "Anything still using the old secret stops working immediately. The key keeps its quota, usage history, staff ID and settings — only the secret changes.": "旧キーを使っているものは即座に停止します。枠・使用履歴・社員番号・設定はそのまま、キーだけが変わります。",
+    "New key issued": "新しいキーを発行しました",
+    "Copy it now — it is shown once. Everything else about this key is unchanged: quota, usage, staff ID, group and limits.": "今すぐコピーしてください。表示は一度きりです。他の設定はすべてそのままです。"
   }
 }

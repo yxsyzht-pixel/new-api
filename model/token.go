@@ -582,3 +582,38 @@ func invalidateTokensCache(tokens []Token) error {
 	}
 	return firstErr
 }
+
+// ResetKey issues a new secret for an existing token, leaving everything else
+// as it was — quota, usage, staff number, group, limits. Replacing a key by
+// deleting and recreating loses the usage history and the key's identity in
+// every log that refers to it; this keeps the row and changes only the secret.
+//
+// The old secret stops working the moment this returns: its cache entry is
+// dropped first, so a request already in flight cannot re-cache it afterwards.
+func (token *Token) ResetKey(newKey string, actorId int) error {
+	if token.Id == 0 {
+		return errors.New("id 为空！")
+	}
+	if newKey == "" {
+		return errors.New("新密钥为空！")
+	}
+
+	previous := token.Key
+	if cacheErr := invalidateTokenCacheForMutation(previous); cacheErr != nil {
+		common.SysLog("failed to invalidate token cache before key reset: " + cacheErr.Error())
+	}
+
+	token.Key = newKey
+	token.UpdatedBy = actorId
+	if err := DB.Model(token).Select(commonKeyCol, "updated_by").Updates(token).Error; err != nil {
+		token.Key = previous
+		return err
+	}
+
+	// The row now answers to the new secret; drop the old entry again in case a
+	// reader re-cached it between the first invalidation and the write.
+	if cacheErr := invalidateTokenCacheForMutation(previous); cacheErr != nil {
+		common.SysLog("failed to invalidate token cache after key reset: " + cacheErr.Error())
+	}
+	return nil
+}

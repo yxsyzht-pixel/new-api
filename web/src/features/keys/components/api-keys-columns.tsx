@@ -259,9 +259,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
         return username ? (
           <span className="text-sm">{username}</span>
         ) : (
-          <span className="text-muted-foreground">
-            #{row.original.user_id}
-          </span>
+          <span className="text-muted-foreground">#{row.original.user_id}</span>
         );
       },
       size: 130,

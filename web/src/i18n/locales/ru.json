@@ -5446,6 +5446,12 @@
     "Nobody matches": "Совпадений нет",
     "Pick a person": "Выбор сотрудника",
     "Choose": "Выбрать",
-    "Refresh from HR": "Обновить из HR"
+    "Refresh from HR": "Обновить из HR",
+    "Reset Key": "Сбросить ключ",
+    "Resetting…": "Сброс…",
+    "Reset this key’s secret?": "Сбросить секрет этого ключа?",
+    "Anything still using the old secret stops working immediately. The key keeps its quota, usage history, staff ID and settings — only the secret changes.": "Всё, что использует старый секрет, перестанет работать сразу. Квота, история, табельный номер и настройки сохраняются.",
+    "New key issued": "Новый ключ выпущен",
+    "Copy it now — it is shown once. Everything else about this key is unchanged: quota, usage, staff ID, group and limits.": "Скопируйте сейчас — показывается один раз. Остальное не изменилось."
   }
 }

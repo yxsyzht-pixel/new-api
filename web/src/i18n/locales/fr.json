@@ -5446,6 +5446,12 @@
     "Nobody matches": "Aucune correspondance",
     "Pick a person": "Choisir une personne",
     "Choose": "Choisir",
-    "Refresh from HR": "Actualiser depuis les RH"
+    "Refresh from HR": "Actualiser depuis les RH",
+    "Reset Key": "Réinitialiser la clé",
+    "Resetting…": "Réinitialisation…",
+    "Reset this key’s secret?": "Réinitialiser le secret de cette clé ?",
+    "Anything still using the old secret stops working immediately. The key keeps its quota, usage history, staff ID and settings — only the secret changes.": "Tout ce qui utilise l’ancien secret cesse de fonctionner. Quota, historique, matricule et réglages sont conservés.",
+    "New key issued": "Nouvelle clé émise",
+    "Copy it now — it is shown once. Everything else about this key is unchanged: quota, usage, staff ID, group and limits.": "Copiez-la maintenant — affichée une seule fois. Le reste est inchangé."
   }
 }

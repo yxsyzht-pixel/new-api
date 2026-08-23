@@ -27,6 +27,7 @@ import {
   Copy,
   Link,
   Loader2,
+  RotateCcw,
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -319,6 +320,17 @@ export function DataTableRowActions<TData>({
         {canModify && (
           <>
             <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => {
+                setCurrentRow(apiKey);
+                setOpen("reset");
+              }}
+            >
+              {t("Reset Key")}
+              <DropdownMenuShortcut>
+                <RotateCcw size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
                 setCurrentRow(apiKey);
