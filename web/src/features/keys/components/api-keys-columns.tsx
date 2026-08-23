@@ -160,30 +160,30 @@ export function useApiKeysColumns(
             },
             size: 130,
           } as ColumnDef<ApiKey>,
-          {
-            id: "created_by",
-            accessorKey: "created_by_name",
-            header: t("Created by"),
-            cell: ({ row }) =>
-              renderApiKeyActor(
-                row.original.created_by,
-                row.original.created_by_name,
-              ),
-            size: 130,
-          } as ColumnDef<ApiKey>,
-          {
-            id: "updated_by",
-            accessorKey: "updated_by_name",
-            header: t("Updated by"),
-            cell: ({ row }) =>
-              renderApiKeyActor(
-                row.original.updated_by,
-                row.original.updated_by_name,
-              ),
-            size: 130,
-          } as ColumnDef<ApiKey>,
         ]
       : []),
+    {
+      id: "created_by",
+      accessorKey: "created_by_name",
+      header: t("Created by"),
+      cell: ({ row }) =>
+        renderApiKeyActor(
+          row.original.created_by,
+          row.original.created_by_name,
+        ),
+      size: 130,
+    },
+    {
+      id: "updated_by",
+      accessorKey: "updated_by_name",
+      header: t("Updated by"),
+      cell: ({ row }) =>
+        renderApiKeyActor(
+          row.original.updated_by,
+          row.original.updated_by_name,
+        ),
+      size: 130,
+    },
     {
       accessorKey: "status",
       header: t("Status"),

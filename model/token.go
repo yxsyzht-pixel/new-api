@@ -159,6 +159,19 @@ func sanitizeLikePattern(input string) (string, error) {
 	return input, nil
 }
 
+// sanitizeLikePrefixPattern escapes a user-entered keyword and turns it into
+// a literal prefix search. The trailing wildcard is added by the server so
+// callers cannot change the match direction with LIKE syntax.
+func sanitizeLikePrefixPattern(input string) (string, error) {
+	input = strings.ReplaceAll(input, "!", "!!")
+	input = strings.ReplaceAll(input, `_`, `!_`)
+	input = strings.ReplaceAll(input, `%`, `!%`)
+	if input == "" {
+		return "", errors.New("搜索关键词不能为空")
+	}
+	return input + "%", nil
+}
+
 func validateLikePattern(input string) error {
 	// 1. 连续的 % 直接拒绝
 	if strings.Contains(input, "%%") {
@@ -215,12 +228,13 @@ func SearchUserTokens(scope TokenScope, keyword string, token string, offset int
 
 	// 非空才加 LIKE 条件，空则跳过（不过滤该字段）
 	if keyword != "" {
-		keywordPattern, err := sanitizeLikePattern(keyword)
+		keywordPattern, err := sanitizeLikePrefixPattern(keyword)
 		if err != nil {
 			return nil, 0, err
 		}
-		// 工号和名称一起搜：查询页面既然显示工号，就应该能按工号找人。
-		// 跨账号查看时连用户名一起搜，否则"某个人的所有密钥"无从下手。
+		// 工号和名称一起做开头匹配：查询页面既然显示工号，就应该能
+		// 按工号前缀找人。跨账号查看时连用户名一起搜，否则
+		// "某个人的所有密钥"无从下手。
 		if scope.IsAllOwners() {
 			baseQuery = baseQuery.Where(
 				"name LIKE ? ESCAPE '!' OR staff_id LIKE ? ESCAPE '!'"+

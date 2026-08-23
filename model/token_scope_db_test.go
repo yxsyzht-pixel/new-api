@@ -121,3 +121,22 @@ func TestSearchAcrossAccountsMatchesOwnerName(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), total, "bob reached alice's keys through her username")
 }
+
+func TestSearchUsesPrefixMatchingForKeyword(t *testing.T) {
+	newTokenScopeDB(t)
+
+	found, total, err := SearchUserTokens(AllOwnersScope(), "alice-m", "", 0, 50)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, found, 1)
+	assert.Equal(t, "alice-main", found[0].Name)
+
+	found, total, err = SearchUserTokens(AllOwnersScope(), "A0", "", 0, 50)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	assert.Len(t, found, 2)
+
+	_, total, err = SearchUserTokens(AllOwnersScope(), "main", "", 0, 50)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), total, "keyword matching should start at the beginning")
+}

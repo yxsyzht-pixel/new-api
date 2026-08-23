@@ -313,7 +313,7 @@ export function ApiKeysTable() {
       skeletonKeyPrefix="api-keys-skeleton"
       applyHeaderSize
       toolbarProps={{
-        searchPlaceholder: t("Filter by name..."),
+        searchPlaceholder: t("Filter by name or staff ID prefix..."),
         searchDebounceMs: 500,
         additionalSearch: (
           <>
