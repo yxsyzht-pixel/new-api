@@ -119,3 +119,33 @@ func TestRegularUserMustChooseStaffID(t *testing.T) {
 	c.Set("role", common.RoleRootUser)
 	assert.True(t, requireStaffDirectorySelection(c, ""))
 }
+
+// The directory holds current employees only. A staff number therefore stays on
+// a key long after its owner has left, and re-checking it on every edit would
+// make that key unmaintainable — what gets refused is the quota or the name,
+// not the number nobody was touching.
+func TestAnUnchangedStaffIDIsNotRecheckedAgainstTheDirectory(t *testing.T) {
+	// The rule is a comparison, so it is checked as one: same number in and
+	// out means no lookup, a different number means a lookup.
+	cases := []struct {
+		name     string
+		stored   string
+		incoming string
+		checked  bool
+	}{
+		{"untouched", "10018037", "10018037", false},
+		{"untouched, differently spaced", "10018037", "  10018037  ", false},
+		{"changed to someone else", "10018037", "10050277", true},
+		{"cleared", "10018037", "", true},
+		{"set on a key that had none", "", "10018037", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			needsCheck := canonicalStaffID(tc.incoming) != canonicalStaffID(tc.stored)
+			if needsCheck != tc.checked {
+				t.Errorf("stored %q, incoming %q: directory lookup = %v, want %v",
+					tc.stored, tc.incoming, needsCheck, tc.checked)
+			}
+		})
+	}
+}

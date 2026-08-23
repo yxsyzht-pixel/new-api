@@ -721,8 +721,16 @@ func UpdateToken(c *gin.Context) {
 	} else {
 		// If you add more fields, please also update token.Update()
 		requestedStaffID := canonicalStaffID(token.StaffId)
-		if !requireStaffDirectorySelection(c, requestedStaffID) {
-			return
+		// The directory holds current employees only, so a staff number stays
+		// valid on a key long after its owner has left. Checking it on every
+		// edit would make a departed person's key unmaintainable — the change
+		// being refused would be the quota or the name, not the number. Only a
+		// staff number that is actually being changed has to be one you could
+		// pick today.
+		if requestedStaffID != canonicalStaffID(cleanToken.StaffId) {
+			if !requireStaffDirectorySelection(c, requestedStaffID) {
+				return
+			}
 		}
 		staffID, _, err := prepareTokenStaffID(requestedStaffID, cleanToken.Id)
 		if err != nil {
