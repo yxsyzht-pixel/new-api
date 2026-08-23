@@ -47,6 +47,10 @@ type tokenResponse struct {
 	// Username is the owner's, filled in only for listings that can span more
 	// than one account.
 	Username string `json:"username,omitempty"`
+	// CreatedByName and UpdatedByName name the person at the keyboard, which is
+	// not the owner once an administrator can create a key on another account.
+	CreatedByName string `json:"created_by_name,omitempty"`
+	UpdatedByName string `json:"updated_by_name,omitempty"`
 }
 
 func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
@@ -71,13 +75,21 @@ func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
 func withOwnerNames(tokens []*model.Token) []*tokenResponse {
 	responses := buildMaskedTokenResponses(tokens)
 
-	ids := make([]int, 0, len(responses))
-	seen := make(map[int]bool, len(responses))
-	for _, response := range responses {
-		if response.Token != nil && !seen[response.Token.UserId] {
-			seen[response.Token.UserId] = true
-			ids = append(ids, response.Token.UserId)
+	ids := make([]int, 0, len(responses)*3)
+	seen := make(map[int]bool, len(responses)*3)
+	note := func(id int) {
+		if id != 0 && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
 		}
+	}
+	for _, response := range responses {
+		if response.Token == nil {
+			continue
+		}
+		note(response.Token.UserId)
+		note(response.Token.CreatedBy)
+		note(response.Token.UpdatedBy)
 	}
 	if len(ids) == 0 {
 		return responses
@@ -88,9 +100,12 @@ func withOwnerNames(tokens []*model.Token) []*tokenResponse {
 		return responses
 	}
 	for _, response := range responses {
-		if response.Token != nil {
-			response.Username = names[response.Token.UserId]
+		if response.Token == nil {
+			continue
 		}
+		response.Username = names[response.Token.UserId]
+		response.CreatedByName = names[response.Token.CreatedBy]
+		response.UpdatedByName = names[response.Token.UpdatedBy]
 	}
 	return responses
 }
@@ -501,6 +516,8 @@ func AddToken(c *gin.Context) {
 	}
 	cleanToken := model.Token{
 		UserId:             ownerId,
+		CreatedBy:          c.GetInt("id"),
+		UpdatedBy:          c.GetInt("id"),
 		Name:               token.Name,
 		StaffId:            token.StaffId,
 		SkipChatRecord:     token.SkipChatRecord && canManageAllTokens(c),
@@ -617,6 +634,7 @@ func UpdateToken(c *gin.Context) {
 			}
 		}
 	}
+	cleanToken.UpdatedBy = c.GetInt("id")
 	err = cleanToken.Update()
 	if err != nil {
 		common.ApiError(c, err)

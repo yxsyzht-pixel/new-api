@@ -47,10 +47,19 @@ import {
 } from "./api-keys-cells";
 import { DataTableRowActions } from "./data-table-row-actions";
 
+function renderApiKeyActor(id?: number | null, name?: string | null) {
+  if (!id || id <= 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  return <span className="text-sm">{name || `#${id}`}</span>;
+}
+
 function getQuotaProgressColor(percentage: number): string {
   if (percentage <= 10) return "[&_[data-slot=progress-indicator]]:bg-rose-500";
-  if (percentage <= 30)
+  if (percentage <= 30) {
     return "[&_[data-slot=progress-indicator]]:bg-amber-500";
+  }
   return "[&_[data-slot=progress-indicator]]:bg-emerald-500";
 }
 
@@ -149,6 +158,28 @@ export function useApiKeysColumns(
                 </span>
               );
             },
+            size: 130,
+          } as ColumnDef<ApiKey>,
+          {
+            id: "created_by",
+            accessorKey: "created_by_name",
+            header: t("Created by"),
+            cell: ({ row }) =>
+              renderApiKeyActor(
+                row.original.created_by,
+                row.original.created_by_name,
+              ),
+            size: 130,
+          } as ColumnDef<ApiKey>,
+          {
+            id: "updated_by",
+            accessorKey: "updated_by_name",
+            header: t("Updated by"),
+            cell: ({ row }) =>
+              renderApiKeyActor(
+                row.original.updated_by,
+                row.original.updated_by_name,
+              ),
             size: 130,
           } as ColumnDef<ApiKey>,
         ]

@@ -30,6 +30,10 @@ export const apiKeySchema = z.object({
   skip_memory: z.boolean().nullish().default(false),
   user_id: z.number().optional(),
   username: z.string().nullish().default(""),
+  created_by: z.number().optional(),
+  updated_by: z.number().optional(),
+  created_by_name: z.string().nullish(),
+  updated_by_name: z.string().nullish(),
   key: z.string(),
   status: z.number(), // 1: enabled, 2: disabled, 3: expired, 4: exhausted
   remain_quota: z.number(),

@@ -34,6 +34,9 @@ var sheetColumns = []string{
 	"unlimited_quota", "remain_quota", "used_quota",
 	"expired_time", "allow_ips", "model_limits_enabled", "model_limits",
 	"owner_user_id", "owner_username",
+	// Read-only on the way back in: who made a key and who last touched it is
+	// something the gateway observes, not something a spreadsheet asserts.
+	"created_by", "updated_by",
 }
 
 // ExportTokens writes the caller's keys — or everyone's, for a caller allowed
@@ -122,17 +125,24 @@ func tokenSheetRow(token *model.Token, owners map[int]string) []string {
 		token.ModelLimits,
 		strconv.Itoa(token.UserId),
 		owners[token.UserId],
+		owners[token.CreatedBy],
+		owners[token.UpdatedBy],
 	}
 }
 
 func ownerNamesFor(tokens []*model.Token) map[int]string {
-	ids := make([]int, 0, len(tokens))
-	seen := make(map[int]bool, len(tokens))
-	for _, token := range tokens {
-		if !seen[token.UserId] {
-			seen[token.UserId] = true
-			ids = append(ids, token.UserId)
+	ids := make([]int, 0, len(tokens)*3)
+	seen := make(map[int]bool, len(tokens)*3)
+	note := func(id int) {
+		if id != 0 && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
 		}
+	}
+	for _, token := range tokens {
+		note(token.UserId)
+		note(token.CreatedBy)
+		note(token.UpdatedBy)
 	}
 	names, err := model.GetUsernamesByIds(ids)
 	if err != nil {
@@ -332,6 +342,7 @@ func applySheetRow(c *gin.Context, scope model.TokenScope, columns map[string]in
 		token.ModelLimits = value
 	}
 
+	token.UpdatedBy = c.GetInt("id")
 	return token.Update()
 }
 

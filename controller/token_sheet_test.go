@@ -20,8 +20,9 @@ func TestExportedRowKeepsLeadingZeros(t *testing.T) {
 		Status: 1, SkipChatRecord: true, SkipMemory: true,
 		UnlimitedQuota: false, RemainQuota: 500, UsedQuota: 120,
 		ExpiredTime: -1, AllowIps: &allowIps, UserId: 42,
+		CreatedBy: 8, UpdatedBy: 9,
 	}
-	row := tokenSheetRow(token, map[int]string{42: "renli"})
+	row := tokenSheetRow(token, map[int]string{42: "renli", 8: "creator", 9: "editor"})
 
 	require.Len(t, row, len(sheetColumns))
 	byName := map[string]string{}
@@ -34,6 +35,8 @@ func TestExportedRowKeepsLeadingZeros(t *testing.T) {
 	assert.Equal(t, "true", byName["skip_memory"])
 	assert.Equal(t, "never", byName["expired_time"], "never-expires must say so, not read as -1 or blank")
 	assert.Equal(t, "renli", byName["owner_username"])
+	assert.Equal(t, "creator", byName["created_by"])
+	assert.Equal(t, "editor", byName["updated_by"])
 }
 
 // The header row is the contract, but a file saved through another tool can

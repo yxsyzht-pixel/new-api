@@ -5366,6 +5366,8 @@
     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.",
     "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed",
     "Owner": "Owner",
+    "Created by": "Created by",
+    "Updated by": "Updated by",
     "Owner user ID": "Owner user ID",
     "Leave empty to create for yourself": "Leave empty to create for yourself",
     "Creates the key on another user’s account.": "Creates the key on another user’s account.",

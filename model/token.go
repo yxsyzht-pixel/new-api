@@ -23,8 +23,14 @@ type Token struct {
 	// from an older cache, a context key nobody set, a row written before these
 	// columns existed — every one of those must keep recording rather than
 	// silently stop. Only a deliberate true turns something off.
-	SkipChatRecord     bool           `json:"skip_chat_record" gorm:"default:false"`
-	SkipMemory         bool           `json:"skip_memory" gorm:"default:false"`
+	SkipChatRecord bool `json:"skip_chat_record" gorm:"default:false"`
+	SkipMemory     bool `json:"skip_memory" gorm:"default:false"`
+	// CreatedBy and UpdatedBy record the person at the keyboard, which stopped
+	// being the same as UserId once an administrator could create a key on
+	// somebody else's account. Zero means "written before this was recorded" —
+	// shown as unknown rather than guessed at.
+	CreatedBy          int            `json:"created_by" gorm:"index;default:0"`
+	UpdatedBy          int            `json:"updated_by" gorm:"default:0"`
 	CreatedTime        int64          `json:"created_time" gorm:"bigint"`
 	AccessedTime       int64          `json:"accessed_time" gorm:"bigint"`
 	ExpiredTime        int64          `json:"expired_time" gorm:"bigint;default:-1"` // -1 means never expired
@@ -332,7 +338,7 @@ func (token *Token) Update() (err error) {
 	if cacheErr := invalidateTokenCacheForMutation(token.Key); cacheErr != nil {
 		common.SysLog("failed to invalidate token cache before update: " + cacheErr.Error())
 	}
-	return DB.Model(token).Select("name", "staff_id", "skip_chat_record", "skip_memory", "status", "expired_time",
+	return DB.Model(token).Select("name", "staff_id", "skip_chat_record", "skip_memory", "updated_by", "status", "expired_time",
 		"remain_quota", "unlimited_quota", "model_limits_enabled", "model_limits", "allow_ips", "group",
 		"cross_group_retry", "auto_groups").Updates(token).Error
 }

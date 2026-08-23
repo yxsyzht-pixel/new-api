@@ -5366,6 +5366,8 @@
     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "等待写入的记录会把请求和回复留在内存里。数据库卡住时,就靠这个上限拦住队列吃掉网关的内存——超过就丢记录。",
     "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{dropped}} dropped · {{failed}} failed": "写入进程运行中 · 队列 {{queued}}/{{capacity}} · 占用 {{heldMb}} MB · 已写入 {{written}} · 已丢弃 {{dropped}} · 失败 {{failed}}",
     "Owner": "所属用户",
+    "Created by": "创建人",
+    "Updated by": "最后修改人",
     "Owner user ID": "所属用户 ID",
     "Leave empty to create for yourself": "留空则创建到自己名下",
     "Creates the key on another user’s account.": "把密钥创建到别的用户名下。",
