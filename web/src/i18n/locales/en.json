@@ -5425,6 +5425,13 @@
     "Search by username…": "Search by username…",
     "No accounts found": "No accounts found",
     "Searching…": "Searching…",
-    "Create for yourself": "Create for yourself"
+    "Create for yourself": "Create for yourself",
+    "Export": "Export",
+    "Exporting…": "Exporting…",
+    "Import": "Import",
+    "Importing…": "Importing…",
+    "Import failed": "Import failed",
+    "Updated {{updated}} keys": "Updated {{updated}} keys",
+    "Updated {{updated}}, skipped {{skipped}}": "Updated {{updated}}, skipped {{skipped}}"
   }
 }

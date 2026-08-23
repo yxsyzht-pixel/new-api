@@ -1,0 +1,81 @@
+package controller
+
+import (
+	"testing"
+	"time"
+
+	"github.com/QuantumNous/new-api/model"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// A staff number like "0010" is the reason this is a spreadsheet and not a CSV:
+// a general-format cell turns it into 10, and the key comes back pointing at
+// nobody. Every cell the export writes is text.
+func TestExportedRowKeepsLeadingZeros(t *testing.T) {
+	allowIps := "10.0.0.0/8"
+	token := &model.Token{
+		Id: 7, StaffId: "0010", Name: "夜班机器人", Group: "default",
+		Status: 1, SkipChatRecord: true, SkipMemory: true,
+		UnlimitedQuota: false, RemainQuota: 500, UsedQuota: 120,
+		ExpiredTime: -1, AllowIps: &allowIps, UserId: 42,
+	}
+	row := tokenSheetRow(token, map[int]string{42: "renli"})
+
+	require.Len(t, row, len(sheetColumns))
+	byName := map[string]string{}
+	for i, name := range sheetColumns {
+		byName[name] = row[i]
+	}
+
+	assert.Equal(t, "0010", byName["staff_id"], "the staff number lost its leading zeros")
+	assert.Equal(t, "true", byName["skip_chat_record"])
+	assert.Equal(t, "true", byName["skip_memory"])
+	assert.Equal(t, "", byName["expired_time"], "never-expires should read as blank, not -1")
+	assert.Equal(t, "renli", byName["owner_username"])
+}
+
+// The header row is the contract, but a file saved through another tool can
+// lose it. Falling back to the export's own column order keeps such a file
+// usable instead of silently misreading every column.
+func TestHeaderFallsBackToExportOrder(t *testing.T) {
+	named := headerPositions([]string{"id", "staff_id", "name"})
+	assert.Equal(t, 1, named["staff_id"])
+
+	headerless := headerPositions([]string{"7", "0010", "夜班机器人"})
+	for index, name := range sheetColumns {
+		assert.Equal(t, index, headerless[name], "column %q fell in the wrong place", name)
+	}
+}
+
+func TestSheetBoolsAcceptWhatPeopleActuallyType(t *testing.T) {
+	for _, yes := range []string{"true", "TRUE", "1", "yes", "是", "开"} {
+		got, err := parseSheetBool(yes)
+		require.NoError(t, err, "%q was refused", yes)
+		assert.True(t, got, "%q should read as on", yes)
+	}
+	for _, no := range []string{"false", "0", "no", "否", ""} {
+		got, err := parseSheetBool(no)
+		require.NoError(t, err, "%q was refused", no)
+		assert.False(t, got, "%q should read as off", no)
+	}
+	if _, err := parseSheetBool("大概吧"); err == nil {
+		t.Error("an unreadable value must be reported, not guessed at")
+	}
+}
+
+func TestSheetTimeRoundTripsAndTreatsBlankAsNever(t *testing.T) {
+	never, err := parseSheetTime("")
+	require.NoError(t, err)
+	assert.Equal(t, int64(-1), never, "a blank cell means never expires")
+
+	moment := time.Date(2026, 8, 23, 15, 4, 5, 0, time.Local)
+	parsed, err := parseSheetTime(moment.Format("2006-01-02 15:04:05"))
+	require.NoError(t, err)
+	assert.Equal(t, moment.Unix(), parsed)
+
+	if _, err := parseSheetTime("下周三"); err == nil {
+		t.Error("an unreadable date must be reported")
+	}
+}

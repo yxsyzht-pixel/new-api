@@ -5425,6 +5425,13 @@
     "Search by username…": "ユーザー名で検索…",
     "No accounts found": "該当なし",
     "Searching…": "検索中…",
-    "Create for yourself": "自分のアカウントに作成"
+    "Create for yourself": "自分のアカウントに作成",
+    "Export": "エクスポート",
+    "Exporting…": "エクスポート中…",
+    "Import": "インポート",
+    "Importing…": "インポート中…",
+    "Import failed": "インポート失敗",
+    "Updated {{updated}} keys": "{{updated}} 件を更新",
+    "Updated {{updated}}, skipped {{skipped}}": "{{updated}} 件更新、{{skipped}} 件スキップ"
   }
 }

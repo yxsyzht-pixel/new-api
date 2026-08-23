@@ -5425,6 +5425,13 @@
     "Search by username…": "Rechercher par nom…",
     "No accounts found": "Aucun compte trouvé",
     "Searching…": "Recherche…",
-    "Create for yourself": "Créer pour vous-même"
+    "Create for yourself": "Créer pour vous-même",
+    "Export": "Exporter",
+    "Exporting…": "Export en cours…",
+    "Import": "Importer",
+    "Importing…": "Import en cours…",
+    "Import failed": "Échec de l’import",
+    "Updated {{updated}} keys": "{{updated}} clés mises à jour",
+    "Updated {{updated}}, skipped {{skipped}}": "{{updated}} mises à jour, {{skipped}} ignorées"
   }
 }

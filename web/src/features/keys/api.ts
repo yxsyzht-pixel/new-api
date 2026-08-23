@@ -26,6 +26,7 @@ import type {
   SearchApiKeysParams,
   ApiKeyFormData,
   TokenAutoGroupsConfig,
+  ApiKeyScope,
 } from "./types";
 
 // ============================================================================
@@ -129,5 +130,30 @@ export async function fetchTokenKeysBatch(ids: number[]): Promise<{
   data?: { keys: Record<number, string> };
 }> {
   const res = await api.post("/api/token/batch/keys", { ids });
+  return res.data;
+}
+
+// Keys are maintained in bulk more often than one at a time. The spreadsheet
+// carries the same columns both ways, so an export can be edited and sent back.
+export async function exportApiKeys(scope?: ApiKeyScope): Promise<Blob> {
+  const query = scope !== undefined ? `?user_id=${scope}` : "";
+  const res = await api.get(`/api/token/export${query}`, {
+    responseType: "blob",
+  });
+  return res.data as Blob;
+}
+
+export interface ImportApiKeysResult {
+  updated: number;
+  skipped: number;
+  problems: string[];
+}
+
+export async function importApiKeys(
+  file: File,
+): Promise<ApiResponse<ImportApiKeysResult>> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await api.post("/api/token/import", form);
   return res.data;
 }

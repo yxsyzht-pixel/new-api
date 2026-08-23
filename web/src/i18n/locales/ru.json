@@ -5425,6 +5425,13 @@
     "Search by username…": "Поиск по имени…",
     "No accounts found": "Ничего не найдено",
     "Searching…": "Поиск…",
-    "Create for yourself": "Создать себе"
+    "Create for yourself": "Создать себе",
+    "Export": "Экспорт",
+    "Exporting…": "Экспорт…",
+    "Import": "Импорт",
+    "Importing…": "Импорт…",
+    "Import failed": "Импорт не удался",
+    "Updated {{updated}} keys": "Обновлено ключей: {{updated}}",
+    "Updated {{updated}}, skipped {{skipped}}": "Обновлено {{updated}}, пропущено {{skipped}}"
   }
 }

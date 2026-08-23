@@ -5425,6 +5425,13 @@
     "Search by username…": "按用户名搜索…",
     "No accounts found": "没有匹配的用户",
     "Searching…": "搜索中…",
-    "Create for yourself": "创建到自己名下"
+    "Create for yourself": "创建到自己名下",
+    "Export": "导出 Excel",
+    "Exporting…": "导出中…",
+    "Import": "导入 Excel",
+    "Importing…": "导入中…",
+    "Import failed": "导入失败",
+    "Updated {{updated}} keys": "已更新 {{updated}} 个密钥",
+    "Updated {{updated}}, skipped {{skipped}}": "已更新 {{updated}} 个,跳过 {{skipped}} 个"
   }
 }
