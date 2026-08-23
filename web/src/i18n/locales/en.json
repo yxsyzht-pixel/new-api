@@ -5430,6 +5430,23 @@
     "Importing…": "Importing…",
     "Import failed": "Import failed",
     "Updated {{updated}} keys": "Updated {{updated}} keys",
-    "Updated {{updated}}, skipped {{skipped}}": "Updated {{updated}}, skipped {{skipped}}"
+    "Updated {{updated}}, skipped {{skipped}}": "Updated {{updated}}, skipped {{skipped}}",
+    "Staff directory": "Staff directory",
+    "Pick staff IDs from the directory": "Pick staff IDs from the directory",
+    "A staff ID decides whose transcript a conversation joins and whose memory it becomes. Reading the company directory turns that field into a choice instead of something typed from memory.": "A staff ID decides whose transcript a conversation joins and whose memory it becomes. Reading the company directory turns that field into a choice instead of something typed from memory.",
+    "Data service address": "Data service address",
+    "Leave empty to keep the stored one.": "Leave empty to keep the stored one.",
+    "Test and refresh now": "Test and refresh now",
+    "Refreshing…": "Refreshing…",
+    "Directory refreshed: {{total}} people": "Directory refreshed: {{total}} people",
+    "Refuse unknown staff IDs": "Refuse unknown staff IDs",
+    "Anyone granted “Type a staff ID freehand” can still write one the directory does not list.": "Anyone granted “Type a staff ID freehand” can still write one the directory does not list.",
+    "Cache the directory for (minutes)": "Cache the directory for (minutes)",
+    "The list is fetched once and searched locally, so a picker does not put HR behind a text box.": "The list is fetched once and searched locally, so a picker does not put HR behind a text box.",
+    "Save directory settings": "Save directory settings",
+    "Pick from the staff directory": "Pick from the staff directory",
+    "Search by staff ID, name or department…": "Search by staff ID, name or department…",
+    "Nobody matches": "Nobody matches",
+    "Use \"{{value}}\"": "Use \"{{value}}\""
   }
 }

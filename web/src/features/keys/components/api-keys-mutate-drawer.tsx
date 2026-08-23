@@ -87,6 +87,7 @@ import {
   type ApiKeyGroupOption,
 } from "./api-key-group-combobox";
 import { ApiKeyOwnerCombobox } from "./api-key-owner-combobox";
+import { ApiKeyStaffCombobox } from "./api-key-staff-combobox";
 import { useApiKeys } from "./api-keys-provider";
 import { AutoGroupOrderEditor } from "./auto-group-order-editor";
 
@@ -413,10 +414,9 @@ export function ApiKeysMutateDrawer({
                   <FormItem>
                     <FormLabel>{t("Staff ID")}</FormLabel>
                     <FormControl>
-                      <Input
-                        {...field}
+                      <ApiKeyStaffCombobox
                         value={field.value ?? ""}
-                        placeholder={t("Enter a staff ID")}
+                        onValueChange={field.onChange}
                       />
                     </FormControl>
                     <FormDescription>

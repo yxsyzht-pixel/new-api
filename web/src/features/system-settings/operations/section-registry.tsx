@@ -25,6 +25,7 @@ import { PerformanceSection } from "../maintenance/performance-section";
 import { UpdateCheckerSection } from "../maintenance/update-checker-section";
 import type { OperationsSettings } from "../types";
 import { ChatRecordSection } from "./chat-record-section";
+import { StaffDirectorySection } from "./staff-directory-section";
 
 import { createSectionRegistry } from "../utils/section-registry";
 
@@ -182,6 +183,25 @@ const OPERATIONS_SECTIONS = [
             settings["chat_record_setting.max_queued_bytes"],
             64 * 1024 * 1024,
           ),
+        }}
+      />
+    ),
+  },
+  {
+    id: "staff-directory",
+    titleKey: "Staff directory",
+    build: (settings: OperationsSettings) => (
+      <StaffDirectorySection
+        defaultValues={{
+          enabled: settings["staff_directory_setting.enabled"] ?? false,
+          baseUrl:
+            settings["staff_directory_setting.base_url"] ??
+            "https://datas.vyxsy.com",
+          appId: settings["staff_directory_setting.app_id"] ?? "",
+          appSecret: "",
+          cacheMinutes: settings["staff_directory_setting.cache_minutes"] ?? 30,
+          requireDirectory:
+            settings["staff_directory_setting.require_directory"] ?? true,
         }}
       />
     ),

@@ -5430,6 +5430,23 @@
     "Importing…": "导入中…",
     "Import failed": "导入失败",
     "Updated {{updated}} keys": "已更新 {{updated}} 个密钥",
-    "Updated {{updated}}, skipped {{skipped}}": "已更新 {{updated}} 个,跳过 {{skipped}} 个"
+    "Updated {{updated}}, skipped {{skipped}}": "已更新 {{updated}} 个,跳过 {{skipped}} 个",
+    "Staff directory": "人事目录",
+    "Pick staff IDs from the directory": "工号从人事目录里选",
+    "A staff ID decides whose transcript a conversation joins and whose memory it becomes. Reading the company directory turns that field into a choice instead of something typed from memory.": "工号决定一段对话归到谁的记录、变成谁的记忆。接上公司人事目录后,这个字段就从「凭印象打」变成「从列表里选」。",
+    "Data service address": "数据服务地址",
+    "Leave empty to keep the stored one.": "留空则不修改。",
+    "Test and refresh now": "测试并立即刷新",
+    "Refreshing…": "刷新中…",
+    "Directory refreshed: {{total}} people": "已刷新,共 {{total}} 人",
+    "Refuse unknown staff IDs": "拒绝目录里没有的工号",
+    "Anyone granted “Type a staff ID freehand” can still write one the directory does not list.": "被授予「手动填写工号」权限的人仍然可以填目录里没有的。",
+    "Cache the directory for (minutes)": "目录缓存时长(分钟)",
+    "The list is fetched once and searched locally, so a picker does not put HR behind a text box.": "名单只拉一次,之后在本地搜索——否则选择器每敲一个字都要打一次人事接口。",
+    "Save directory settings": "保存人事目录设置",
+    "Pick from the staff directory": "从人事目录选择",
+    "Search by staff ID, name or department…": "按工号、姓名或部门搜索…",
+    "Nobody matches": "没有匹配的人员",
+    "Use \"{{value}}\"": "使用「{{value}}」"
   }
 }

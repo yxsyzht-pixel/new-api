@@ -5430,6 +5430,23 @@
     "Importing…": "Import en cours…",
     "Import failed": "Échec de l’import",
     "Updated {{updated}} keys": "{{updated}} clés mises à jour",
-    "Updated {{updated}}, skipped {{skipped}}": "{{updated}} mises à jour, {{skipped}} ignorées"
+    "Updated {{updated}}, skipped {{skipped}}": "{{updated}} mises à jour, {{skipped}} ignorées",
+    "Staff directory": "Annuaire du personnel",
+    "Pick staff IDs from the directory": "Choisir les matricules dans l’annuaire",
+    "A staff ID decides whose transcript a conversation joins and whose memory it becomes. Reading the company directory turns that field into a choice instead of something typed from memory.": "Le matricule détermine à qui appartient une conversation et sa mémoire. L’annuaire transforme la saisie en choix.",
+    "Data service address": "Adresse du service de données",
+    "Leave empty to keep the stored one.": "Laissez vide pour conserver.",
+    "Test and refresh now": "Tester et actualiser",
+    "Refreshing…": "Actualisation…",
+    "Directory refreshed: {{total}} people": "Actualisé : {{total}} personnes",
+    "Refuse unknown staff IDs": "Refuser les matricules inconnus",
+    "Anyone granted “Type a staff ID freehand” can still write one the directory does not list.": "Ceux qui ont le droit de saisie libre peuvent toujours en écrire un.",
+    "Cache the directory for (minutes)": "Durée du cache (minutes)",
+    "The list is fetched once and searched locally, so a picker does not put HR behind a text box.": "La liste est chargée une fois puis filtrée localement.",
+    "Save directory settings": "Enregistrer",
+    "Pick from the staff directory": "Choisir dans l’annuaire",
+    "Search by staff ID, name or department…": "Rechercher par matricule, nom ou service…",
+    "Nobody matches": "Aucune correspondance",
+    "Use \"{{value}}\"": "Utiliser « {{value}} »"
   }
 }

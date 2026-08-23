@@ -94,7 +94,8 @@ func GetOptions(c *gin.Context) {
 			// redacted description from /api/option/chat_record/status instead
 			k == "chat_record_setting.dsn" ||
 			k == "chat_record_setting.password" ||
-			k == "chat_record_setting.memory_api_key"
+			k == "chat_record_setting.memory_api_key" ||
+			k == "staff_directory_setting.app_secret"
 		if isSensitiveKey {
 			continue
 		}

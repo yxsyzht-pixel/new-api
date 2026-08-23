@@ -1,11 +1,13 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -13,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
+	"github.com/QuantumNous/new-api/service/staffdir"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
@@ -110,6 +113,41 @@ func canManageAllTokens(c *gin.Context) bool {
 // name under the attachment root and a peer name in the memory store, so it is
 // held to characters that are safe in both.
 var staffIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// canWriteFreeformStaffID asks whether this caller may enter a staff number the
+// company directory does not list.
+func canWriteFreeformStaffID(c *gin.Context) bool {
+	return authz.Can(c.GetInt("id"), c.GetInt("role"), authz.TokenStaffIDFreeform)
+}
+
+// requireKnownStaffID checks a staff number against the company directory.
+// Picking from the directory is the normal path; this is the backstop that
+// makes the page's picker a rule rather than a convenience.
+func requireKnownStaffID(c *gin.Context, staffID string) bool {
+	if !staffdir.Configured() || !operation_setting.GetStaffDirectorySetting().RequireDirectory {
+		return true
+	}
+	if canWriteFreeformStaffID(c) {
+		return true
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+	defer cancel()
+	person, known, err := staffdir.Lookup(ctx, staffID)
+	if err != nil {
+		// Refusing here blocks key creation while HR is unreachable, which is
+		// visible and temporary. Letting it through would file a conversation
+		// under a staff number nobody checked, which is neither.
+		common.ApiErrorMsg(c, "暂时无法校验工号（人事目录读取失败："+err.Error()+"）")
+		return false
+	}
+	if !known {
+		common.ApiErrorMsg(c, "工号 "+staffID+" 不在人事目录里，请从列表中选择")
+		return false
+	}
+	_ = person
+	return true
+}
 
 // requireStaffID enforces that every key names the person it belongs to.
 // Without it a transcript cannot be attributed and a memory cannot be built:
@@ -414,6 +452,9 @@ func AddToken(c *gin.Context) {
 		return
 	}
 	token.StaffId = strings.TrimSpace(token.StaffId)
+	if !requireKnownStaffID(c, token.StaffId) {
+		return
+	}
 	ownerId, ok := newTokenOwner(c, token.UserId)
 	if !ok {
 		return
@@ -548,6 +589,9 @@ func UpdateToken(c *gin.Context) {
 			return
 		}
 		cleanToken.Name = token.Name
+		if !requireKnownStaffID(c, strings.TrimSpace(token.StaffId)) {
+			return
+		}
 		cleanToken.StaffId = strings.TrimSpace(token.StaffId)
 		// Opting a key out of the transcript is a key-manager's decision. For
 		// anyone else the stored values stand, whatever the request carried —

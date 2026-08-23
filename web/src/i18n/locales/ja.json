@@ -5430,6 +5430,23 @@
     "Importing…": "インポート中…",
     "Import failed": "インポート失敗",
     "Updated {{updated}} keys": "{{updated}} 件を更新",
-    "Updated {{updated}}, skipped {{skipped}}": "{{updated}} 件更新、{{skipped}} 件スキップ"
+    "Updated {{updated}}, skipped {{skipped}}": "{{updated}} 件更新、{{skipped}} 件スキップ",
+    "Staff directory": "人事ディレクトリ",
+    "Pick staff IDs from the directory": "社員番号をディレクトリから選ぶ",
+    "A staff ID decides whose transcript a conversation joins and whose memory it becomes. Reading the company directory turns that field into a choice instead of something typed from memory.": "社員番号は会話が誰の記録・誰の記憶になるかを決めます。人事ディレクトリを読むことで、この項目は入力ではなく選択になります。",
+    "Data service address": "データサービスのアドレス",
+    "Leave empty to keep the stored one.": "空欄なら変更しません。",
+    "Test and refresh now": "テストして今すぐ更新",
+    "Refreshing…": "更新中…",
+    "Directory refreshed: {{total}} people": "更新しました:{{total}} 名",
+    "Refuse unknown staff IDs": "ディレクトリにない社員番号を拒否",
+    "Anyone granted “Type a staff ID freehand” can still write one the directory does not list.": "「社員番号を手入力」権限を持つ人は引き続き自由に入力できます。",
+    "Cache the directory for (minutes)": "ディレクトリのキャッシュ時間(分)",
+    "The list is fetched once and searched locally, so a picker does not put HR behind a text box.": "名簿は一度だけ取得しローカルで検索します。",
+    "Save directory settings": "設定を保存",
+    "Pick from the staff directory": "人事ディレクトリから選択",
+    "Search by staff ID, name or department…": "社員番号・氏名・部署で検索…",
+    "Nobody matches": "該当者なし",
+    "Use \"{{value}}\"": "「{{value}}」を使う"
   }
 }

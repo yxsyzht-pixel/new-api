@@ -5430,6 +5430,23 @@
     "Importing…": "Импорт…",
     "Import failed": "Импорт не удался",
     "Updated {{updated}} keys": "Обновлено ключей: {{updated}}",
-    "Updated {{updated}}, skipped {{skipped}}": "Обновлено {{updated}}, пропущено {{skipped}}"
+    "Updated {{updated}}, skipped {{skipped}}": "Обновлено {{updated}}, пропущено {{skipped}}",
+    "Staff directory": "Кадровый справочник",
+    "Pick staff IDs from the directory": "Выбирать табельные номера из справочника",
+    "A staff ID decides whose transcript a conversation joins and whose memory it becomes. Reading the company directory turns that field into a choice instead of something typed from memory.": "Табельный номер решает, чьей записью и чьей памятью станет разговор. Справочник превращает ввод в выбор.",
+    "Data service address": "Адрес сервиса данных",
+    "Leave empty to keep the stored one.": "Пусто — не менять.",
+    "Test and refresh now": "Проверить и обновить",
+    "Refreshing…": "Обновление…",
+    "Directory refreshed: {{total}} people": "Обновлено: {{total}} чел.",
+    "Refuse unknown staff IDs": "Отклонять неизвестные номера",
+    "Anyone granted “Type a staff ID freehand” can still write one the directory does not list.": "Тем, кому выдано право ручного ввода, это по-прежнему доступно.",
+    "Cache the directory for (minutes)": "Кэшировать справочник (мин.)",
+    "The list is fetched once and searched locally, so a picker does not put HR behind a text box.": "Список загружается один раз и ищется локально.",
+    "Save directory settings": "Сохранить настройки",
+    "Pick from the staff directory": "Выбрать из справочника",
+    "Search by staff ID, name or department…": "Поиск по номеру, имени или отделу…",
+    "Nobody matches": "Совпадений нет",
+    "Use \"{{value}}\"": "Использовать «{{value}}»"
   }
 }
