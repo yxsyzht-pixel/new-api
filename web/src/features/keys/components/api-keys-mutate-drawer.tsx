@@ -271,6 +271,9 @@ export function ApiKeysMutateDrawer({
     isUpdate && currentRow ? `update:${currentRow.id}` : "create";
   const isFormInitialized = initializedTarget === formTarget;
   const selectedGroup = form.watch("group");
+  const selectedStaffID = form.watch("staff_id");
+  const staffDirectorySelectionLocked =
+    !staffFreeform && Boolean(selectedStaffID?.trim());
 
   // Correct group after groups load: if the form value is not in available groups, fall back
   useEffect(() => {
@@ -436,6 +439,9 @@ export function ApiKeysMutateDrawer({
                             }
                           />
                         </FormControl>
+                        <FormDescription>
+                          {t("Leave empty to auto-generate LS + 6 digits")}
+                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -458,8 +464,10 @@ export function ApiKeysMutateDrawer({
                       <FormControl>
                         <Input
                           {...field}
-                          readOnly={!staffFreeform}
-                          className={cn(!staffFreeform && "bg-muted/50")}
+                          readOnly={staffDirectorySelectionLocked}
+                          className={cn(
+                            staffDirectorySelectionLocked && "bg-muted/50",
+                          )}
                           placeholder={t("Enter a name")}
                         />
                       </FormControl>

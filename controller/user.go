@@ -296,10 +296,16 @@ func Register(c *gin.Context) {
 			return
 		}
 		// 生成默认令牌
+		staffID, err := generateUniqueStaffID()
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
 		token := model.Token{
 			UserId:             insertedUser.Id, // 使用插入后的用户ID
 			CreatedBy:          insertedUser.Id,
 			UpdatedBy:          insertedUser.Id,
+			StaffId:            staffID,
 			Name:               cleanUser.Username + "的初始令牌",
 			Key:                key,
 			CreatedTime:        common.GetTimestamp(),

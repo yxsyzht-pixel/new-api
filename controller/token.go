@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -20,6 +21,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type tokenAutoGroupsInput struct {
@@ -164,20 +166,104 @@ func requireKnownStaffID(c *gin.Context, staffID string) bool {
 	return true
 }
 
-// requireStaffID enforces that every key names the person it belongs to.
-// Without it a transcript cannot be attributed and a memory cannot be built:
-// the staff number is the only thing joining a key to a human being.
-func requireStaffID(c *gin.Context, staffID string) bool {
-	staffID = strings.TrimSpace(staffID)
+// validateStaffIDFormat enforces the safe shape used by transcript folders and
+// memory peers. Empty is handled separately because new keys may receive an
+// automatically generated LS-prefixed ID.
+func validateStaffIDFormat(staffID string) error {
 	if staffID == "" {
-		common.ApiErrorMsg(c, "请填写工号")
-		return false
+		return errors.New("请填写工号")
 	}
 	if !staffIDPattern.MatchString(staffID) {
-		common.ApiErrorMsg(c, "工号只能包含字母、数字、下划线和连字符，最长 64 位")
+		return errors.New("工号只能包含字母、数字、下划线和连字符，最长 64 位")
+	}
+	return nil
+}
+
+// requireStaffID keeps the legacy request-level validation for callers that
+// explicitly require a manually supplied staff ID. New token saves use
+// prepareTokenStaffID instead so an empty field can be generated.
+func requireStaffID(c *gin.Context, staffID string) bool {
+	if err := validateStaffIDFormat(canonicalStaffID(staffID)); err != nil {
+		common.ApiError(c, err)
 		return false
 	}
 	return true
+}
+
+func canonicalStaffID(staffID string) string {
+	return strings.TrimSpace(staffID)
+}
+
+const (
+	autoStaffIDPrefix   = "LS"
+	autoStaffIDSuffix   = 6
+	autoStaffIDAttempts = 32
+)
+
+func generateUniqueStaffID() (string, error) {
+	for attempt := 0; attempt < autoStaffIDAttempts; attempt++ {
+		staffID := fmt.Sprintf("%s%0*d", autoStaffIDPrefix, autoStaffIDSuffix, common.GetRandomInt(1_000_000))
+		_, err := model.GetTokenByStaffId(staffID, 0)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return staffID, nil
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	return "", errors.New("无法自动生成唯一工号，请稍后重试")
+}
+
+func tokenOwnerLabel(userID int) string {
+	user, err := model.GetUserById(userID, false)
+	if err != nil {
+		return fmt.Sprintf("用户 ID %d", userID)
+	}
+
+	name := strings.TrimSpace(user.DisplayName)
+	username := strings.TrimSpace(user.Username)
+	switch {
+	case name != "" && username != "" && name != username:
+		return fmt.Sprintf("%s（%s）", name, username)
+	case name != "":
+		return name
+	case username != "":
+		return username
+	default:
+		return fmt.Sprintf("用户 ID %d", userID)
+	}
+}
+
+func validateUniqueStaffID(staffID string, excludeTokenID int) error {
+	token, err := model.GetTokenByStaffId(staffID, excludeTokenID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("工号 %s 已在用户 %s（ID: %d）下使用，不能重复", staffID, tokenOwnerLabel(token.UserId), token.UserId)
+}
+
+// prepareTokenStaffID trims, generates when empty, validates the format, and
+// rejects duplicates. generated is true for synthetic IDs so callers can skip
+// company-directory validation for them.
+func prepareTokenStaffID(requested string, excludeTokenID int) (staffID string, generated bool, err error) {
+	staffID = canonicalStaffID(requested)
+	if staffID == "" {
+		staffID, err = generateUniqueStaffID()
+		if err != nil {
+			return "", false, err
+		}
+		generated = true
+	}
+	if err = validateStaffIDFormat(staffID); err != nil {
+		return "", false, err
+	}
+	if err = validateUniqueStaffID(staffID, excludeTokenID); err != nil {
+		return "", false, err
+	}
+	return staffID, generated, nil
 }
 
 // newTokenOwner decides whose account a new key lands on. Left unset it is the
@@ -463,11 +549,13 @@ func AddToken(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
 	}
-	if !requireStaffID(c, token.StaffId) {
+	staffID, generated, err := prepareTokenStaffID(token.StaffId, 0)
+	if err != nil {
+		common.ApiError(c, err)
 		return
 	}
-	token.StaffId = strings.TrimSpace(token.StaffId)
-	if !requireKnownStaffID(c, token.StaffId) {
+	token.StaffId = staffID
+	if !generated && !requireKnownStaffID(c, token.StaffId) {
 		return
 	}
 	ownerId, ok := newTokenOwner(c, token.UserId)
@@ -602,14 +690,16 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.Status = token.Status
 	} else {
 		// If you add more fields, please also update token.Update()
-		if !requireStaffID(c, token.StaffId) {
+		staffID, generated, err := prepareTokenStaffID(token.StaffId, cleanToken.Id)
+		if err != nil {
+			common.ApiError(c, err)
 			return
 		}
 		cleanToken.Name = token.Name
-		if !requireKnownStaffID(c, strings.TrimSpace(token.StaffId)) {
+		if !generated && !requireKnownStaffID(c, staffID) {
 			return
 		}
-		cleanToken.StaffId = strings.TrimSpace(token.StaffId)
+		cleanToken.StaffId = staffID
 		// Opting a key out of the transcript is a key-manager's decision. For
 		// anyone else the stored values stand, whatever the request carried —
 		// hiding the switches in the page is not a control.

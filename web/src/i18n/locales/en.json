@@ -5361,6 +5361,7 @@
     "Writer running · {{queued}}/{{capacity}} queued · {{written}} written · {{dropped}} dropped · {{failed}} failed": "Writer running · {{queued}}/{{capacity}} queued · {{written}} written · {{dropped}} dropped · {{failed}} failed",
     "Writer stopped": "Writer stopped",
     "Staff ID": "Staff ID",
+    "Leave empty to auto-generate LS + 6 digits": "Leave empty to auto-generate LS + 6 digits",
     "Enter a staff ID": "Enter a staff ID",
     "Memory ceiling for the queue (MB)": "Memory ceiling for the queue (MB)",
     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.",

@@ -124,6 +124,20 @@ func GetAllUserTokens(scope TokenScope, startIdx int, num int) ([]*Token, error)
 	return tokens, err
 }
 
+// GetTokenByStaffId returns the first active token using staffID, excluding
+// excludeID when updating an existing token. An empty staff ID is never
+// considered a conflict because legacy tokens may still carry one.
+func GetTokenByStaffId(staffID string, excludeID int) (*Token, error) {
+	query := DB.Where("staff_id = ?", staffID)
+	if excludeID > 0 {
+		query = query.Where("id <> ?", excludeID)
+	}
+
+	token := &Token{}
+	err := query.Order("id asc").First(token).Error
+	return token, err
+}
+
 // sanitizeLikePattern 校验并清洗用户输入的 LIKE 搜索模式。
 // 规则：
 //  1. 转义 ! 和 _（使用 ! 作为 ESCAPE 字符，兼容 MySQL/PostgreSQL/SQLite）

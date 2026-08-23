@@ -5361,6 +5361,7 @@
     "Writer running · {{queued}}/{{capacity}} queued · {{written}} written · {{dropped}} dropped · {{failed}} failed": "写入进程运行中 · 队列 {{queued}}/{{capacity}} · 已写入 {{written}} · 已丢弃 {{dropped}} · 失败 {{failed}}",
     "Writer stopped": "写入进程未运行",
     "Staff ID": "工号",
+    "Leave empty to auto-generate LS + 6 digits": "留空则自动生成 LS 加 6 位数字",
     "Enter a staff ID": "请输入工号",
     "Memory ceiling for the queue (MB)": "队列内存上限(MB)",
     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.": "等待写入的记录会把请求和回复留在内存里。数据库卡住时,就靠这个上限拦住队列吃掉网关的内存——超过就丢记录。",

@@ -283,8 +283,9 @@ func applySheetRow(c *gin.Context, scope model.TokenScope, columns map[string]in
 	}
 
 	if staffID, ok := filledCell(columns, row, "staff_id"); ok {
-		if !staffIDPattern.MatchString(staffID) {
-			return fmt.Errorf("工号 %q 只能包含字母、数字、下划线和连字符，最长 64 位", staffID)
+		staffID, _, err = prepareTokenStaffID(staffID, token.Id)
+		if err != nil {
+			return err
 		}
 		token.StaffId = staffID
 	}
