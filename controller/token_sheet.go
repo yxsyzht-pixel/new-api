@@ -94,7 +94,10 @@ func ExportTokens(c *gin.Context) {
 const exportRowLimit = 10000
 
 func tokenSheetRow(token *model.Token, owners map[int]string) []string {
-	expires := ""
+	// Written out in full rather than left blank: an empty cell now means
+	// "leave this alone" on the way back in, so a key with no expiry has to say
+	// so explicitly for the round trip to be faithful.
+	expires := "never"
 	if token.ExpiredTime > 0 {
 		expires = time.Unix(token.ExpiredTime, 0).Format("2006-01-02 15:04:05")
 	}
@@ -237,16 +240,25 @@ func isBlankRow(row []string) bool {
 	return true
 }
 
-func cellAt(columns map[string]int, row []string, name string) (string, bool) {
+// filledCell reads a cell, reporting false when the column is absent from the
+// sheet or the cell is empty. Both mean the same thing on the way in: leave
+// this field alone.
+//
+// An empty cell must never clear a value. A sheet is edited by hand across
+// hundreds of rows, and blanking a column by accident — or exporting through a
+// tool that drops one — would otherwise wipe that field on every key at once.
+// Clearing a field stays a deliberate act, done in the page.
+func filledCell(columns map[string]int, row []string, name string) (string, bool) {
 	index, ok := columns[name]
 	if !ok || index >= len(row) {
 		return "", false
 	}
-	return strings.TrimSpace(row[index]), true
+	value := strings.TrimSpace(row[index])
+	return value, value != ""
 }
 
 func applySheetRow(c *gin.Context, scope model.TokenScope, columns map[string]int, row []string) error {
-	raw, ok := cellAt(columns, row, "id")
+	raw, ok := filledCell(columns, row, "id")
 	if !ok || raw == "" {
 		return fmt.Errorf("没有 id，无法定位要更新的密钥")
 	}
@@ -260,25 +272,22 @@ func applySheetRow(c *gin.Context, scope model.TokenScope, columns map[string]in
 		return fmt.Errorf("找不到 id=%d 的密钥，或它不属于你", id)
 	}
 
-	if staffID, ok := cellAt(columns, row, "staff_id"); ok {
+	if staffID, ok := filledCell(columns, row, "staff_id"); ok {
 		if !staffIDPattern.MatchString(staffID) {
 			return fmt.Errorf("工号 %q 只能包含字母、数字、下划线和连字符，最长 64 位", staffID)
 		}
 		token.StaffId = staffID
 	}
-	if name, ok := cellAt(columns, row, "name"); ok {
-		if name == "" {
-			return fmt.Errorf("名称不能为空")
-		}
+	if name, ok := filledCell(columns, row, "name"); ok {
 		if len(name) > 50 {
 			return fmt.Errorf("名称超过 50 字")
 		}
 		token.Name = name
 	}
-	if group, ok := cellAt(columns, row, "group"); ok {
+	if group, ok := filledCell(columns, row, "group"); ok {
 		token.Group = group
 	}
-	if value, ok := cellAt(columns, row, "status"); ok && value != "" {
+	if value, ok := filledCell(columns, row, "status"); ok {
 		status, err := strconv.Atoi(value)
 		if err != nil {
 			return fmt.Errorf("状态 %q 不是数字", value)
@@ -294,7 +303,7 @@ func applySheetRow(c *gin.Context, scope model.TokenScope, columns map[string]in
 		{"unlimited_quota", &token.UnlimitedQuota},
 		{"model_limits_enabled", &token.ModelLimitsEnabled},
 	} {
-		if value, ok := cellAt(columns, row, flag.column); ok && value != "" {
+		if value, ok := filledCell(columns, row, flag.column); ok {
 			parsed, err := parseSheetBool(value)
 			if err != nil {
 				return fmt.Errorf("%s 的值 %q 无法识别（用 true/false）", flag.column, value)
@@ -302,24 +311,24 @@ func applySheetRow(c *gin.Context, scope model.TokenScope, columns map[string]in
 			*flag.target = parsed
 		}
 	}
-	if value, ok := cellAt(columns, row, "remain_quota"); ok && value != "" {
+	if value, ok := filledCell(columns, row, "remain_quota"); ok {
 		quota, err := strconv.Atoi(value)
 		if err != nil {
 			return fmt.Errorf("剩余额度 %q 不是数字", value)
 		}
 		token.RemainQuota = quota
 	}
-	if value, ok := cellAt(columns, row, "expired_time"); ok {
+	if value, ok := filledCell(columns, row, "expired_time"); ok {
 		expires, err := parseSheetTime(value)
 		if err != nil {
 			return err
 		}
 		token.ExpiredTime = expires
 	}
-	if value, ok := cellAt(columns, row, "allow_ips"); ok {
+	if value, ok := filledCell(columns, row, "allow_ips"); ok {
 		token.AllowIps = &value
 	}
-	if value, ok := cellAt(columns, row, "model_limits"); ok {
+	if value, ok := filledCell(columns, row, "model_limits"); ok {
 		token.ModelLimits = value
 	}
 
@@ -338,10 +347,12 @@ func parseSheetBool(value string) (bool, error) {
 	return false, fmt.Errorf("unrecognised")
 }
 
-// parseSheetTime reads the format the export writes, and treats an empty cell
-// as "never expires".
+// parseSheetTime reads the format the export writes. "never" (or the dash the
+// export writes for it) sets no expiry; an empty cell never reaches here,
+// because empty means "leave this alone".
 func parseSheetTime(value string) (int64, error) {
-	if value == "" {
+	switch strings.ToLower(value) {
+	case "never", "永不过期", "-":
 		return -1, nil
 	}
 	for _, layout := range []string{"2006-01-02 15:04:05", "2006/01/02 15:04:05", "2006-01-02", "2006/01/02"} {

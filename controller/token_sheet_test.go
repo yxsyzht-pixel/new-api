@@ -32,7 +32,7 @@ func TestExportedRowKeepsLeadingZeros(t *testing.T) {
 	assert.Equal(t, "0010", byName["staff_id"], "the staff number lost its leading zeros")
 	assert.Equal(t, "true", byName["skip_chat_record"])
 	assert.Equal(t, "true", byName["skip_memory"])
-	assert.Equal(t, "", byName["expired_time"], "never-expires should read as blank, not -1")
+	assert.Equal(t, "never", byName["expired_time"], "never-expires must say so, not read as -1 or blank")
 	assert.Equal(t, "renli", byName["owner_username"])
 }
 
@@ -65,10 +65,12 @@ func TestSheetBoolsAcceptWhatPeopleActuallyType(t *testing.T) {
 	}
 }
 
-func TestSheetTimeRoundTripsAndTreatsBlankAsNever(t *testing.T) {
-	never, err := parseSheetTime("")
-	require.NoError(t, err)
-	assert.Equal(t, int64(-1), never, "a blank cell means never expires")
+func TestSheetTimeRoundTrips(t *testing.T) {
+	for _, spelling := range []string{"never", "NEVER", "-", "永不过期"} {
+		never, err := parseSheetTime(spelling)
+		require.NoError(t, err, "%q was refused", spelling)
+		assert.Equal(t, int64(-1), never)
+	}
 
 	moment := time.Date(2026, 8, 23, 15, 4, 5, 0, time.Local)
 	parsed, err := parseSheetTime(moment.Format("2006-01-02 15:04:05"))
@@ -77,5 +79,29 @@ func TestSheetTimeRoundTripsAndTreatsBlankAsNever(t *testing.T) {
 
 	if _, err := parseSheetTime("下周三"); err == nil {
 		t.Error("an unreadable date must be reported")
+	}
+}
+
+// A sheet is edited by hand across hundreds of rows. Leaving a cell blank — or
+// exporting through a tool that drops a column — must never wipe that field on
+// every key at once, so blank means "leave this alone" everywhere.
+func TestBlankCellsAndMissingColumnsChangeNothing(t *testing.T) {
+	columns := headerPositions([]string{"id", "staff_id", "group", "allow_ips"})
+	row := []string{"7", "", "", ""}
+
+	for _, name := range []string{"staff_id", "group", "allow_ips"} {
+		if _, ok := filledCell(columns, row, name); ok {
+			t.Errorf("a blank %q cell was read as a value to write", name)
+		}
+	}
+	// A column the sheet does not carry at all is the same answer.
+	for _, name := range []string{"name", "expired_time", "skip_memory", "remain_quota"} {
+		if _, ok := filledCell(columns, row, name); ok {
+			t.Errorf("the missing column %q was read as a value to write", name)
+		}
+	}
+	// A filled cell still comes through.
+	if value, ok := filledCell(columns, row, "id"); !ok || value != "7" {
+		t.Errorf("id = %q, %v; want 7, true", value, ok)
 	}
 }
