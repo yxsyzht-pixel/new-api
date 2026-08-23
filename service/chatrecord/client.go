@@ -32,6 +32,10 @@ type ClientInfo struct {
 	// better than inferring them from the text.
 	TurnID    string
 	SessionID string
+	// Agent names the agent behind the request when the client says which one.
+	// Codex names its subagents ("guardian"); Hermes sends nothing at all, so
+	// for it this stays the client name.
+	Agent string
 }
 
 // Declared reports whether the client accounted for itself at all.
@@ -52,6 +56,10 @@ func DetectClient(body []byte) ClientInfo {
 			RequestKind:  meta.Get("request_kind").String(),
 			TurnID:       meta.Get("turn_id").String(),
 			SessionID:    meta.Get("session_id").String(),
+			Agent:        meta.Get("subagent_kind").String(),
+		}
+		if info.Agent == "" {
+			info.Agent = "codex"
 		}
 		if info.SessionID == "" {
 			info.SessionID = gjson.GetBytes(body, "prompt_cache_key").String()

@@ -30,6 +30,9 @@ import (
 // MemoryTurn is one exchange on its way to the memory store.
 type MemoryTurn struct {
 	StaffID   string
+	TokenName string
+	UserID    int
+	Agent     string
 	Session   string
 	Spoken    string
 	Reply     string
@@ -145,10 +148,17 @@ func (m *memoryQueue) deliver(ctx context.Context, turn MemoryTurn) {
 		return
 	}
 
+	fields := operation_setting.PeerFields{
+		StaffID:   turn.StaffID,
+		TokenName: turn.TokenName,
+		UserID:    turn.UserID,
+		Agent:     turn.Agent,
+		Model:     turn.Model,
+	}
 	person := sanitizePeer(operation_setting.MemoryPeerName(
-		cfg.MemoryPeerTemplateOrDefault(), turn.StaffID))
+		cfg.MemoryPeerTemplateOrDefault(), fields))
 	assistant := sanitizePeer(operation_setting.MemoryPeerName(
-		cfg.MemoryAssistantPeerOrDefault(), turn.StaffID))
+		cfg.MemoryAssistantPeerOrDefault(), fields))
 	if person == "" {
 		return
 	}

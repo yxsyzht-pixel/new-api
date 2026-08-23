@@ -277,8 +277,15 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	// person speaking, and only when the key names whose person it is. It has
 	// its own queue: a slow memory store loses memories, never transcripts.
 	if cfg.MemoryReady() && EligibleForMemory(verdict, turn.StaffID, cfg.MemoryMinCharsOrDefault()) {
+		agent := client.Agent
+		if agent == "" {
+			agent = "assistant"
+		}
 		SubmitMemory(MemoryTurn{
 			StaffID:   turn.StaffID,
+			TokenName: turn.TokenName,
+			UserID:    turn.UserID,
+			Agent:     agent,
 			Session:   MemorySessionName(cfg.MemorySessionMode, turn.StaffID, conversation),
 			Spoken:    verdict.HumanText,
 			Reply:     assistantReply,

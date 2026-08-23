@@ -5411,6 +5411,13 @@
     "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.": "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.",
     "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.": "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.",
     "Also profile the assistant": "Also profile the assistant",
-    "Off by default. Leaving it on costs a second inference for every reply, to build a picture of something that is not a person.": "Off by default. Leaving it on costs a second inference for every reply, to build a picture of something that is not a person."
+    "Off by default. Leaving it on costs a second inference for every reply, to build a picture of something that is not a person.": "Off by default. Leaving it on costs a second inference for every reply, to build a picture of something that is not a person.",
+    "Staff ID + key name": "Staff ID + key name",
+    "Key name": "Key name",
+    "Agent, per person": "Agent, per person",
+    "Agent, shared": "Agent, shared",
+    "Fixed name, per person": "Fixed name, per person",
+    "Whose memory this is. Available: {staff_id}, {token_name}, {user_id}, {agent}, {model}.": "Whose memory this is. Available: {staff_id}, {token_name}, {user_id}, {agent}, {model}.",
+    "Where the model’s replies go, so they read as context rather than facts about the person. {agent} is the agent the client named — Codex reports its subagents, Hermes reports nothing and falls back to “assistant”. Keeping {staff_id} in it stops one shared peer collecting a representation inside every person’s session.": "Where the model’s replies go, so they read as context rather than facts about the person. {agent} is the agent the client named — Codex reports its subagents, Hermes reports nothing and falls back to “assistant”. Keeping {staff_id} in it stops one shared peer collecting a representation inside every person’s session."
   }
 }

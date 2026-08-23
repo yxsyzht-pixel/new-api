@@ -156,7 +156,7 @@ func TestPeerNamesAreResolvedPerPerson(t *testing.T) {
 		{"assistant", "10018037", "assistant"},
 	}
 	for _, tc := range cases {
-		if got := operation_setting.MemoryPeerName(tc.template, tc.staffID); got != tc.want {
+		if got := operation_setting.MemoryPeerName(tc.template, operation_setting.PeerFields{StaffID: tc.staffID}); got != tc.want {
 			t.Errorf("MemoryPeerName(%q, %q) = %q, want %q", tc.template, tc.staffID, got, tc.want)
 		}
 	}

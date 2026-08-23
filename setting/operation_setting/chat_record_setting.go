@@ -3,6 +3,7 @@ package operation_setting
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/setting/config"
@@ -120,7 +121,7 @@ var chatRecordSetting = ChatRecordSetting{
 	StoreFiles:          true,
 	MemoryWorkspace:     "yxsy",
 	MemoryPeerTemplate:  "{staff_id}",
-	MemoryAssistantPeer: "newapi-{staff_id}",
+	MemoryAssistantPeer: "{agent}-{staff_id}",
 	MemorySessionMode:   "person",
 	MemoryMinChars:      4,
 	MemoryQueueSize:     2048,
@@ -256,13 +257,31 @@ func (s *ChatRecordSetting) MemoryWorkspaceOrDefault() string {
 	return "yxsy"
 }
 
-// MemoryPeerName resolves a peer template for one staff number.
-func MemoryPeerName(template, staffID string) string {
+// PeerFields are the values a peer-name template may draw on. Which of them
+// identifies a person is a question only the operator can answer: a staff
+// number does it in one company, a key name in another.
+type PeerFields struct {
+	StaffID   string
+	TokenName string
+	UserID    int
+	Agent     string
+	Model     string
+}
+
+// MemoryPeerName fills a peer-name template.
+func MemoryPeerName(template string, fields PeerFields) string {
 	template = strings.TrimSpace(template)
 	if template == "" {
-		return staffID
+		return fields.StaffID
 	}
-	return strings.ReplaceAll(template, "{staff_id}", staffID)
+	replacer := strings.NewReplacer(
+		"{staff_id}", fields.StaffID,
+		"{token_name}", fields.TokenName,
+		"{user_id}", strconv.Itoa(fields.UserID),
+		"{agent}", fields.Agent,
+		"{model}", fields.Model,
+	)
+	return replacer.Replace(template)
 }
 
 func (s *ChatRecordSetting) MemoryPeerTemplateOrDefault() string {
@@ -276,7 +295,7 @@ func (s *ChatRecordSetting) MemoryAssistantPeerOrDefault() string {
 	if v := strings.TrimSpace(s.MemoryAssistantPeer); v != "" {
 		return v
 	}
-	return "newapi-{staff_id}"
+	return "{agent}-{staff_id}"
 }
 
 func (s *ChatRecordSetting) MemoryMinCharsOrDefault() int {

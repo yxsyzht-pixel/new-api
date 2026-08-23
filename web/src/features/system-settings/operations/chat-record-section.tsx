@@ -95,6 +95,34 @@ export type ChatRecordDefaults = Values;
 
 const SSL_MODES = ["disable", "require", "verify-ca", "verify-full"] as const;
 
+// The templates decide who a memory belongs to, which is the one thing about
+// this feature that cannot be guessed from the outside: a staff number
+// identifies a person in one company, a key name in another. The presets are
+// there so the common answers need no documentation; the field stays editable
+// because the uncommon ones exist too.
+function PeerPreset({
+  options,
+  onPick,
+}: {
+  options: { value: string; label: string }[];
+  onPick: (value: string) => void;
+}) {
+  return (
+    <Select onValueChange={(value) => onPick(String(value))}>
+      <SelectTrigger className="w-full sm:w-56">
+        <SelectValue placeholder="选择常用取值…" />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function ChatRecordSection({
   defaultValues,
 }: {
@@ -646,13 +674,27 @@ export function ChatRecordSection({
               name="memoryPeerTemplate"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t("Person peer name")}</FormLabel>
+                  <FormLabel>peerName</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="{staff_id}" />
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input {...field} placeholder="{staff_id}" />
+                      <PeerPreset
+                        onPick={field.onChange}
+                        options={[
+                          { value: "{staff_id}", label: t("Staff ID") },
+                          { value: "{token_name}", label: t("Key name") },
+                          { value: "{user_id}", label: t("User ID") },
+                          {
+                            value: "{staff_id}-{token_name}",
+                            label: t("Staff ID + key name"),
+                          },
+                        ]}
+                      />
+                    </div>
                   </FormControl>
                   <FormDescription>
                     {t(
-                      "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.",
+                      "Whose memory this is. Available: {staff_id}, {token_name}, {user_id}, {agent}, {model}.",
                     )}
                   </FormDescription>
                   <FormMessage />
@@ -664,13 +706,29 @@ export function ChatRecordSection({
               name="memoryAssistantPeer"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t("Assistant peer name")}</FormLabel>
+                  <FormLabel>aiPeer</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="newapi-{staff_id}" />
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input {...field} placeholder="{agent}-{staff_id}" />
+                      <PeerPreset
+                        onPick={field.onChange}
+                        options={[
+                          {
+                            value: "{agent}-{staff_id}",
+                            label: t("Agent, per person"),
+                          },
+                          { value: "{agent}", label: t("Agent, shared") },
+                          {
+                            value: "newapi-{staff_id}",
+                            label: t("Fixed name, per person"),
+                          },
+                        ]}
+                      />
+                    </div>
                   </FormControl>
                   <FormDescription>
                     {t(
-                      "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.",
+                      "Where the model’s replies go, so they read as context rather than facts about the person. {agent} is the agent the client named — Codex reports its subagents, Hermes reports nothing and falls back to “assistant”. Keeping {staff_id} in it stops one shared peer collecting a representation inside every person’s session.",
                     )}
                   </FormDescription>
                   <FormMessage />

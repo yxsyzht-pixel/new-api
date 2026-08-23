@@ -170,7 +170,7 @@ const OPERATIONS_SECTIONS = [
             "{staff_id}",
           memoryAssistantPeer:
             settings["chat_record_setting.memory_assistant_peer"] ??
-            "newapi-{staff_id}",
+            "{agent}-{staff_id}",
           memoryObserveAssistant:
             settings["chat_record_setting.memory_observe_assistant"] ?? false,
           memorySessionMode:

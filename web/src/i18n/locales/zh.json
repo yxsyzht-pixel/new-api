@@ -5411,6 +5411,13 @@
     "Whose memory this is. {staff_id} becomes the staff ID of the key that sent the message.": "这份记忆算在谁头上。{staff_id} 会替换成发消息那个密钥的工号。",
     "The model’s replies are filed here, so they read as context instead of becoming facts about the person. Keep {staff_id} in it: one shared assistant would collect a representation inside every person’s session and answer peer-level questions from everybody’s conversations at once.": "模型的回复挂在这里,只作为上下文参与,不会变成关于这个人的事实。**保留 {staff_id}**:共用一个助手 peer 的话,它会在每个人的会话里各建一份表征,而且 peer 级查询会把所有人的对话混在一起答。",
     "Also profile the assistant": "也给助手建表征",
-    "Off by default. Leaving it on costs a second inference for every reply, to build a picture of something that is not a person.": "默认关闭。开着的话每条回复都要多跑一次推理,只为给一个「不是人」的东西画像。"
+    "Off by default. Leaving it on costs a second inference for every reply, to build a picture of something that is not a person.": "默认关闭。开着的话每条回复都要多跑一次推理,只为给一个「不是人」的东西画像。",
+    "Staff ID + key name": "工号 + 密钥名称",
+    "Key name": "密钥名称",
+    "Agent, per person": "agent 名称,按人分开",
+    "Agent, shared": "agent 名称,共用",
+    "Fixed name, per person": "固定名称,按人分开",
+    "Whose memory this is. Available: {staff_id}, {token_name}, {user_id}, {agent}, {model}.": "这份记忆算在谁头上。可用变量:{staff_id}(工号)、{token_name}(密钥名称)、{user_id}、{agent}、{model}。",
+    "Where the model’s replies go, so they read as context rather than facts about the person. {agent} is the agent the client named — Codex reports its subagents, Hermes reports nothing and falls back to “assistant”. Keeping {staff_id} in it stops one shared peer collecting a representation inside every person’s session.": "模型的回复挂在哪里——只作上下文,不会变成关于这个人的事实。{agent} 是客户端自报的 agent 名:Codex 会报它的子 agent(如 guardian),**Hermes 什么都不报**,回退成 assistant。保留 {staff_id} 可以避免共用一个 peer 在每个人的会话里各建一份表征。"
   }
 }
