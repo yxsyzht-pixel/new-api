@@ -41,23 +41,51 @@ type MemoryTurn struct {
 	CreatedAt time.Time
 }
 
+// memoryQueue is what the package submits through. It owns nothing that a
+// generation of workers owns — only the running generation and the totals,
+// which have to outlive any single one of them so the status page keeps
+// counting across a settings change.
 type memoryQueue struct {
 	mu      sync.Mutex
-	queue   chan MemoryTurn
-	cancel  context.CancelFunc
-	address string
-
-	// silenced remembers which assistants have already been quietened, so the
-	// extra call happens once per session instead of once per turn. It belongs
-	// to the queue rather than to the package: stopping the writer, or aiming
-	// it at another store, has to forget what it knew, or the new store keeps
-	// deriving a picture of the assistant that nobody ever asked it to stop.
-	silenced sync.Map
-	marks    atomic.Int64
+	current atomic.Pointer[memoryWriter]
 
 	Sent    atomic.Int64
 	Dropped atomic.Int64
 	Failed  atomic.Int64
+}
+
+// memoryWriter is one generation of delivery: a queue, the workers draining it,
+// and the accounting that only makes sense for them. Everything here is thrown
+// away together when the operator changes the store — which is the point.
+// Sharing the byte counter across generations is how the transcript writer once
+// managed to drive its own budget negative.
+type memoryWriter struct {
+	// shape is every setting that decides what this generation *is*. Anything
+	// left out of it is a setting the operator can change with no effect until
+	// the process restarts — the queue length and the worker count were both
+	// in that position.
+	shape  string
+	queue  chan MemoryTurn
+	cancel context.CancelFunc
+	budget int64
+
+	// held is the memory the queued turns are keeping alive.
+	held atomic.Int64
+
+	// running tracks this generation's workers, so StopMemory can promise they
+	// are gone rather than merely told to go.
+	running sync.WaitGroup
+
+	// silenced remembers which assistants have already been quietened, so the
+	// extra call happens once per session instead of once per turn. It belongs
+	// to the generation: a store that has just been pointed somewhere else has
+	// quietened nobody, and carrying the marks over would leave every assistant
+	// observed — an inference per reply, describing something that is not a
+	// person.
+	silenced sync.Map
+	marks    atomic.Int64
+
+	totals *memoryQueue
 }
 
 // silencedCap bounds that map. In "conversation" mode the session names follow
@@ -69,17 +97,22 @@ const silencedCap = 20000
 // forgetSilenced empties the map in place. Ranging and deleting rather than
 // assigning a fresh sync.Map: workers may be reading it right now, and a
 // sync.Map is safe to share but not to overwrite.
-func (m *memoryQueue) forgetSilenced() {
-	m.silenced.Range(func(key, _ any) bool {
-		m.silenced.Delete(key)
+func (w *memoryWriter) forgetSilenced() {
+	w.silenced.Range(func(key, _ any) bool {
+		w.silenced.Delete(key)
 		return true
 	})
-	m.marks.Store(0)
+	w.marks.Store(0)
 }
 
 var memory = &memoryQueue{}
 
 var memoryClient = &http.Client{Timeout: 20 * time.Second}
+
+// size is what this turn is keeping alive while it waits.
+func (t MemoryTurn) size() int64 {
+	return int64(len(t.Spoken) + len(t.Reply))
+}
 
 // EligibleForMemory decides whether a turn may be told to the memory store.
 // The bar is deliberately higher than the transcript's: a guess about who was
@@ -112,62 +145,120 @@ func SubmitMemory(turn MemoryTurn) {
 	turn.Spoken = Truncate(turn.Spoken, max)
 	turn.Reply = Truncate(turn.Reply, max)
 
-	address := strings.TrimRight(strings.TrimSpace(cfg.MemoryBaseURL), "/")
-
-	running := memory.ensure(cfg, address)
+	shape := memoryShape(cfg)
+	running := memory.current.Load()
+	if running == nil || running.shape != shape {
+		running = memory.ensure(cfg, shape)
+	}
 	if running == nil {
 		return
 	}
+	running.submit(turn)
+}
+
+// memoryShape names the generation a configuration asks for.
+func memoryShape(cfg *operation_setting.ChatRecordSetting) string {
+	return fmt.Sprintf("%s|%d|%d|%d",
+		strings.TrimRight(strings.TrimSpace(cfg.MemoryBaseURL), "/"),
+		cfg.MemoryQueueSizeOrDefault(),
+		cfg.MemoryWorkersOrDefault(),
+		cfg.MemoryMaxQueuedBytesOrDefault())
+}
+
+func (w *memoryWriter) submit(turn MemoryTurn) {
+	// Slots are not the real limit — bytes are. The transcript queue has been
+	// accounted this way from the start, for a reason that applies here just as
+	// well: a queue of a couple of thousand turns, each holding a person's
+	// question and the model's answer, is heap the gateway's own buffer
+	// accounting can no longer see.
+	size := turn.size()
+	if w.held.Load()+size > w.budget {
+		w.totals.Dropped.Add(1)
+		return
+	}
 	select {
-	case running <- turn:
+	case w.queue <- turn:
+		w.held.Add(size)
 	default:
-		memory.Dropped.Add(1)
+		w.totals.Dropped.Add(1)
 	}
 }
 
-func (m *memoryQueue) ensure(cfg *operation_setting.ChatRecordSetting, address string) chan MemoryTurn {
+func (m *memoryQueue) ensure(cfg *operation_setting.ChatRecordSetting, shape string) *memoryWriter {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.queue != nil && m.address == address {
-		return m.queue
+	// Another goroutine may have built it while we waited for the lock.
+	if running := m.current.Load(); running != nil && running.shape == shape {
+		return running
 	}
-	if m.cancel != nil {
-		m.cancel()
-	}
-	// A different store has quietened nobody.
-	m.forgetSilenced()
-	ctx, cancel := context.WithCancel(context.Background())
-	m.queue, m.cancel, m.address = make(chan MemoryTurn, cfg.MemoryQueueSizeOrDefault()), cancel, address
+	_ = m.stopLocked()
 
-	queue := m.queue
-	for i := 0; i < cfg.MemoryWorkersOrDefault(); i++ {
-		go m.work(ctx, queue)
+	ctx, cancel := context.WithCancel(context.Background())
+	running := &memoryWriter{
+		shape:  shape,
+		queue:  make(chan MemoryTurn, cfg.MemoryQueueSizeOrDefault()),
+		cancel: cancel,
+		budget: cfg.MemoryMaxQueuedBytesOrDefault(),
+		totals: m,
 	}
-	return queue
+	m.current.Store(running)
+
+	for i := 0; i < cfg.MemoryWorkersOrDefault(); i++ {
+		running.running.Add(1)
+		go func() {
+			defer running.running.Done()
+			running.work(ctx)
+		}()
+	}
+	return running
 }
 
-// StopMemory releases the delivery workers.
+// StopMemory releases the delivery workers and waits for them, so a caller can
+// rely on nothing still reading the settings it is about to change.
 func StopMemory() {
 	memory.mu.Lock()
-	defer memory.mu.Unlock()
-	if memory.cancel != nil {
-		memory.cancel()
+	retired := memory.stopLocked()
+	memory.mu.Unlock()
+	if retired == nil {
+		return
 	}
-	memory.forgetSilenced()
-	memory.queue, memory.cancel, memory.address = nil, nil, ""
+	done := make(chan struct{})
+	go func() {
+		retired.running.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		// A worker stuck on a store that never answers must not hold the
+		// caller: the delivery client's own timeout is shorter than this, so
+		// reaching here means something further out is wedged.
+		common.SysError("chat record: memory workers did not stop in time")
+	}
 }
 
-func (m *memoryQueue) work(ctx context.Context, queue <-chan MemoryTurn) {
+func (m *memoryQueue) stopLocked() *memoryWriter {
+	running := m.current.Swap(nil)
+	if running == nil {
+		return nil
+	}
+	if running.cancel != nil {
+		running.cancel()
+	}
+	return running
+}
+
+func (w *memoryWriter) work(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case turn, ok := <-queue:
+		case turn, ok := <-w.queue:
 			if !ok {
 				return
 			}
-			m.deliver(ctx, turn)
+			w.deliver(ctx, turn)
 		}
 	}
 }
@@ -179,7 +270,12 @@ type memoryMessage struct {
 	CreatedAt string         `json:"created_at,omitempty"`
 }
 
-func (m *memoryQueue) deliver(ctx context.Context, turn MemoryTurn) {
+func (w *memoryWriter) deliver(ctx context.Context, turn MemoryTurn) {
+	// The memory is free again once the turn has been dealt with, whatever the
+	// outcome — a store that refuses everything must not slowly fill the budget
+	// until nothing can be queued at all.
+	defer w.held.Add(-turn.size())
+
 	cfg := operation_setting.GetChatRecordSetting()
 	if !cfg.MemoryReady() {
 		return
@@ -227,7 +323,7 @@ func (m *memoryQueue) deliver(ctx context.Context, turn MemoryTurn) {
 
 	body, err := json.Marshal(map[string]any{"messages": messages})
 	if err != nil {
-		m.Failed.Add(1)
+		w.totals.Failed.Add(1)
 		return
 	}
 
@@ -240,7 +336,7 @@ func (m *memoryQueue) deliver(ctx context.Context, turn MemoryTurn) {
 
 	request, err := http.NewRequestWithContext(writeCtx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		m.Failed.Add(1)
+		w.totals.Failed.Add(1)
 		return
 	}
 	request.Header.Set("Content-Type", "application/json")
@@ -248,44 +344,44 @@ func (m *memoryQueue) deliver(ctx context.Context, turn MemoryTurn) {
 
 	response, err := memoryClient.Do(request)
 	if err != nil {
-		m.Failed.Add(1)
+		w.totals.Failed.Add(1)
 		common.SysError("chat record: memory write failed: " + err.Error())
 		return
 	}
 	defer response.Body.Close()
 	if response.StatusCode >= 300 {
 		note, _ := io.ReadAll(io.LimitReader(response.Body, 400))
-		m.Failed.Add(1)
+		w.totals.Failed.Add(1)
 		common.SysError(fmt.Sprintf("chat record: memory store refused the turn (%d): %s",
 			response.StatusCode, strings.TrimSpace(string(note))))
 		return
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
-	m.Sent.Add(1)
+	w.totals.Sent.Add(1)
 
 	// Ask the store not to build a picture of the assistant. Its default is to
 	// observe every peer, which would cost a second inference for every reply
 	// to describe something that is not a person and has no memory worth
 	// keeping. Once per session is enough.
 	if assistant != "" {
-		m.silenceAssistant(writeCtx, cfg, turn.Session, assistant)
+		w.silenceAssistant(writeCtx, cfg, turn.Session, assistant)
 	}
 }
 
-func (m *memoryQueue) silenceAssistant(ctx context.Context, cfg *operation_setting.ChatRecordSetting, session, assistant string) {
+func (w *memoryWriter) silenceAssistant(ctx context.Context, cfg *operation_setting.ChatRecordSetting, session, assistant string) {
 	// The workspace is part of the mark: a store can be repointed at another
 	// workspace without its address changing, and the assistants over there
 	// have not been quietened.
 	workspace := cfg.MemoryWorkspaceOrDefault()
 	mark := workspace + "\x00" + session + "\x00" + assistant
 
-	if m.marks.Load() >= silencedCap {
-		m.forgetSilenced()
+	if w.marks.Load() >= silencedCap {
+		w.forgetSilenced()
 	}
-	if _, done := m.silenced.LoadOrStore(mark, true); done {
+	if _, done := w.silenced.LoadOrStore(mark, true); done {
 		return
 	}
-	m.marks.Add(1)
+	w.marks.Add(1)
 
 	url := fmt.Sprintf("%s/v3/workspaces/%s/sessions/%s/peers/%s/config",
 		strings.TrimRight(strings.TrimSpace(cfg.MemoryBaseURL), "/"),
@@ -305,40 +401,29 @@ func (m *memoryQueue) silenceAssistant(ctx context.Context, cfg *operation_setti
 	if err != nil {
 		// Not worth a retry: the memory is already written, and the only cost
 		// of failing here is derivation work nobody reads.
-		m.forget(mark)
+		w.forget(mark)
 		return
 	}
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
 	if response.StatusCode >= 300 {
-		m.forget(mark)
+		w.forget(mark)
 	}
 }
 
 // forget drops one mark so the next turn tries again.
-func (m *memoryQueue) forget(mark string) {
-	if _, loaded := m.silenced.LoadAndDelete(mark); loaded {
-		m.marks.Add(-1)
+func (w *memoryWriter) forget(mark string) {
+	if _, loaded := w.silenced.LoadAndDelete(mark); loaded {
+		w.marks.Add(-1)
 	}
 }
 
 // sanitizePeer keeps a peer name to what is safe in a URL path and in the
-// memory store. A staff number is typed by a person and reaches here unescaped.
+// memory store. There is no fallback: a peer nobody can be named for is a peer
+// that must not be written, and deliver() turns an empty name into a dropped
+// turn rather than a shared bucket.
 func sanitizePeer(name string) string {
-	cleaned := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			return r
-		case r == '-', r == '_':
-			return r
-		default:
-			return -1
-		}
-	}, name)
-	if len(cleaned) > 96 {
-		cleaned = cleaned[:96]
-	}
-	return cleaned
+	return safeIdentifier(name, 96, "")
 }
 
 // MemorySessionName is the session a turn belongs to. Filing everything a
@@ -352,22 +437,26 @@ func MemorySessionName(mode, staffID, conversation string) string {
 	return "staff-" + sanitizeFolder(staffID)
 }
 
-// MemoryStats reports what the delivery has managed.
+// MemoryStats reports what the delivery has managed. The totals span every
+// generation, so the status page keeps counting across a settings change; the
+// queue figures describe only the generation running now.
 func MemoryStats() map[string]any {
-	memory.mu.Lock()
 	queued, capacity := 0, 0
-	if memory.queue != nil {
-		queued, capacity = len(memory.queue), cap(memory.queue)
+	held, budget := int64(0), int64(0)
+	running := memory.current.Load()
+	if running != nil {
+		queued, capacity = len(running.queue), cap(running.queue)
+		held, budget = running.held.Load(), running.budget
 	}
-	running := memory.queue != nil
-	memory.mu.Unlock()
 
 	return map[string]any{
-		"running":  running,
-		"queued":   queued,
-		"capacity": capacity,
-		"sent":     memory.Sent.Load(),
-		"dropped":  memory.Dropped.Load(),
-		"failed":   memory.Failed.Load(),
+		"running":   running != nil,
+		"queued":    queued,
+		"capacity":  capacity,
+		"queued_mb": float64(held) / (1 << 20),
+		"budget_mb": float64(budget) / (1 << 20),
+		"sent":      memory.Sent.Load(),
+		"dropped":   memory.Dropped.Load(),
+		"failed":    memory.Failed.Load(),
 	}
 }

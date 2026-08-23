@@ -1,8 +1,12 @@
 package controller
 
 import (
+	"bytes"
+	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -13,6 +17,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
@@ -233,4 +238,61 @@ func TestImportHoldsStaffNumbersToTheSameRule(t *testing.T) {
 		require.NoError(t, model.DB.First(&after, 1).Error)
 		assert.Equal(t, "10099999", after.StaffId)
 	})
+}
+
+// The page refuses a quota above the ceiling; the import wrote the column with
+// no check at all, so a mistyped cell could mint one nobody meant to grant.
+func TestImportHoldsQuotaToTheSameCeiling(t *testing.T) {
+	stored := model.Token{Id: 1, UserId: 9, CreatedBy: 9, Key: "k", Name: "n", StaffId: "10018037"}
+	columns := headerPositions([]string{"id", "remain_quota"})
+	ceiling := common.QuotaFromFloat(1000000000 * common.QuotaPerUnit)
+
+	sheetTestDB(t, stored)
+	err := applySheetRow(sheetActor(t, 1, common.RoleAdminUser), model.AllOwnersScope(),
+		true, columns, []string{"1", strconv.Itoa(ceiling + 1)})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "上限")
+
+	var after model.Token
+	require.NoError(t, model.DB.First(&after, 1).Error)
+	assert.Equal(t, 0, after.RemainQuota, "the quota was written despite the refusal")
+
+	// The ceiling itself is still allowed.
+	require.NoError(t, applySheetRow(sheetActor(t, 1, common.RoleAdminUser),
+		model.AllOwnersScope(), true, columns, []string{"1", strconv.Itoa(ceiling)}))
+}
+
+// The export stops at ten thousand rows; the import had no ceiling at all. A
+// 10MB spreadsheet holds hundreds of thousands of rows and every one of them is
+// a read and a write, so one upload could hold a connection for as long as it
+// liked.
+func TestImportRefusesASheetBeyondTheCeiling(t *testing.T) {
+	sheetTestDB(t)
+
+	file := excelize.NewFile()
+	defer file.Close()
+	sheet := file.GetSheetName(0)
+	require.NoError(t, file.SetSheetRow(sheet, "A1", &[]string{"id", "name"}))
+	for row := 0; row <= importRowLimit; row++ {
+		cell := fmt.Sprintf("A%d", row+2)
+		require.NoError(t, file.SetSheetRow(sheet, cell, &[]any{row + 1, "n"}))
+	}
+
+	var uploaded bytes.Buffer
+	form := multipart.NewWriter(&uploaded)
+	part, err := form.CreateFormFile("file", "keys.xlsx")
+	require.NoError(t, err)
+	require.NoError(t, file.Write(part))
+	require.NoError(t, form.Close())
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/token/import", &uploaded)
+	c.Request.Header.Set("Content-Type", form.FormDataContentType())
+	c.Set("id", 1)
+	c.Set("role", common.RoleAdminUser)
+
+	ImportTokens(c)
+	assert.Contains(t, recorder.Body.String(), "一次最多导入")
 }

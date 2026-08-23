@@ -3,9 +3,13 @@ package chatrecord
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -55,8 +59,10 @@ func TestAgainstLiveDatabase(t *testing.T) {
 	cfg := operation_setting.GetChatRecordSetting()
 	prevEnabled, prevDSN := cfg.Enabled, cfg.DSN
 	t.Cleanup(func() {
-		cfg.Enabled, cfg.DSN = prevEnabled, prevDSN
+		// Stop first: restoring the settings while a worker is still reading
+		// them is a data race, and it hides any real one behind the noise.
 		Stop()
+		cfg.Enabled, cfg.DSN = prevEnabled, prevDSN
 	})
 	cfg.Enabled, cfg.DSN = true, dsn
 
@@ -64,7 +70,7 @@ func TestAgainstLiveDatabase(t *testing.T) {
 	fileRoot := t.TempDir()
 	prevRoot, prevStore := cfg.FileRoot, cfg.StoreFiles
 	cfg.FileRoot, cfg.StoreFiles = fileRoot, true
-	t.Cleanup(func() { cfg.FileRoot, cfg.StoreFiles = prevRoot, prevStore })
+	t.Cleanup(func() { Stop(); cfg.FileRoot, cfg.StoreFiles = prevRoot, prevStore })
 
 	marker := "live-test-" + time.Now().Format("150405.000")
 	Submit(Turn{
@@ -118,11 +124,20 @@ func TestAgainstLiveDatabase(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx,
 		"SELECT id FROM chat_records WHERE request_id = $1", marker).Scan(&recordID))
 
+	// The attachment row is written after the record, so it needs the same
+	// patience the record needed — a single shot here is a test that passes
+	// only when the machine happens to be idle.
 	var storedPath, kind, mediaType string
 	var size int64
-	err = pool.QueryRow(ctx,
-		"SELECT path, kind, media_type, file_size FROM chat_record_files WHERE record_id = $1",
-		recordID).Scan(&storedPath, &kind, &mediaType, &size)
+	for deadline := time.Now().Add(15 * time.Second); ; {
+		err = pool.QueryRow(ctx,
+			"SELECT path, kind, media_type, file_size FROM chat_record_files WHERE record_id = $1",
+			recordID).Scan(&storedPath, &kind, &mediaType, &size)
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 	if err != nil {
 		t.Fatalf("the attachment never reached the table: %v", err)
 	}
@@ -185,7 +200,7 @@ func TestAnAgentLoopFoldsIntoOneRow(t *testing.T) {
 
 	cfg := operation_setting.GetChatRecordSetting()
 	previous := *cfg
-	t.Cleanup(func() { *cfg = previous; Stop() })
+	t.Cleanup(func() { Stop(); *cfg = previous })
 	cfg.Enabled, cfg.DSN, cfg.Host, cfg.StoreFiles = true, dsn, "", false
 
 	question := "把首页改成奢品风格 " + time.Now().Format("150405.000")
@@ -286,7 +301,7 @@ func TestToolRoundTripsDoNotDemoteAPersonsTurn(t *testing.T) {
 
 	cfg := operation_setting.GetChatRecordSetting()
 	previous := *cfg
-	t.Cleanup(func() { *cfg = previous; Stop() })
+	t.Cleanup(func() { Stop(); *cfg = previous })
 	cfg.Enabled, cfg.DSN, cfg.Host, cfg.StoreFiles = true, dsn, "", false
 
 	question := "代码审查一遍 " + time.Now().Format("150405.000")
@@ -519,8 +534,9 @@ func liveWriter(t *testing.T) *pgxpool.Pool {
 	cfg := operation_setting.GetChatRecordSetting()
 	previous := *cfg
 	t.Cleanup(func() {
-		*cfg = previous
 		Stop()
+		StopMemory()
+		*cfg = previous
 		if os.Getenv("CHATRECORD_TEST_KEEP") == "" {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
@@ -662,4 +678,262 @@ func TestOversizedClientValuesDoNotCostTheTurn(t *testing.T) {
 	assert.Len(t, []rune(sessionID), 64)
 	assert.Len(t, []rune(turnID), 64)
 	assert.Len(t, []rune(model), 128)
+}
+
+// The seven readers below the entry point each used to validate the body
+// themselves. Collapsing that to one scan is only safe if the one that remains
+// still refuses a body that is not JSON: gjson will happily find "content":"…"
+// inside an audio upload's bytes and store it as somebody's question.
+func TestANonJsonBodyIsNotMinedForText(t *testing.T) {
+	pool := liveWriter(t)
+
+	marker := "notjson-" + time.Now().Format("150405.000")
+	Submit(Turn{
+		RequestID: marker, UserID: 5, TokenID: 555, TokenName: "k", StaffID: "10000005",
+		ModelName: "gpt-5.6-sol", Endpoint: "/v1/audio/transcriptions", StatusCode: 200,
+		CreatedAt: time.Now(),
+		// A multipart upload whose bytes happen to contain something
+		// message-shaped. It is not JSON, so none of it is a question.
+		RequestBody: []byte("------form-boundary\r\nContent-Disposition: form-data\r\n\r\n" +
+			`{"messages":[{"role":"user","content":"这不是用户说的话"}]}` + "\r\n------form-boundary--"),
+		ResponseBody: []byte(`{"choices":[{"message":{"content":"转写结果"}}]}`),
+	})
+
+	id := awaitRow(t, pool, marker)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var user, ai string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT user_message, ai_message FROM chat_records WHERE id = $1`, id).Scan(&user, &ai))
+	assert.Empty(t, user, "text was mined out of a body that is not JSON")
+	assert.Equal(t, "转写结果", ai, "the reply is JSON and should still be read")
+}
+
+// An agent's first request for a turn very often carries no prose at all, only
+// tool calls. Telling the memory store then handed it a person's question with
+// no answer attached; waiting, and letting the row decide who sends, gives it
+// the pair.
+func TestTheMemoryWaitsForAnAnswerAndIsToldOnce(t *testing.T) {
+	pool := liveWriter(t)
+
+	var sent atomic.Int64
+	seen := make(chan map[string]any, 8)
+	store := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			sent.Add(1)
+			select {
+			case seen <- body:
+			default:
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("[]"))
+	}))
+	defer store.Close()
+	defer StopMemory()
+
+	cfg := operation_setting.GetChatRecordSetting()
+	cfg.MemoryEnabled = true
+	cfg.MemoryBaseURL = store.URL
+	cfg.MemoryAPIKey = "test-key"
+	cfg.MemoryWorkspace = "yxsy"
+	cfg.MemoryPeerTemplate = "{staff_id}"
+	cfg.MemoryAssistantPeer = "codex-{staff_id}"
+	cfg.MemoryMinChars = 2
+	StopMemory()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	turnID := "answer-later-" + time.Now().Format("150405.000")
+	send := func(request, reply string) {
+		Submit(Turn{
+			RequestID: request, UserID: 6, TokenID: 666, TokenName: "k", StaffID: "10000006",
+			ModelName: "gpt-5.6-sol", Endpoint: "/v1/responses", StatusCode: 200,
+			CreatedAt:    time.Now(),
+			RequestBody:  codexBody(turnID, "sess", "把首页改成奢品风格"),
+			ResponseBody: []byte(`{"choices":[{"message":{"content":"` + reply + `"}}]}`),
+		})
+	}
+
+	// The turn folds, so only the first request keeps its id on the row; the
+	// later ones show up as request_count going forward.
+	awaitRequests := func(id int64, want int) {
+		t.Helper()
+		var count int
+		for i := 0; i < 100; i++ {
+			require.NoError(t, pool.QueryRow(ctx,
+				`SELECT request_count FROM chat_records WHERE id = $1`, id).Scan(&count))
+			if count >= want {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatalf("the turn shows %d requests, want %d", count, want)
+	}
+
+	// Two tool round-trips: the turn is in the table, the memory hears nothing.
+	send("tool-1-"+turnID, "")
+	id := awaitRow(t, pool, "tool-1-"+turnID)
+	send("tool-2-"+turnID, "")
+	awaitRequests(id, 2)
+	time.Sleep(700 * time.Millisecond)
+	require.Equal(t, int64(0), sent.Load(),
+		"the memory was told about a turn that had no answer yet")
+
+	// Then the answer arrives.
+	send("answer-"+turnID, "先看现有版式")
+	awaitRequests(id, 3)
+
+	select {
+	case body := <-seen:
+		messages, _ := body["messages"].([]any)
+		require.Len(t, messages, 2, "the person's words and the answer should both go")
+		first, _ := messages[0].(map[string]any)
+		second, _ := messages[1].(map[string]any)
+		assert.Equal(t, "把首页改成奢品风格", first["content"])
+		assert.Equal(t, "先看现有版式", second["content"])
+	case <-time.After(10 * time.Second):
+		t.Fatal("the memory was never told, even once there was an answer")
+	}
+
+	// And more round-trips afterwards must not tell it again.
+	send("after-1-"+turnID, "继续说")
+	awaitRequests(id, 4)
+	time.Sleep(700 * time.Millisecond)
+	assert.Equal(t, int64(1), sent.Load(), "the same turn was sent to the memory twice")
+}
+
+// Nothing is pruned unless the operator has said how long to keep it, and when
+// they have, the attachments have to leave the disk as well as the table — a
+// cascade can delete a row but it cannot unlink a file.
+func TestRetentionRemovesOldTurnsAndTheirFiles(t *testing.T) {
+	pool := liveWriter(t)
+
+	cfg := operation_setting.GetChatRecordSetting()
+	root := t.TempDir()
+	cfg.FileRoot = root
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// One old turn with an attachment, one from today.
+	old, recent := time.Now().AddDate(0, 0, -40), time.Now()
+	write := func(marker string, at time.Time) int64 {
+		var id int64
+		var inserted bool
+		require.NoError(t, pool.QueryRow(ctx, insertStatement,
+			marker, 1, 777, "k", "10000007", "gpt-5.6-sol", "/v1/responses", 200,
+			"一句话", "一句回答", at, "", 32000,
+			"human", "hard", "client.thread_source", "codex", "user", marker, "s",
+			"一句话", 5).Scan(&id, &inserted))
+		return id
+	}
+	oldID, recentID := write("retention-old", old), write("retention-new", recent)
+
+	attach := func(recordID int64, name string, at time.Time) string {
+		relative := filepath.Join("10000007", at.Format("2006-01-02"), name)
+		full := filepath.Join(root, relative)
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(t, os.WriteFile(full, []byte("x"), 0o644))
+		_, err := pool.Exec(ctx, insertFileStatement,
+			recordID, "10000007", "image", "image/png", name, 1, name, relative, "", at)
+		require.NoError(t, err)
+		return full
+	}
+	oldFile := attach(oldID, "old.png", old)
+	recentFile := attach(recentID, "new.png", recent)
+
+	writer := &writer{pool: pool, totals: &totals{}}
+
+	// Retention off: a sweep must remove nothing at all.
+	cfg.FileRetentionDays, cfg.RecordRetentionDays = 0, 0
+	writer.sweepOnce(ctx)
+	assert.FileExists(t, oldFile, "a sweep deleted an attachment with retention switched off")
+
+	// Attachments only: the old file goes, the old turn stays.
+	cfg.FileRetentionDays = 30
+	writer.sweepOnce(ctx)
+	assert.NoFileExists(t, oldFile, "the expired attachment is still on disk")
+	assert.FileExists(t, recentFile, "an attachment inside the window was deleted")
+
+	var rows int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM chat_records WHERE id = $1`, oldID).Scan(&rows))
+	assert.Equal(t, 1, rows, "attachment retention removed the turn as well")
+
+	// Records too.
+	cfg.RecordRetentionDays = 30
+	writer.sweepOnce(ctx)
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM chat_records WHERE id = $1`, oldID).Scan(&rows))
+	assert.Equal(t, 0, rows, "the expired turn is still in the table")
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM chat_records WHERE id = $1`, recentID).Scan(&rows))
+	assert.Equal(t, 1, rows, "a turn inside the window was deleted")
+}
+
+// The schema statements and the first writes used to run at the same time.
+// That was documented as costing the first few turns after a restart; in
+// practice it cost more than that, because the migration takes table locks in
+// one order and an insert takes them in the other — the writes did not queue
+// behind it, they deadlocked against it.
+//
+// Starting from an empty database is what exercises it: that is when the
+// statements have real work to do.
+func TestTurnsSubmittedDuringMigrationAreNotLost(t *testing.T) {
+	dsn := os.Getenv("CHATRECORD_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set CHATRECORD_TEST_DSN to run the live storage test")
+	}
+	pool, err := newPool(dsn)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files")
+	_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records")
+
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := *cfg
+	t.Cleanup(func() {
+		Stop()
+		*cfg = previous
+		clean, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_, _ = pool.Exec(clean, "DROP TABLE IF EXISTS chat_record_files")
+		_, _ = pool.Exec(clean, "DROP TABLE IF EXISTS chat_records")
+	})
+	cfg.Enabled, cfg.DSN, cfg.StoreFiles = true, dsn, false
+	cfg.MemoryEnabled = false
+	Stop()
+
+	// No InitSchema first: the very first Submit is what brings the writer up,
+	// and the statements run while these turns are already queued.
+	const turns = 30
+	marker := "migrating-" + time.Now().Format("150405.000")
+	for i := 0; i < turns; i++ {
+		Submit(Turn{
+			RequestID: fmt.Sprintf("%s-%d", marker, i),
+			UserID:    8, TokenID: 888, TokenName: "k", StaffID: "10000008",
+			ModelName: "gpt-5.6-sol", Endpoint: "/v1/chat/completions", StatusCode: 200,
+			CreatedAt:    time.Now(),
+			RequestBody:  []byte(fmt.Sprintf(`{"messages":[{"role":"user","content":"第 %d 句"}]}`, i)),
+			ResponseBody: []byte(`{"choices":[{"message":{"content":"收到"}}]}`),
+		})
+	}
+
+	var landed int
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+		err = pool.QueryRow(ctx,
+			`SELECT count(*) FROM chat_records WHERE request_id LIKE $1`, marker+"-%").Scan(&landed)
+		if err == nil && landed == turns {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	assert.Equal(t, turns, landed, "turns submitted while the schema was being built were lost")
 }

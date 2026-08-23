@@ -16,6 +16,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // Person is one entry of the directory, trimmed to what a picker shows.
@@ -40,6 +42,9 @@ var cache struct {
 }
 
 // tokens caches the short-lived access token the HR service issues.
+// refresh collapses concurrent refreshes of the same directory into one.
+var refresh singleflight.Group
+
 var tokens struct {
 	mu      sync.Mutex
 	value   string
@@ -69,17 +74,49 @@ func Search(ctx context.Context, keyword string, limit int) ([]Person, error) {
 	}
 
 	keyword = strings.ToLower(strings.TrimSpace(keyword))
-	matches := make([]Person, 0, limit)
-	for _, person := range people {
-		if keyword != "" && !personMatches(person, keyword) {
-			continue
+	if keyword == "" {
+		if len(people) > limit {
+			return append([]Person(nil), people[:limit]...), nil
 		}
-		matches = append(matches, person)
-		if len(matches) >= limit {
+		return append([]Person(nil), people...), nil
+	}
+
+	// Typing "100" should offer 10018037 before it offers someone whose
+	// department merely contains those digits. Both are worth showing — a
+	// picker that only matched from the left would hide a person whose name
+	// you know the middle of — but the one you were spelling out comes first.
+	// The directory is a few thousand rows in memory, so scanning all of it
+	// beats stopping early and missing a prefix match further down.
+	leading := make([]Person, 0, limit)
+	elsewhere := make([]Person, 0, limit)
+	for _, person := range people {
+		switch {
+		case personStartsWith(person, keyword):
+			if len(leading) < limit {
+				leading = append(leading, person)
+			}
+		case personMatches(person, keyword):
+			if len(elsewhere) < limit {
+				elsewhere = append(elsewhere, person)
+			}
+		}
+		if len(leading) >= limit {
 			break
 		}
 	}
+	matches := leading
+	for _, person := range elsewhere {
+		if len(matches) >= limit {
+			break
+		}
+		matches = append(matches, person)
+	}
 	return matches, nil
+}
+
+func personStartsWith(person Person, keyword string) bool {
+	return strings.HasPrefix(strings.ToLower(person.Code), keyword) ||
+		strings.HasPrefix(strings.ToLower(person.Name), keyword)
 }
 
 func personMatches(person Person, keyword string) bool {
@@ -129,7 +166,24 @@ func load(ctx context.Context) ([]Person, error) {
 		return people, nil
 	}
 
-	people, err := fetchAll(ctx, cfg)
+	// One refresh at a time. Every caller arrives at the moment the window
+	// closes, and this file's whole reason for holding the directory in memory
+	// is to keep a picker from putting the HR service behind a text box —
+	// which is exactly what a dozen simultaneous full fetches would do.
+	shared, err, _ := refresh.Do(fingerprint, func() (any, error) {
+		// Another caller may have finished while this one waited.
+		cache.mu.RLock()
+		current, at := cache.people, cache.loadedAt
+		matches := cache.source == fingerprint
+		cache.mu.RUnlock()
+		if current != nil && matches && time.Since(at) < cfg.CacheTTL() {
+			return current, nil
+		}
+		return fetchAll(ctx, cfg)
+	})
+	if err == nil {
+		people, _ = shared.([]Person)
+	}
 	if err != nil {
 		// A stale directory beats no directory: a picker that empties itself
 		// because HR blipped is worse than one showing yesterday's list.

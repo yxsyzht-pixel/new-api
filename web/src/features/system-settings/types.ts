@@ -372,6 +372,9 @@ export type OperationsSettings = {
   'chat_record_setting.workers': number
   'chat_record_setting.max_content_chars': number
   'chat_record_setting.max_queued_bytes': number
+  'chat_record_setting.memory_max_queued_bytes': number
+  'chat_record_setting.file_retention_days': number
+  'chat_record_setting.record_retention_days': number
   'chat_record_setting.automation_models': string
   'staff_directory_setting.enabled': boolean
   'staff_directory_setting.base_url': string

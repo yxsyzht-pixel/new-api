@@ -52,7 +52,7 @@ func StoreAttachmentsFor(endpoint string) bool {
 // Anything it does not recognise is simply not recorded — a transcript missing
 // a file is a smaller problem than a worker tripping over an unfamiliar body.
 func ExtractAttachments(body []byte, limit int) []Attachment {
-	if len(body) == 0 || !gjson.ValidBytes(body) {
+	if len(body) == 0 {
 		return nil
 	}
 
@@ -241,8 +241,12 @@ func writeFileAtomically(dir, full string, data []byte) error {
 	return os.Rename(temp.Name(), full)
 }
 
-// sanitizeFolder keeps a staff id from naming anywhere but its own folder.
-func sanitizeFolder(staffID string) string {
+// safeIdentifier reduces a value to what is safe as a path segment and as a
+// URL segment at once. A staff number is typed by a person and reaches both
+// places unescaped, so the whitelist is the same in both — the only thing that
+// differs is how long the far end tolerates and what an empty result should
+// become. The output is ASCII by construction, so a byte cut is a rune cut.
+func safeIdentifier(value string, max int, fallback string) string {
 	cleaned := strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
@@ -252,14 +256,20 @@ func sanitizeFolder(staffID string) string {
 		default:
 			return -1
 		}
-	}, staffID)
+	}, value)
 	if cleaned == "" {
-		return "unassigned"
+		return fallback
 	}
-	if len(cleaned) > 64 {
-		cleaned = cleaned[:64]
+	if len(cleaned) > max {
+		cleaned = cleaned[:max]
 	}
 	return cleaned
+}
+
+// sanitizeFolder keeps a staff id from naming anywhere but its own folder.
+// Unassigned traffic still needs somewhere to go, hence the fallback.
+func sanitizeFolder(staffID string) string {
+	return safeIdentifier(staffID, 64, "unassigned")
 }
 
 func extensionFor(attachment Attachment) string {

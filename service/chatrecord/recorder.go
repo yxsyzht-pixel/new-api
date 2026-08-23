@@ -2,13 +2,18 @@ package chatrecord
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 
+	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/tidwall/gjson"
+
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -57,6 +62,19 @@ type writer struct {
 	// request path, so it is atomic and it belongs to this writer alone.
 	held atomic.Int64
 
+	// running tracks the goroutines this writer owns, so a caller that needs
+	// them actually gone — a shutdown, a test about to change the settings
+	// they are reading — can wait instead of guessing.
+	running sync.WaitGroup
+
+	// ready closes when the schema statements have finished. Workers wait for
+	// it before their first write: those statements take table locks, and a
+	// write landing in the middle of them deadlocks against the migration
+	// rather than merely queueing behind it. Waiting also stops the first turns
+	// after a restart from being thrown away, which used to be the accepted
+	// cost of running the two at once.
+	ready chan struct{}
+
 	totals *totals
 }
 
@@ -66,8 +84,12 @@ type totals struct {
 	Enqueued atomic.Int64
 	Dropped  atomic.Int64
 	Written  atomic.Int64
-	Failed   atomic.Int64
-	Files    atomic.Int64
+	// Folded counts the writes that landed on a turn already in the table.
+	// On an agent's traffic it dwarfs the number of rows, and an operator
+	// seeing it stay at zero is looking at folding that has stopped working.
+	Folded atomic.Int64
+	Failed atomic.Int64
+	Files  atomic.Int64
 }
 
 type recorder struct {
@@ -132,7 +154,7 @@ func (r *recorder) ensureStarted(cfg *operation_setting.ChatRecordSetting, dsn s
 	if running := r.current.Load(); running != nil && running.dsn == dsn {
 		return running, nil
 	}
-	r.stopLocked()
+	_ = r.stopLocked()
 
 	pool, err := newPool(dsn)
 	if err != nil {
@@ -146,33 +168,48 @@ func (r *recorder) ensureStarted(cfg *operation_setting.ChatRecordSetting, dsn s
 		queue:  make(chan Turn, cfg.QueueSizeOrDefault()),
 		pool:   pool,
 		cancel: cancel,
+		ready:  make(chan struct{}),
 		totals: &r.totals,
 	}
 	r.current.Store(running)
 
 	// The schema gains columns as this feature grows, and a store left on an
 	// older shape would fail every write silently. The statements are additive
-	// and idempotent, and they run off the request path — the first turns may
-	// race them and be lost, which is the trade this whole package is built on.
+	// and idempotent, and they run off the request path — a submitting request
+	// never waits for them, only the workers do.
 	go func() {
+		defer close(running.ready)
 		if err := InitSchema(dsn); err != nil {
+			// Carry on regardless: the tables are usually already there, and a
+			// store that refuses every write says so in the log soon enough.
 			common.SysError("chat record: could not bring the schema up to date: " + err.Error())
 		}
 	}()
 
 	for i := 0; i < cfg.WorkersOrDefault(); i++ {
-		go running.work(ctx)
+		running.running.Add(1)
+		go func() {
+			defer running.running.Done()
+			running.work(ctx)
+		}()
 	}
+	// Pruning belongs to this generation too, so repointing the recorder never
+	// leaves two sweepers deleting from two databases at once.
+	running.running.Add(1)
+	go func() {
+		defer running.running.Done()
+		running.sweep(ctx)
+	}()
 	return running, nil
 }
 
 // stopLocked retires the running writer, if any. Its workers see a cancelled
 // context and stop; whatever was still queued is dropped along with the
 // accounting that described it.
-func (r *recorder) stopLocked() {
+func (r *recorder) stopLocked() *writer {
 	running := r.current.Swap(nil)
 	if running == nil {
-		return
+		return nil
 	}
 	// Retiring a writer must never be the thing that takes the gateway down —
 	// it happens on a settings change, in a request's goroutine.
@@ -180,19 +217,63 @@ func (r *recorder) stopLocked() {
 		running.cancel()
 	}
 	if running.pool != nil {
-		running.pool.Close()
+		// Closing waits for borrowed connections, so it happens off this
+		// goroutine: a settings change must not sit on a request.
+		go running.pool.Close()
+	}
+	return running
+}
+
+// Stop releases the pool and waits for the workers to finish, so a caller can
+// rely on nothing being in flight afterwards. Repointing the recorder does not
+// go through here — that happens in a request's goroutine and must never wait
+// on a database write.
+func Stop() {
+	shared.mu.Lock()
+	retired := shared.stopLocked()
+	shared.mu.Unlock()
+	waitFor(retired)
+}
+
+// waitFor gives the retired workers a moment to notice. A worker wedged on a
+// database that has stopped answering must not hold the caller forever, so the
+// wait is bounded and simply gives up — the turns are lost either way.
+func waitFor(retired *writer) {
+	if retired == nil {
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		retired.running.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		common.SysError("chat record: workers did not stop in time")
 	}
 }
 
-// Stop releases the pool, so a settings change does not leave connections
-// behind.
-func Stop() {
-	shared.mu.Lock()
-	defer shared.mu.Unlock()
-	shared.stopLocked()
+// waitReady blocks until the schema statements have let go of the tables,
+// reporting false if the writer was retired first. A writer built without a
+// ready channel — a test driving one statement directly — is ready at once.
+func (w *writer) waitReady(ctx context.Context) bool {
+	if w.ready == nil {
+		return ctx.Err() == nil
+	}
+	select {
+	case <-w.ready:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (w *writer) work(ctx context.Context) {
+	if !w.waitReady(ctx) {
+		return
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -213,6 +294,16 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 
 	cfg := operation_setting.GetChatRecordSetting()
 	max := cfg.MaxContentCharsOrDefault()
+
+	// Validated once, here, rather than by each of the seven readers below.
+	// gjson scans the whole document to answer that question, and an agent
+	// replaying a long conversation was paying for that scan seven times on
+	// every request of every turn. The check itself has to stay: a body that
+	// is not JSON at all — an audio upload, a multipart form — would otherwise
+	// have text picked out of its bytes and stored as somebody's question.
+	if len(turn.RequestBody) > 0 && !gjson.ValidBytes(turn.RequestBody) {
+		turn.RequestBody = nil
+	}
 
 	userMessage := Truncate(UserMessage(turn.RequestBody), max)
 	assistantReply := Truncate(AssistantReply(turn.ResponseBody), max)
@@ -262,7 +353,7 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	}
 
 	var recordID int64
-	var firstTimeForThisTurn bool
+	var newTurn bool
 	// The identifying columns are fixed width and several of these values are
 	// the client's own words — a model name, a session id, a thread source.
 	// Postgres does not shorten an oversized value, it refuses the row, so an
@@ -278,39 +369,15 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 		clip(client.Name, 32), clip(client.ThreadSource, 32),
 		clip(client.TurnID, 64), clip(client.SessionID, 64),
 		Truncate(verdict.HumanText, max), sourceRank(verdict.Source)).
-		Scan(&recordID, &firstTimeForThisTurn)
+		Scan(&recordID, &newTurn)
 	if err != nil {
 		w.totals.Failed.Add(1)
 		common.SysError("chat record: write failed: " + err.Error())
 		return
 	}
 	w.totals.Written.Add(1)
-
-	// The memory store is told only what a client positively declared to be a
-	// person speaking, and only when the key names whose person it is. It has
-	// its own queue: a slow memory store loses memories, never transcripts.
-	// Only the first request of a turn. The later ones carry the very same
-	// words — folding already collapsed them in the transcript, and telling a
-	// memory the same sentence five times would have it derive the same fact
-	// five times over.
-	if firstTimeForThisTurn && !turn.SkipMemory && cfg.MemoryReady() &&
-		EligibleForMemory(verdict, turn.StaffID, cfg.MemoryMinCharsOrDefault()) {
-		agent := client.Agent
-		if agent == "" {
-			agent = "assistant"
-		}
-		SubmitMemory(MemoryTurn{
-			StaffID:   turn.StaffID,
-			TokenName: turn.TokenName,
-			UserID:    turn.UserID,
-			Agent:     agent,
-			Session:   MemorySessionName(cfg.MemorySessionMode, turn.StaffID, conversation),
-			Spoken:    verdict.HumanText,
-			Reply:     assistantReply,
-			Model:     turn.ModelName,
-			Endpoint:  turn.Endpoint,
-			CreatedAt: turn.CreatedAt,
-		})
+	if !newTurn {
+		w.totals.Folded.Add(1)
 	}
 
 	// The attachments are already on disk; the rows only say where. A failure
@@ -338,6 +405,53 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 			common.SysError("chat record: could not update the attachment tally: " + err.Error())
 		}
 	}
+
+	// The memory store is told only what a client positively declared to be a
+	// person speaking, and only when the key names whose person it is. It has
+	// its own queue: a slow memory store loses memories, never transcripts.
+	// Last of all, too: the transcript's own rows are what this package exists
+	// for, and nothing about a memory should stand between a turn and its
+	// attachments.
+	//
+	// Which request of a turn does the telling is settled by the row, not by
+	// this code — see claimMemoryStatement. Trying it at all is skipped unless
+	// the turn qualifies, so a turn that could never be remembered costs no
+	// extra query.
+	if !turn.SkipMemory && cfg.MemoryReady() &&
+		EligibleForMemory(verdict, turn.StaffID, cfg.MemoryMinCharsOrDefault()) {
+		var spoken, reply string
+		switch err := w.pool.QueryRow(writeCtx, claimMemoryStatement, recordID).
+			Scan(&spoken, &reply); {
+		case err == nil:
+			agent := client.Agent
+			if agent == "" {
+				agent = "assistant"
+			}
+			// The stored words rather than this request's: on a folded turn
+			// they are the person's original question and the answer as it
+			// stands, which is what a memory should be built from.
+			if strings.TrimSpace(spoken) == "" {
+				spoken = verdict.HumanText
+			}
+			SubmitMemory(MemoryTurn{
+				StaffID:   turn.StaffID,
+				TokenName: turn.TokenName,
+				UserID:    turn.UserID,
+				Agent:     agent,
+				Session:   MemorySessionName(cfg.MemorySessionMode, turn.StaffID, conversation),
+				Spoken:    spoken,
+				Reply:     reply,
+				Model:     turn.ModelName,
+				Endpoint:  turn.Endpoint,
+				CreatedAt: turn.CreatedAt,
+			})
+		case errors.Is(err, pgx.ErrNoRows):
+			// Either somebody already told the store about this turn, or there
+			// is still no answer to tell it about. Both mean: not this one.
+		default:
+			common.SysError("chat record: could not claim the turn for memory: " + err.Error())
+		}
+	}
 }
 
 // Stats reports what the recorder has done, so an operator can see whether the
@@ -358,6 +472,7 @@ func Stats() map[string]any {
 		"enqueued":     shared.totals.Enqueued.Load(),
 		"dropped":      shared.totals.Dropped.Load(),
 		"written":      shared.totals.Written.Load(),
+		"folded":       shared.totals.Folded.Load(),
 		"failed":       shared.totals.Failed.Load(),
 		"files":        shared.totals.Files.Load(),
 	}

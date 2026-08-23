@@ -54,6 +54,14 @@ type ChatRecordSetting struct {
 	// goes in the database; the bytes go to disk, filed under the staff id of
 	// the key that sent them.
 	StoreFiles bool `json:"store_files"`
+	// FileRetentionDays and RecordRetentionDays are how long to keep what has
+	// been written. Zero means keep it forever, which is the default: a gateway
+	// that quietly began discarding a company's records after an upgrade would
+	// be a worse failure than a full disk, which at least announces itself.
+	// Attachments have their own setting because they fill a disk far faster
+	// than the rows do.
+	FileRetentionDays   int `json:"file_retention_days"`
+	RecordRetentionDays int `json:"record_retention_days"`
 	// FileRoot is the directory those attachments are written under.
 	FileRoot string `json:"file_root"`
 	// MaxFileBytes skips any single attachment larger than this.
@@ -86,6 +94,10 @@ type ChatRecordSetting struct {
 	MemorySessionMode string `json:"memory_session_mode"`
 	// MemoryMinChars skips remarks too short to be worth remembering.
 	MemoryMinChars int `json:"memory_min_chars"`
+	// MemoryMaxQueuedBytes bounds the memory queue by weight rather than by
+	// slot count, the same way the transcript queue is bounded and for the same
+	// reason: a queue full of turns is heap the gateway can no longer see.
+	MemoryMaxQueuedBytes int64 `json:"memory_max_queued_bytes"`
 	// MemoryMaxChars bounds what is sent to the memory store, which imposes a
 	// limit of its own and rejects the whole message when it is passed. That
 	// limit is smaller than MaxContentChars, so a long remark that the
@@ -128,9 +140,12 @@ var chatRecordSetting = ChatRecordSetting{
 	// leaves room for a memory store configured a little more tightly.
 	MemoryMaxChars:  20000,
 	MemoryQueueSize: 2048,
-	MemoryWorkers:   2,
-	FileRoot:        "data/chat-record-files",
-	MaxFileBytes:    20 << 20,
+	// 2048 turns of up to MemoryMaxChars each can weigh far more than this;
+	// whichever ceiling is reached first is the one that holds.
+	MemoryMaxQueuedBytes: 16 << 20,
+	MemoryWorkers:        2,
+	FileRoot:             "data/chat-record-files",
+	MaxFileBytes:         20 << 20,
 }
 
 // AutomationModelList splits the operator's list of background-only models.
@@ -306,6 +321,13 @@ func (s *ChatRecordSetting) MemoryMinCharsOrDefault() int {
 		return 4
 	}
 	return s.MemoryMinChars
+}
+
+func (s *ChatRecordSetting) MemoryMaxQueuedBytesOrDefault() int64 {
+	if s.MemoryMaxQueuedBytes <= 0 {
+		return 16 << 20
+	}
+	return s.MemoryMaxQueuedBytes
 }
 
 func (s *ChatRecordSetting) MemoryMaxCharsOrDefault() int {

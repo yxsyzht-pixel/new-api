@@ -63,6 +63,9 @@ const schema = z.object({
   workers: z.coerce.number().int().min(1),
   maxContentChars: z.coerce.number().int().min(1),
   maxQueuedMb: z.coerce.number().int().min(1),
+  memoryMaxQueuedMb: z.coerce.number().int().min(1),
+  fileRetentionDays: z.coerce.number().int().min(0),
+  recordRetentionDays: z.coerce.number().int().min(0),
 });
 
 type Values = z.infer<typeof schema>;
@@ -286,6 +289,22 @@ export function ChatRecordSection({
       values.maxContentChars,
       saved.maxContentChars,
     );
+    push(
+      "chat_record_setting.file_retention_days",
+      values.fileRetentionDays,
+      saved.fileRetentionDays,
+    );
+    push(
+      "chat_record_setting.record_retention_days",
+      values.recordRetentionDays,
+      saved.recordRetentionDays,
+    );
+    if (values.memoryMaxQueuedMb !== saved.memoryMaxQueuedMb) {
+      updates.push({
+        key: "chat_record_setting.memory_max_queued_bytes",
+        value: String(values.memoryMaxQueuedMb * 1024 * 1024),
+      });
+    }
     if (values.maxQueuedMb !== saved.maxQueuedMb) {
       updates.push({
         key: "chat_record_setting.max_queued_bytes",
@@ -784,6 +803,25 @@ export function ChatRecordSection({
 
           <FormField
             control={form.control}
+            name="memoryMaxQueuedMb"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("Memory ceiling for the memory queue (MB)")}</FormLabel>
+                <FormControl>
+                  <Input type="number" min={1} {...field} />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    "Turns waiting to be sent hold their text in memory. Past this, memories are dropped rather than allowed to grow into the gateway’s heap — the transcript is never affected.",
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
             name="memoryMaxChars"
             render={({ field }) => (
               <FormItem>
@@ -865,6 +903,44 @@ export function ChatRecordSection({
                 <FormDescription>
                   {t(
                     "Waiting turns hold the request and reply in memory. If the database stalls, this is what stops the queue from growing into the gateway’s heap — past it, transcripts are dropped.",
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="fileRetentionDays"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("Keep attachments for (days)")}</FormLabel>
+                <FormControl>
+                  <Input type="number" min={0} {...field} />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    "0 keeps them forever. Attachments fill a disk far faster than the rows do: one conversation with a screenshot in it outweighs thousands of plain turns.",
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="recordRetentionDays"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("Keep transcripts for (days)")}</FormLabel>
+                <FormControl>
+                  <Input type="number" min={0} {...field} />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    "0 keeps them forever. Expired turns are deleted a few hundred at a time, with their attachments removed from disk first.",
                   )}
                 </FormDescription>
                 <FormMessage />

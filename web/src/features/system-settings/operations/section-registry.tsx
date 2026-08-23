@@ -185,6 +185,14 @@ const OPERATIONS_SECTIONS = [
             settings["chat_record_setting.max_queued_bytes"],
             64 * 1024 * 1024,
           ),
+          memoryMaxQueuedMb: toMb(
+            settings["chat_record_setting.memory_max_queued_bytes"],
+            16 * 1024 * 1024,
+          ),
+          fileRetentionDays:
+            settings["chat_record_setting.file_retention_days"] ?? 0,
+          recordRetentionDays:
+            settings["chat_record_setting.record_retention_days"] ?? 0,
         }}
       />
     ),

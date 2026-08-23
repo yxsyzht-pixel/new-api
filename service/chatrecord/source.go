@@ -339,7 +339,7 @@ func elementName(message string) (string, bool) {
 // rather than because anyone said anything. The newest thing in the
 // conversation is then a tool's output, not a message.
 func drivenByTool(body []byte) bool {
-	if len(body) == 0 || !gjson.ValidBytes(body) {
+	if len(body) == 0 {
 		return false
 	}
 	for _, path := range []string{"input", "messages"} {

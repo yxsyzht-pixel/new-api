@@ -96,6 +96,13 @@ func ExportTokens(c *gin.Context) {
 // exportRowLimit keeps one click from trying to render an unbounded sheet.
 const exportRowLimit = 10000
 
+// importRowLimit bounds the other direction, which was left open. A 10MB
+// spreadsheet holds hundreds of thousands of rows, and every row is a read and
+// a write of its own — one upload could hold a database connection for as long
+// as it liked. The same ceiling as the export, because a sheet this endpoint
+// produced is the only one it is meant to be given.
+const importRowLimit = exportRowLimit
+
 func tokenSheetRow(token *model.Token, owners map[int]string) []string {
 	// Written out in full rather than left blank: an empty cell now means
 	// "leave this alone" on the way back in, so a key with no expiry has to say
@@ -197,6 +204,11 @@ func ImportTokens(c *gin.Context) {
 	}
 	if len(rows) < 2 {
 		common.ApiErrorMsg(c, "表里没有数据行")
+		return
+	}
+	if len(rows)-1 > importRowLimit {
+		common.ApiErrorMsg(c, fmt.Sprintf("表里有 %d 行，一次最多导入 %d 行",
+			len(rows)-1, importRowLimit))
 		return
 	}
 
@@ -352,6 +364,12 @@ func applySheetRow(c *gin.Context, scope model.TokenScope, manages bool, columns
 		quota, err := strconv.Atoi(value)
 		if err != nil {
 			return fmt.Errorf("剩余额度 %q 不是数字", value)
+		}
+		// The same ceiling the page enforces. A limit applied on one path and
+		// not the other is not a limit, and a mistyped cell here would other-
+		// wise mint a quota nobody meant to grant.
+		if maximum := common.QuotaFromFloat(1000000000 * common.QuotaPerUnit); quota > maximum {
+			return fmt.Errorf("剩余额度 %d 超过上限 %d", quota, maximum)
 		}
 		token.RemainQuota = quota
 	}

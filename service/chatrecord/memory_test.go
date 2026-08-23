@@ -13,6 +13,7 @@ import (
 
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,7 +64,7 @@ func TestTheReplyIsFiledUnderTheAssistantNotThePerson(t *testing.T) {
 
 	cfg := operation_setting.GetChatRecordSetting()
 	previous := *cfg
-	t.Cleanup(func() { *cfg = previous; StopMemory() })
+	t.Cleanup(func() { StopMemory(); *cfg = previous })
 	cfg.MemoryEnabled = true
 	cfg.MemoryBaseURL = server.URL
 	cfg.MemoryAPIKey = "test-key"
@@ -106,7 +107,7 @@ func TestTheReplyIsFiledUnderTheAssistantNotThePerson(t *testing.T) {
 func TestMemoryDeliveryNeverBlocksTheCaller(t *testing.T) {
 	cfg := operation_setting.GetChatRecordSetting()
 	previous := *cfg
-	t.Cleanup(func() { *cfg = previous; StopMemory() })
+	t.Cleanup(func() { StopMemory(); *cfg = previous })
 	cfg.MemoryEnabled = true
 	cfg.MemoryBaseURL = "http://127.0.0.1:1"
 	cfg.MemoryAPIKey = "test-key"
@@ -196,7 +197,7 @@ func TestLongRemarksAreCutToWhatTheMemoryAccepts(t *testing.T) {
 
 	cfg := operation_setting.GetChatRecordSetting()
 	previous := *cfg
-	t.Cleanup(func() { *cfg = previous; StopMemory() })
+	t.Cleanup(func() { StopMemory(); *cfg = previous })
 	cfg.MemoryEnabled = true
 	cfg.MemoryBaseURL = server.URL
 	cfg.MemoryAPIKey = "test-key"
@@ -259,7 +260,7 @@ func TestAnAssistantIsQuietenedOncePerSessionAndWorkspace(t *testing.T) {
 	}
 	here, elsewhere := settings("yxsy"), settings("somewhere-else")
 
-	queue := &memoryQueue{}
+	queue := &memoryWriter{totals: &memoryQueue{}}
 	ctx := context.Background()
 
 	queue.silenceAssistant(ctx, here, "staff-10018037", "codex-10018037")
@@ -292,7 +293,7 @@ func TestStoppingTheWriterForgetsWhatWasQuietened(t *testing.T) {
 
 	cfg := operation_setting.GetChatRecordSetting()
 	previous := *cfg
-	t.Cleanup(func() { *cfg = previous; StopMemory() })
+	t.Cleanup(func() { StopMemory(); *cfg = previous })
 	cfg.MemoryEnabled = true
 	cfg.MemoryBaseURL = server.URL
 	cfg.MemoryAPIKey = "test-key"
@@ -333,7 +334,7 @@ func TestStoppingTheWriterForgetsWhatWasQuietened(t *testing.T) {
 // conversations, which never stop arriving, so the map that remembers them
 // needs a ceiling or it is a leak that only shows up after weeks.
 func TestTheSilencedMapDoesNotGrowForever(t *testing.T) {
-	queue := &memoryQueue{}
+	queue := &memoryWriter{totals: &memoryQueue{}}
 	for i := 0; i < silencedCap+10; i++ {
 		queue.silenced.Store(strconv.Itoa(i), true)
 	}
@@ -349,4 +350,122 @@ func TestTheSilencedMapDoesNotGrowForever(t *testing.T) {
 	if queue.marks.Load() != 0 {
 		t.Errorf("the counter says %d after forgetting everything", queue.marks.Load())
 	}
+}
+
+// Slots were the only limit the memory queue had. A couple of thousand turns,
+// each holding a question and an answer, is heap the gateway's own buffer
+// accounting can no longer see — the same reason the transcript queue has been
+// weighed rather than counted since the beginning.
+func TestTheMemoryQueueIsBoundedByWeightNotJustSlots(t *testing.T) {
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := *cfg
+	t.Cleanup(func() { StopMemory(); *cfg = previous })
+	cfg.MemoryEnabled = true
+	cfg.MemoryBaseURL = "http://127.0.0.1:1" // nothing answers, so nothing drains
+	cfg.MemoryAPIKey = "test-key"
+	cfg.MemoryQueueSize = 4096
+	cfg.MemoryWorkers = 1
+	cfg.MemoryMaxQueuedBytes = 8 << 10
+	cfg.MemoryMaxChars = 20000
+	StopMemory()
+	memory.Dropped.Store(0)
+
+	turn := MemoryTurn{
+		StaffID: "10018037", Session: "s",
+		Spoken: strings.Repeat("话", 700), Reply: strings.Repeat("答", 700),
+		CreatedAt: time.Now(),
+	}
+	for i := 0; i < 200; i++ {
+		SubmitMemory(turn)
+	}
+
+	require.Positive(t, memory.Dropped.Load(),
+		"200 turns of some kilobytes each fitted inside an 8KB budget")
+
+	running := memory.current.Load()
+	require.NotNil(t, running)
+	assert.Less(t, len(running.queue), 4096,
+		"the slot count was reached before the byte budget, so the budget did nothing")
+	assert.LessOrEqual(t, running.held.Load(), running.budget+turn.size(),
+		"more is held than the budget allows")
+}
+
+// The queue length and the worker count were read once and then never again:
+// they were not part of what identified a running generation, so changing
+// either did nothing until the process restarted.
+//
+// Driven through ensure rather than by submitting turns. A turn in flight means
+// a worker inside deliver reading these very settings, and changing them under
+// it would be a data race manufactured by the test itself.
+func TestChangingTheQueueShapeRebuildsTheWriter(t *testing.T) {
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := *cfg
+	t.Cleanup(func() { StopMemory(); *cfg = previous })
+	cfg.MemoryEnabled = true
+	cfg.MemoryBaseURL = "http://127.0.0.1:1"
+	cfg.MemoryAPIKey = "test-key"
+	cfg.MemoryWorkers = 1
+	cfg.MemoryQueueSize = 8
+	StopMemory()
+
+	first := memory.ensure(cfg, memoryShape(cfg))
+	require.NotNil(t, first)
+	require.Equal(t, 8, cap(first.queue))
+
+	// Same settings, same generation: rebuilding on every submit would throw
+	// away everything already queued.
+	require.Same(t, first, memory.ensure(cfg, memoryShape(cfg)))
+
+	cfg.MemoryQueueSize = 64
+	second := memory.ensure(cfg, memoryShape(cfg))
+	require.NotNil(t, second)
+	assert.Equal(t, 64, cap(second.queue), "the new queue length was ignored")
+	assert.NotSame(t, first, second, "the writer was not rebuilt")
+
+	cfg.MemoryWorkers = 4
+	third := memory.ensure(cfg, memoryShape(cfg))
+	assert.NotSame(t, second, third, "a change to the worker count was ignored")
+}
+
+// A store that refuses everything must not slowly fill the budget until
+// nothing can be queued at all: the weight is released when the turn has been
+// dealt with, however it went.
+func TestABudgetIsReleasedEvenWhenDeliveryFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := *cfg
+	t.Cleanup(func() { StopMemory(); *cfg = previous })
+	cfg.MemoryEnabled = true
+	cfg.MemoryBaseURL = server.URL
+	cfg.MemoryAPIKey = "test-key"
+	cfg.MemoryWorkspace = "yxsy"
+	cfg.MemoryPeerTemplate = "{staff_id}"
+	cfg.MemoryQueueSize = 16
+	cfg.MemoryWorkers = 1
+	cfg.MemoryMaxQueuedBytes = 1 << 20
+	StopMemory()
+	memory.Failed.Store(0)
+
+	for i := 0; i < 5; i++ {
+		SubmitMemory(MemoryTurn{
+			StaffID: "10018037", Session: "s", Spoken: "一句话", CreatedAt: time.Now(),
+		})
+	}
+
+	running := memory.current.Load()
+	require.NotNil(t, running)
+	for i := 0; i < 100 && memory.Failed.Load() < 5; i++ {
+		time.Sleep(50 * time.Millisecond)
+	}
+	require.Equal(t, int64(5), memory.Failed.Load(), "the store did not refuse all five")
+
+	for i := 0; i < 100 && running.held.Load() != 0; i++ {
+		time.Sleep(50 * time.Millisecond)
+	}
+	assert.Equal(t, int64(0), running.held.Load(),
+		"the budget is still held after every turn was dealt with")
 }

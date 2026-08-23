@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS chat_records (
     thread_source     VARCHAR(32) NOT NULL DEFAULT '',
     client_turn_id    VARCHAR(64) NOT NULL DEFAULT '',
     client_session_id VARCHAR(64) NOT NULL DEFAULT '',
+    memory_sent  BOOLEAN      NOT NULL DEFAULT false,
     request_count INT         NOT NULL DEFAULT 1,
     file_count   INT          NOT NULL DEFAULT 0,
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -49,6 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_records_model_name ON chat_records (model_na
 CREATE INDEX IF NOT EXISTS idx_chat_records_request_id ON chat_records (request_id);
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS staff_id VARCHAR(64) NOT NULL DEFAULT '';
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS turn_key VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS memory_sent BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_chat_records_source ON chat_records (source);
 -- The raw signals are kept beside the verdict so a reader can apply their own
@@ -180,6 +182,27 @@ INSERT INTO chat_record_files
   (record_id, staff_id, kind, media_type, file_name, file_size, sha256, path, source_url, created_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 ON CONFLICT (record_id, sha256) WHERE sha256 <> '' DO NOTHING`
+
+// claimMemoryStatement decides, atomically, which request of a turn is the one
+// that tells the memory store about it.
+//
+// "The first request" was the wrong answer. An agent working on a question
+// sends the same turn again on every tool round-trip, and the first of those
+// very often carries no prose at all — only tool calls — so the memory received
+// the person's words with no answer attached to them. Waiting for a reply and
+// then racing several workers to send it would be worse: the same sentence
+// derived five times over.
+//
+// The row itself settles it. Exactly one caller can flip memory_sent from false
+// to true, and only once there is something to send; the row lock makes that
+// true even with every worker trying at once. What comes back is the turn as
+// stored — the accumulated answer rather than whichever fragment this
+// particular request happened to carry.
+const claimMemoryStatement = `
+UPDATE chat_records
+   SET memory_sent = true
+ WHERE id = $1 AND NOT memory_sent AND ai_message <> ''
+RETURNING human_message, ai_message`
 
 // fileListStatement pages through attachments. An empty staff id means every
 // one of them, so the caller does not have to build two queries.

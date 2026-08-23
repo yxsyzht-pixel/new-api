@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/service/chatrecord"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
@@ -92,7 +93,14 @@ func TestBinaryRoutesAreNotWrapped(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := operation_setting.GetChatRecordSetting()
 	prevEnabled, prevDSN := cfg.Enabled, cfg.DSN
-	t.Cleanup(func() { cfg.Enabled, cfg.DSN = prevEnabled, prevDSN })
+	t.Cleanup(func() {
+		// The middleware starts a real writer, whose workers read these
+		// settings. Restoring them first is a data race, and a package whose
+		// -race output is already noisy is a package where the next real race
+		// goes unnoticed.
+		chatrecord.Stop()
+		cfg.Enabled, cfg.DSN = prevEnabled, prevDSN
+	})
 	cfg.Enabled, cfg.DSN = true, "postgres://u:p@127.0.0.1:1/none"
 
 	for _, path := range []string{
@@ -136,7 +144,14 @@ func TestReadFromStillTeesTheReply(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := operation_setting.GetChatRecordSetting()
 	prevEnabled, prevDSN := cfg.Enabled, cfg.DSN
-	t.Cleanup(func() { cfg.Enabled, cfg.DSN = prevEnabled, prevDSN })
+	t.Cleanup(func() {
+		// The middleware starts a real writer, whose workers read these
+		// settings. Restoring them first is a data race, and a package whose
+		// -race output is already noisy is a package where the next real race
+		// goes unnoticed.
+		chatrecord.Stop()
+		cfg.Enabled, cfg.DSN = prevEnabled, prevDSN
+	})
 	cfg.Enabled, cfg.DSN = true, "postgres://u:p@127.0.0.1:1/none"
 
 	var captured []byte
@@ -189,7 +204,14 @@ func TestAKeyCanOptOutOfBeingRecorded(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := operation_setting.GetChatRecordSetting()
 	prevEnabled, prevDSN := cfg.Enabled, cfg.DSN
-	t.Cleanup(func() { cfg.Enabled, cfg.DSN = prevEnabled, prevDSN })
+	t.Cleanup(func() {
+		// The middleware starts a real writer, whose workers read these
+		// settings. Restoring them first is a data race, and a package whose
+		// -race output is already noisy is a package where the next real race
+		// goes unnoticed.
+		chatrecord.Stop()
+		cfg.Enabled, cfg.DSN = prevEnabled, prevDSN
+	})
 	cfg.Enabled, cfg.DSN = true, "postgres://u:p@127.0.0.1:1/none"
 
 	for _, tc := range []struct {

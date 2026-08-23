@@ -207,3 +207,77 @@ func TestAvatarsComeThrough(t *testing.T) {
 		}
 	}
 }
+
+// The whole reason the directory is held in memory is that a picker firing on
+// every keystroke must not reach HR. That held everywhere except at the one
+// moment it mattered: when the window closed, every waiting request fetched the
+// entire directory at once.
+func TestOnlyOneRefreshRunsAtATime(t *testing.T) {
+	server, calls := fakeHR(t, 6)
+	configure(t, server.URL)
+	Invalidate()
+
+	const searchers = 24
+	start := make(chan struct{})
+	done := make(chan error, searchers)
+	for i := 0; i < searchers; i++ {
+		go func() {
+			<-start
+			_, err := Search(context.Background(), "张", 10)
+			done <- err
+		}()
+	}
+	close(start)
+	for i := 0; i < searchers; i++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// One token exchange and one page fetch is two calls; anything near
+	// twenty-four means every searcher went out on its own.
+	if got := calls.Load(); got > 4 {
+		t.Errorf("%d searchers made %d calls to HR; one refresh should serve them all", searchers, got)
+	}
+}
+
+// Typing a staff number should offer the person whose number starts that way
+// before someone matched on the middle of a department name — without hiding
+// the latter, which is what a picker that only matched from the left would do.
+//
+// The cache is seeded here rather than fetched: this is about the order Search
+// returns, and it needs a directory where the substring-only match comes first
+// in the source list, so that returning it first would be the natural mistake.
+func TestPrefixMatchesComeFirst(t *testing.T) {
+	cfg := operation_setting.GetStaffDirectorySetting()
+	previous := *cfg
+	t.Cleanup(func() { *cfg = previous; Invalidate() })
+	cfg.Enabled, cfg.BaseURL, cfg.AppID, cfg.AppSecret = true, "http://unused", "app", "secret"
+
+	people := []Person{
+		{Code: "20001", Name: "李四", Department: "10018 号楼行政组"},
+		{Code: "10018037", Name: "张三", Department: "总裁办"},
+	}
+	byCode := make(map[string]Person, len(people))
+	for _, person := range people {
+		byCode[person.Code] = person
+	}
+	cache.mu.Lock()
+	cache.people, cache.byCode = people, byCode
+	cache.loadedAt, cache.source = time.Now(), cfg.BaseURL+"|"+cfg.AppID
+	cache.mu.Unlock()
+
+	found, err := Search(context.Background(), "10018", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 2 {
+		t.Fatalf("got %d results, want both the number match and the department one", len(found))
+	}
+	if found[0].Code != "10018037" {
+		t.Errorf("first result is %q; the number starting with the keyword should lead", found[0].Code)
+	}
+	if found[1].Code != "20001" {
+		t.Errorf("the department match was dropped instead of ranked second: %q", found[1].Code)
+	}
+}

@@ -43,7 +43,7 @@ func (c ClientInfo) Declared() bool { return c.ThreadSource != "" }
 
 // DetectClient reads whatever the request says about its own origin.
 func DetectClient(body []byte) ClientInfo {
-	if len(body) == 0 || !gjson.ValidBytes(body) {
+	if len(body) == 0 {
 		return ClientInfo{}
 	}
 
@@ -81,7 +81,7 @@ func DetectClient(body []byte) ClientInfo {
 // format. Agents give their model tools and room to answer; a summariser, a
 // title generator or a classifier gives it neither.
 func looksLikeBackgroundTask(body []byte) bool {
-	if len(body) == 0 || !gjson.ValidBytes(body) {
+	if len(body) == 0 {
 		return false
 	}
 	// A request that can call tools is doing someone's work, not its own.

@@ -19,7 +19,7 @@ import (
 // UserMessage digs the caller's newest message out of a request body, whichever
 // protocol it arrived in.
 func UserMessage(body []byte) string {
-	if len(body) == 0 || !gjson.ValidBytes(body) {
+	if len(body) == 0 {
 		return ""
 	}
 
@@ -56,7 +56,7 @@ func UserMessage(body []byte) string {
 // Responses calls the list "input"; Chat Completions and Claude Messages both
 // call it "messages".
 func eachUserContentNewestFirst(body []byte, fn func(content gjson.Result) bool) {
-	if len(body) == 0 || !gjson.ValidBytes(body) {
+	if len(body) == 0 {
 		return
 	}
 	for _, path := range []string{"input", "messages"} {
@@ -94,7 +94,7 @@ func ConversationKey(body []byte) string {
 
 // firstUserText is the opening message of a conversation.
 func firstUserText(body []byte) string {
-	if len(body) == 0 || !gjson.ValidBytes(body) {
+	if len(body) == 0 {
 		return ""
 	}
 	for _, path := range []string{"input", "messages"} {
