@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS chat_records (
     user_message TEXT         NOT NULL DEFAULT '',
     ai_message   TEXT         NOT NULL DEFAULT '',
     turn_key     VARCHAR(64)  NOT NULL DEFAULT '',
+    source       VARCHAR(16)  NOT NULL DEFAULT '',
     request_count INT         NOT NULL DEFAULT 1,
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
@@ -39,6 +40,8 @@ CREATE INDEX IF NOT EXISTS idx_chat_records_model_name ON chat_records (model_na
 CREATE INDEX IF NOT EXISTS idx_chat_records_request_id ON chat_records (request_id);
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS staff_id VARCHAR(64) NOT NULL DEFAULT '';
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS turn_key VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_chat_records_source ON chat_records (source);
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS request_count INT NOT NULL DEFAULT 1;
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
 -- One row per user turn. Partial, so rows written before this existed (and any
@@ -78,8 +81,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_record_files_once
 const insertStatement = `
 INSERT INTO chat_records
   (request_id, user_id, token_id, token_name, staff_id, model_name, endpoint,
-   status_code, user_message, ai_message, created_at, updated_at, turn_key)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12)
+   status_code, user_message, ai_message, created_at, updated_at, turn_key, source)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12,$14)
 ON CONFLICT (turn_key) WHERE turn_key <> '' DO UPDATE SET
   ai_message = CASE
     WHEN EXCLUDED.ai_message = '' THEN chat_records.ai_message
@@ -91,6 +94,7 @@ ON CONFLICT (turn_key) WHERE turn_key <> '' DO UPDATE SET
   END,
   model_name    = EXCLUDED.model_name,
   status_code   = EXCLUDED.status_code,
+  source        = EXCLUDED.source,
   request_count = chat_records.request_count + 1,
   updated_at    = EXCLUDED.created_at
 RETURNING id`

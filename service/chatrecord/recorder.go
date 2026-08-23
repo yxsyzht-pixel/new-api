@@ -240,7 +240,8 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	err := w.pool.QueryRow(writeCtx, insertStatement,
 		turn.RequestID, turn.UserID, turn.TokenID, turn.TokenName, turn.StaffID,
 		turn.ModelName, turn.Endpoint, turn.StatusCode,
-		userMessage, assistantReply, turn.CreatedAt, turnKey, max).Scan(&recordID)
+		userMessage, assistantReply, turn.CreatedAt, turnKey, max,
+		ClassifySource(userMessage, cfg.AutoPatterns())).Scan(&recordID)
 	if err != nil {
 		w.totals.Failed.Add(1)
 		common.SysError("chat record: write failed: " + err.Error())

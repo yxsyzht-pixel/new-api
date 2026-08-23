@@ -57,6 +57,14 @@ type ChatRecordSetting struct {
 	FileRoot string `json:"file_root"`
 	// MaxFileBytes skips any single attachment larger than this.
 	MaxFileBytes int `json:"max_file_bytes"`
+
+	// AutoMessagePatterns marks messages as machine-sent when they contain one
+	// of these, one per line. Structural giveaways — a bracketed tag, an XML
+	// envelope, a system prompt handed over as a user turn — are recognised
+	// without help; this is for house prompt templates, which read like
+	// ordinary instructions and can only be recognised by the operator who
+	// wrote them.
+	AutoMessagePatterns string `json:"auto_message_patterns"`
 }
 
 var chatRecordSetting = ChatRecordSetting{
@@ -71,6 +79,21 @@ var chatRecordSetting = ChatRecordSetting{
 	StoreFiles:      true,
 	FileRoot:        "data/chat-record-files",
 	MaxFileBytes:    20 << 20,
+}
+
+// AutoPatterns splits the operator's list into usable patterns.
+func (s *ChatRecordSetting) AutoPatterns() []string {
+	if strings.TrimSpace(s.AutoMessagePatterns) == "" {
+		return nil
+	}
+	lines := strings.Split(s.AutoMessagePatterns, "\n")
+	patterns := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			patterns = append(patterns, trimmed)
+		}
+	}
+	return patterns
 }
 
 func init() {

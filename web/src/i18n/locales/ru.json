@@ -5387,6 +5387,8 @@
     "Attachment folder": "Папка вложений",
     "Relative paths are resolved against the gateway’s working directory. Attachments are filed as <folder>/<staff ID>/<date>/.": "Относительные пути отсчитываются от рабочего каталога шлюза. Вложения раскладываются как <папка>/<табельный номер>/<дата>/.",
     "Largest attachment kept (MB)": "Максимальный размер вложения (МБ)",
-    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{files}} files · {{dropped}} dropped · {{failed}} failed": "Писатель работает · очередь {{queued}}/{{capacity}} · занято {{heldMb}} МБ · записано {{written}} · вложений {{files}} · отброшено {{dropped}} · ошибок {{failed}}"
+    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{files}} files · {{dropped}} dropped · {{failed}} failed": "Писатель работает · очередь {{queued}}/{{capacity}} · занято {{heldMb}} МБ · записано {{written}} · вложений {{files}} · отброшено {{dropped}} · ошибок {{failed}}",
+    "Machine-message markers": "Метки машинных сообщений",
+    "One per line. A message containing any of these is filed as sent by a program rather than typed by a person. Bracketed tags, XML envelopes and system prompts sent as user turns are recognised without help — this is for your own prompt templates, which read like ordinary instructions.": "По одному в строке. Сообщение с любым из них помечается как отправленное программой, а не человеком. Теги в скобках, XML и системные подсказки распознаются сами — сюда впишите свои шаблоны промптов."
   }
 }

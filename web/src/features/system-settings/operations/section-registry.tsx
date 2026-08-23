@@ -155,6 +155,8 @@ const OPERATIONS_SECTIONS = [
             settings["chat_record_setting.max_file_bytes"],
             20 * 1024 * 1024,
           ),
+          autoMessagePatterns:
+            settings["chat_record_setting.auto_message_patterns"] ?? "",
           queueSize: settings["chat_record_setting.queue_size"] ?? 4096,
           workers: settings["chat_record_setting.workers"] ?? 4,
           maxContentChars:

@@ -5387,6 +5387,8 @@
     "Attachment folder": "附件存放目录",
     "Relative paths are resolved against the gateway’s working directory. Attachments are filed as <folder>/<staff ID>/<date>/.": "相对路径基于网关的工作目录。附件按 <目录>/<工号>/<日期>/ 归档。",
     "Largest attachment kept (MB)": "单个附件上限(MB)",
-    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{files}} files · {{dropped}} dropped · {{failed}} failed": "写入进程运行中 · 队列 {{queued}}/{{capacity}} · 占用 {{heldMb}} MB · 已写入 {{written}} · 附件 {{files}} · 已丢弃 {{dropped}} · 失败 {{failed}}"
+    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{files}} files · {{dropped}} dropped · {{failed}} failed": "写入进程运行中 · 队列 {{queued}}/{{capacity}} · 占用 {{heldMb}} MB · 已写入 {{written}} · 附件 {{files}} · 已丢弃 {{dropped}} · 失败 {{failed}}",
+    "Machine-message markers": "机器消息标记",
+    "One per line. A message containing any of these is filed as sent by a program rather than typed by a person. Bracketed tags, XML envelopes and system prompts sent as user turns are recognised without help — this is for your own prompt templates, which read like ordinary instructions.": "一行一条。命中任意一条的消息会被标为「程序发送」而不是「人工输入」。方括号标签、XML 信封、以用户身份发来的系统提示词已自动识别,这里填的是你自己的提示词模板——它们读起来和普通指令没有区别,只有你知道。"
   }
 }

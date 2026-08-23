@@ -380,6 +380,7 @@ export type OperationsSettings = {
   'chat_record_setting.store_files': boolean
   'chat_record_setting.file_root': string
   'chat_record_setting.max_file_bytes': number
+  'chat_record_setting.auto_message_patterns': string
 }
 
 export type SecuritySettings = {

@@ -5387,6 +5387,8 @@
     "Attachment folder": "Dossier des pièces jointes",
     "Relative paths are resolved against the gateway’s working directory. Attachments are filed as <folder>/<staff ID>/<date>/.": "Les chemins relatifs partent du répertoire de travail de la passerelle. Les pièces jointes sont classées en <dossier>/<matricule>/<date>/.",
     "Largest attachment kept (MB)": "Taille maximale d’une pièce jointe (Mo)",
-    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{files}} files · {{dropped}} dropped · {{failed}} failed": "Écriture active · file {{queued}}/{{capacity}} · {{heldMb}} Mo retenus · {{written}} écrits · {{files}} fichiers · {{dropped}} abandonnés · {{failed}} échecs"
+    "Writer running · {{queued}}/{{capacity}} queued · {{heldMb}} MB held · {{written}} written · {{files}} files · {{dropped}} dropped · {{failed}} failed": "Écriture active · file {{queued}}/{{capacity}} · {{heldMb}} Mo retenus · {{written}} écrits · {{files}} fichiers · {{dropped}} abandonnés · {{failed}} échecs",
+    "Machine-message markers": "Marqueurs de messages automatiques",
+    "One per line. A message containing any of these is filed as sent by a program rather than typed by a person. Bracketed tags, XML envelopes and system prompts sent as user turns are recognised without help — this is for your own prompt templates, which read like ordinary instructions.": "Un par ligne. Un message contenant l’un d’eux est classé comme envoyé par un programme plutôt que saisi par une personne. Les balises entre crochets, les enveloppes XML et les invites système sont reconnues automatiquement — ceci concerne vos propres modèles d’invite."
   }
 }

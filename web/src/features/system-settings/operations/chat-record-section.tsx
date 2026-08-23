@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 
 import {
   SettingsForm,
@@ -47,6 +48,7 @@ const schema = z.object({
   storeFiles: z.boolean(),
   fileRoot: z.string(),
   maxFileMb: z.coerce.number().int().min(1),
+  autoMessagePatterns: z.string(),
   queueSize: z.coerce.number().int().min(1),
   workers: z.coerce.number().int().min(1),
   maxContentChars: z.coerce.number().int().min(1),
@@ -167,6 +169,11 @@ export function ChatRecordSection({
       saved.storeFiles,
     );
     push("chat_record_setting.file_root", values.fileRoot, saved.fileRoot);
+    push(
+      "chat_record_setting.auto_message_patterns",
+      values.autoMessagePatterns,
+      saved.autoMessagePatterns,
+    );
     if (values.maxFileMb !== saved.maxFileMb) {
       updates.push({
         key: "chat_record_setting.max_file_bytes",
@@ -448,6 +455,25 @@ export function ChatRecordSection({
                 <FormControl>
                   <Input type="number" min={1} {...field} />
                 </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="autoMessagePatterns"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t("Machine-message markers")}</FormLabel>
+                <FormControl>
+                  <Textarea rows={5} className="font-mono text-sm" {...field} />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    "One per line. A message containing any of these is filed as sent by a program rather than typed by a person. Bracketed tags, XML envelopes and system prompts sent as user turns are recognised without help — this is for your own prompt templates, which read like ordinary instructions.",
+                  )}
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
