@@ -48,8 +48,9 @@ func EnableChannel(channelId int, usingKey string, channelName string) {
 // account behind a channel has run out of quota. 429 is the usual one; Kimi
 // says the same thing with 403, and because only 429 was looked at, that
 // channel was never parked and stayed in rotation while exhausted — 473 calls
-// to a spent account across one day's logs, every one of them a wasted trip
-// upstream and a failover the caller waited through.
+// to a spent account across the retained logs (20–24 August, 102 of them on
+// the 24th alone), every one a wasted trip upstream and a failover the caller
+// waited through.
 //
 // The status alone never decides it. A bare 403 is a forbidden request and a
 // bare 429 is a burst limit; the wording below is what separates those from an

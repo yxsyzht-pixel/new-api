@@ -73,9 +73,9 @@ func TestIsUpstreamUsageLimitErrorGoogleWording(t *testing.T) {
 }
 
 // Kimi answers an exhausted plan with 403 and the same words everyone else
-// sends with 429. Looking only at 429 meant that channel was never parked: one
-// day's logs hold 473 calls to an account that had already said it was spent,
-// each one a trip upstream and a failover the caller waited through.
+// sends with 429. Looking only at 429 meant that channel was never parked: the
+// retained logs hold 473 calls to an account that had already said it was
+// spent, each one a trip upstream and a failover the caller waited through.
 func TestAnExhaustedAccountIsRecognisedOn403(t *testing.T) {
 	cases := []struct {
 		name       string
