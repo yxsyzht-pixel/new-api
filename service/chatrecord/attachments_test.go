@@ -3,6 +3,11 @@ package chatrecord
 import (
 	"bytes"
 	"encoding/base64"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -240,52 +245,52 @@ func TestOnlyTheNewestMessagesAttachmentsAreTaken(t *testing.T) {
 	}
 }
 
-// The image endpoints are exempt: what goes in and out of them is a picture by
-// definition, and keeping every one fills a disk with pixels the recorded
-// prompt already accounts for.
-func TestImageRoutesKeepNoAttachments(t *testing.T) {
-	exempt := []string{
-		"/v1/images/generations",
-		"/v1/images/edits",
-		"/v1/images/variations",
-	}
-	for _, endpoint := range exempt {
-		if StoreAttachmentsFor(endpoint) {
-			t.Errorf("%s must not have its pictures kept", endpoint)
-		}
-	}
-
-	kept := []string{
-		"/v1/chat/completions",
-		"/v1/responses",
-		"/v1/messages",
-	}
-	for _, endpoint := range kept {
-		if !StoreAttachmentsFor(endpoint) {
-			t.Errorf("%s carries attachments worth keeping", endpoint)
-		}
-	}
-}
-
-// The exemption has to hold where it counts: nothing on disk, no rows.
-func TestNothingIsStoredForAnImageRoute(t *testing.T) {
+// The image routes were once exempt: their pictures were not kept, because
+// nothing bounded the disk they would fill and the prompt was thought to be
+// enough. Retention bounds it now and a key that should not be recorded says so
+// on the key, so the picture a person asked for is kept like any other — and it
+// is the only place that picture exists at all.
+func TestImageRoutesKeepThePictureTheyProduced(t *testing.T) {
 	root := t.TempDir()
 	cfg := operation_setting.GetChatRecordSetting()
 	previous := cfg.FileRoot
 	cfg.FileRoot = root
 	t.Cleanup(func() { cfg.FileRoot = previous })
 
-	body := []byte(`{"prompt":"a beach","image":"data:image/png;base64,` + onePixelPNG + `"}`)
+	// What /v1/images/generations answers with: no messages, no content parts,
+	// just the picture.
+	reply := []byte(`{"created":1,"data":[{"b64_json":"` + onePixelPNG + `","revised_prompt":"a beach"}]}`)
 
-	var stored []StoredAttachment
-	if StoreAttachmentsFor("/v1/images/edits") {
-		stored = SaveAttachments("A1024", time.Now(), ExtractAttachments(body, 1<<20))
+	found := ExtractReplyAttachments(reply, 1<<20)
+	if len(found) != 1 {
+		t.Fatalf("found %d attachments in an images reply, want 1", len(found))
 	}
-	if len(stored) != 0 {
-		t.Fatalf("stored %d attachments for an image route, want none", len(stored))
+	if found[0].Origin != OriginReply {
+		t.Errorf("origin = %q, want %q", found[0].Origin, OriginReply)
 	}
-	if entries, err := os.ReadDir(root); err == nil && len(entries) != 0 {
-		t.Fatalf("%d entries were written under the attachment root", len(entries))
+
+	stored := SaveAttachments("A1024", time.Now(), found)
+	if len(stored) != 1 {
+		t.Fatalf("stored %d, want 1", len(stored))
+	}
+	if entries, err := os.ReadDir(root); err != nil || len(entries) == 0 {
+		t.Fatal("the picture was not written under the attachment root")
+	}
+}
+
+// A provider that answers with a link has the link recorded, not fetched —
+// the same rule the request side has always followed.
+func TestAnImageLinkIsNotedNotFetched(t *testing.T) {
+	reply := []byte(`{"data":[{"url":"https://example.com/generated.png"}]}`)
+	found := ExtractReplyAttachments(reply, 1<<20)
+	if len(found) != 1 {
+		t.Fatalf("found %d, want 1", len(found))
+	}
+	if found[0].SourceURL != "https://example.com/generated.png" {
+		t.Errorf("source url = %q", found[0].SourceURL)
+	}
+	if len(found[0].Data) != 0 {
+		t.Error("the link was fetched")
 	}
 }
 
@@ -396,4 +401,62 @@ func TestAttachmentsSentWithAQuestionAreLabelledAsSuch(t *testing.T) {
 	if found[0].Origin != OriginPrompt {
 		t.Errorf("origin = %q, want %q", found[0].Origin, OriginPrompt)
 	}
+}
+
+// 图生图 posts a form, not JSON: the picture to work from is a file part and
+// the instruction is a field. Nothing in the JSON walkers can see either, and
+// the form is gone by the time a worker looks — so it is read while the
+// request is alive and carried on the turn.
+func TestAFormEncodedEditIsReadWhileItCanBe(t *testing.T) {
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	require.NoError(t, form.WriteField("prompt", "把背景换成海边"))
+	require.NoError(t, form.WriteField("model", "gpt-image-2"))
+
+	png, err := base64.StdEncoding.DecodeString(onePixelPNG)
+	require.NoError(t, err)
+	part, err := form.CreateFormFile("image", "source.png")
+	require.NoError(t, err)
+	_, err = part.Write(png)
+	require.NoError(t, err)
+	require.NoError(t, form.Close())
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/images/edits", &body)
+	request.Header.Set("Content-Type", form.FormDataContentType())
+	require.NoError(t, request.ParseMultipartForm(1<<20))
+
+	prompt, files := FromMultipart(request.MultipartForm, 1<<20)
+	assert.Equal(t, "把背景换成海边", prompt, "the instruction was not read")
+	require.Len(t, files, 1, "the picture to work from was not read")
+	assert.Equal(t, OriginPrompt, files[0].Origin)
+	assert.Equal(t, "image", files[0].Kind)
+	assert.Equal(t, "source.png", files[0].FileName)
+	assert.Equal(t, png, files[0].Data)
+}
+
+// A file past the limit is left behind rather than truncated: half a picture
+// is not a picture, and the limit is the operator's answer to how much disk
+// this may cost.
+func TestAnOversizedUploadIsLeftBehind(t *testing.T) {
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	part, err := form.CreateFormFile("image", "big.png")
+	require.NoError(t, err)
+	_, err = part.Write(bytes.Repeat([]byte("x"), 4096))
+	require.NoError(t, err)
+	require.NoError(t, form.Close())
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/images/edits", &body)
+	request.Header.Set("Content-Type", form.FormDataContentType())
+	require.NoError(t, request.ParseMultipartForm(1<<20))
+
+	_, files := FromMultipart(request.MultipartForm, 1024)
+	assert.Empty(t, files, "a file over the limit was kept anyway")
+}
+
+// Every JSON route has no form at all, and must pay nothing for this.
+func TestNoFormMeansNothingToRead(t *testing.T) {
+	prompt, files := FromMultipart(nil, 1<<20)
+	assert.Empty(t, prompt)
+	assert.Empty(t, files)
 }

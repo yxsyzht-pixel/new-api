@@ -103,11 +103,15 @@ func TestBinaryRoutesAreNotWrapped(t *testing.T) {
 	})
 	cfg.Enabled, cfg.DSN = true, "postgres://u:p@127.0.0.1:1/none"
 
+	// Vectors, scores and raw audio: nothing a transcript can read, so nothing
+	// worth copying out of the stream on the way past. /v1/images is no longer
+	// among them — the picture a person asked for arrives in the reply, and
+	// skipping the reply is why none was ever recorded.
 	for _, path := range []string{
 		"/v1/audio/speech",
-		"/v1/images/generations",
 		"/v1/embeddings",
 		"/v1/rerank",
+		"/v1/moderations",
 	} {
 		t.Run(path, func(t *testing.T) {
 			var wrapped bool
@@ -125,17 +129,22 @@ func TestBinaryRoutesAreNotWrapped(t *testing.T) {
 		})
 	}
 
-	// A chat route, by contrast, is captured.
-	var wrapped bool
-	router := gin.New()
-	router.Use(ChatRecord())
-	router.POST("/v1/chat/completions", func(c *gin.Context) {
-		_, wrapped = c.Writer.(*captureWriter)
-		c.String(http.StatusOK, "hi")
-	})
-	router.ServeHTTP(httptest.NewRecorder(),
-		httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{}`)))
-	assert.True(t, wrapped, "a chat reply is what the feature exists to record")
+	// A chat route is captured, and so now is an image route: its reply is the
+	// only place the generated picture exists.
+	for _, path := range []string{"/v1/chat/completions", "/v1/images/generations"} {
+		t.Run("captured "+path, func(t *testing.T) {
+			var wrapped bool
+			router := gin.New()
+			router.Use(ChatRecord())
+			router.POST(path, func(c *gin.Context) {
+				_, wrapped = c.Writer.(*captureWriter)
+				c.String(http.StatusOK, "hi")
+			})
+			router.ServeHTTP(httptest.NewRecorder(),
+				httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`)))
+			assert.True(t, wrapped, "%s carries a reply worth recording", path)
+		})
+	}
 }
 
 // io.Copy asks a writer for ReadFrom. gin reaches net/http's through embedding;

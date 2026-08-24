@@ -32,6 +32,12 @@ type Turn struct {
 	// SkipMemory keeps this key's turns out of the memory store. Negative so
 	// that the zero value means "behave normally".
 	SkipMemory bool
+	// Uploaded and Prompt carry what a form-encoded request brought. They are
+	// read in the middleware, not here: a multipart form is only readable while
+	// its request is alive, so by the time a worker sees the turn there is
+	// nothing left to open.
+	Uploaded   []Attachment
+	Prompt     string
 	ModelName  string
 	Endpoint   string
 	StatusCode int
@@ -43,7 +49,11 @@ type Turn struct {
 
 // size is what this turn will hold in memory while it waits to be written.
 func (t Turn) size() int64 {
-	return int64(len(t.RequestBody) + len(t.ResponseBody))
+	total := int64(len(t.RequestBody) + len(t.ResponseBody) + len(t.Prompt))
+	for _, file := range t.Uploaded {
+		total += int64(len(file.Data))
+	}
+	return total
 }
 
 // writer is one running writer: a queue, the pool behind it, the workers
@@ -311,17 +321,22 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	}
 
 	userMessage := Truncate(UserMessage(turn.RequestBody), max)
+	if userMessage == "" {
+		// A form-encoded request has no JSON to read the ask out of.
+		userMessage = Truncate(turn.Prompt, max)
+	}
 	assistantReply := Truncate(AssistantReply(turn.ResponseBody), max)
 
 	// Parsing and decoding attachments happens here, on a worker, never on the
 	// request path.
 	var stored []StoredAttachment
-	if cfg.StoreFiles && StoreAttachmentsFor(turn.Endpoint) {
+	if cfg.StoreFiles {
 		// Both halves of the exchange. A picture somebody attached and a
 		// picture the model drew are the same kind of thing to store and a
 		// different thing to read later, which is what Origin records.
 		limit := cfg.MaxFileBytesOrDefault()
 		carried := ExtractAttachments(turn.RequestBody, limit)
+		carried = append(carried, turn.Uploaded...)
 		carried = append(carried, ExtractReplyAttachments(turn.ResponseBody, limit)...)
 		stored = SaveAttachments(turn.StaffID, turn.CreatedAt, carried)
 	}

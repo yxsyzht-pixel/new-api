@@ -5,7 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"mime"
+	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -48,14 +51,6 @@ type StoredAttachment struct {
 }
 
 var dataURLPattern = regexp.MustCompile(`^data:([^;,]+)(;[^,]*)?,(.*)$`)
-
-// StoreAttachmentsFor says whether a route's pictures and files are worth
-// keeping. The image endpoints are exempt: what goes in and out of them is a
-// picture by definition, so keeping every one would fill a disk with pixels
-// that the recorded prompt already accounts for.
-func StoreAttachmentsFor(endpoint string) bool {
-	return !strings.Contains(endpoint, "/images")
-}
 
 // ExtractAttachments walks the shapes each protocol uses for attached content.
 // Anything it does not recognise is simply not recorded — a transcript missing
@@ -411,6 +406,20 @@ func walkReply(doc gjson.Result, add func(Attachment), depth int) {
 
 	// Claude Messages.
 	replyContent(doc.Get("content"), add)
+
+	// The images endpoints, whose whole answer is the picture. This gateway's
+	// upstream only ever returns base64, but a provider that returns a link is
+	// worth noting too — the link is recorded, not fetched.
+	doc.Get("data").ForEach(func(_, item gjson.Result) bool {
+		if encoded := item.Get("b64_json").String(); encoded != "" {
+			add(fromBase64("image", encoded, "image/png", ""))
+			return true
+		}
+		if url := item.Get("url").String(); url != "" {
+			add(Attachment{Kind: "image", SourceURL: url})
+		}
+		return true
+	})
 }
 
 func replyItem(item gjson.Result, add func(Attachment)) {
@@ -456,4 +465,65 @@ func urlOf(value gjson.Result) string {
 		return value.Get("url").String()
 	}
 	return value.String()
+}
+
+// FromMultipart reads what a form-encoded request carried: the picture an edit
+// was to be made from, and the words describing the edit.
+//
+// This is the one thing this package reads on the request path. A multipart
+// body is not JSON and cannot be walked like one, and the form is only
+// readable while the request is still alive — the server discards its temp
+// files as soon as the handler returns, so there is nothing left for a worker
+// to open. The relay has already read the same files to send them upstream, so
+// the pages are warm and this is a copy rather than a fetch; it is still
+// bounded by the same per-file limit as everything else, and it only happens
+// when attachments are being kept at all.
+func FromMultipart(form *multipart.Form, limit int) (prompt string, files []Attachment) {
+	if form == nil {
+		return "", nil
+	}
+	if values := form.Value["prompt"]; len(values) > 0 {
+		prompt = values[0]
+	}
+
+	for _, headers := range form.File {
+		for _, header := range headers {
+			if len(files) >= 32 {
+				return prompt, files
+			}
+			if header.Size > int64(limit) {
+				continue
+			}
+			opened, err := header.Open()
+			if err != nil {
+				continue
+			}
+			data, err := io.ReadAll(io.LimitReader(opened, int64(limit)+1))
+			_ = opened.Close()
+			if err != nil || len(data) == 0 || len(data) > limit {
+				continue
+			}
+			files = append(files, Attachment{
+				Kind:      kindForUpload(header.Filename, data),
+				Origin:    OriginPrompt,
+				MediaType: header.Header.Get("Content-Type"),
+				FileName:  filepath.Base(header.Filename),
+				Data:      data,
+			})
+		}
+	}
+	return prompt, files
+}
+
+// kindForUpload separates pictures from everything else, which is the only
+// distinction the transcript draws.
+func kindForUpload(name string, data []byte) string {
+	if strings.HasPrefix(http.DetectContentType(data), "image/") {
+		return "image"
+	}
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp":
+		return "image"
+	}
+	return "file"
 }

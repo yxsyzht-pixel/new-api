@@ -86,8 +86,10 @@ func (w *captureWriter) ReadFrom(r io.Reader) (int64, error) {
 // pure cost. The prompt on those routes is still recorded.
 func captureResponseFor(path string) bool {
 	switch {
-	case strings.Contains(path, "/images/"),
-		strings.Contains(path, "/audio/"),
+	// /images is not here: the picture a person asked for arrives in the reply,
+	// and skipping the reply is the reason none was ever recorded. The rest
+	// answer with vectors, scores or raw audio — nothing a transcript can read.
+	case strings.Contains(path, "/audio/"),
 		strings.Contains(path, "/embeddings"),
 		strings.Contains(path, "/moderations"),
 		strings.Contains(path, "/rerank"),
@@ -111,7 +113,7 @@ func maxCapturedBytes(cfg *operation_setting.ChatRecordSetting, path string) int
 	limit := int64(cfg.MaxCaptureBytesOrDefault())
 	// Routes whose attachments are not kept do not need the headroom, and those
 	// are exactly the routes that upload the largest bodies.
-	if cfg.StoreFiles && chatrecord.StoreAttachmentsFor(path) {
+	if cfg.StoreFiles {
 		// base64 costs a third on top, and a turn may carry more than one file.
 		withFiles := int64(cfg.MaxFileBytesOrDefault())*2 + limit
 		if withFiles > limit {
@@ -175,6 +177,16 @@ func ChatRecord() gin.HandlerFunc {
 				}
 			}
 		}
+		// The form is read here because it cannot be read later: the server
+		// discards a multipart request's temp files the moment this handler
+		// returns. Nil for every JSON route, so it costs those nothing.
+		var uploaded []chatrecord.Attachment
+		var prompt string
+		if cfg.StoreFiles && c.Request.MultipartForm != nil {
+			prompt, uploaded = chatrecord.FromMultipart(
+				c.Request.MultipartForm, cfg.MaxFileBytesOrDefault())
+		}
+
 		chatrecord.Submit(chatrecord.Turn{
 			RequestID:    c.GetString(common.RequestIdKey),
 			UserID:       c.GetInt(string(constant.ContextKeyUserId)),
@@ -188,6 +200,8 @@ func ChatRecord() gin.HandlerFunc {
 			CreatedAt:    started,
 			RequestBody:  requestBody,
 			ResponseBody: responseBody,
+			Uploaded:     uploaded,
+			Prompt:       prompt,
 		})
 	}
 }
