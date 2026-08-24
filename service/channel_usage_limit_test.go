@@ -71,3 +71,63 @@ func TestIsUpstreamUsageLimitErrorGoogleWording(t *testing.T) {
 	require.False(t, IsUpstreamUsageLimitError(overloaded))
 	require.True(t, IsUpstreamOverloadedError(overloaded))
 }
+
+// Kimi answers an exhausted plan with 403 and the same words everyone else
+// sends with 429. Looking only at 429 meant that channel was never parked: one
+// day's logs hold 473 calls to an account that had already said it was spent,
+// each one a trip upstream and a failover the caller waited through.
+func TestAnExhaustedAccountIsRecognisedOn403(t *testing.T) {
+	cases := []struct {
+		name       string
+		message    string
+		statusCode int
+		want       bool
+	}{
+		{
+			name:       "kimi says it with 403",
+			message:    "You've reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle.",
+			statusCode: http.StatusForbidden,
+			want:       true,
+		},
+		{
+			// The status alone must never decide it: a bare 403 is a request
+			// that was refused, and parking the whole channel over one would
+			// take a working account out of rotation.
+			name:       "a plain forbidden is not a quota signal",
+			message:    "Forbidden: the api key does not have access to this model",
+			statusCode: http.StatusForbidden,
+			want:       false,
+		},
+		{
+			name:       "nor is an unauthorised key",
+			message:    "Invalid Authentication",
+			statusCode: http.StatusUnauthorized,
+			want:       false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := types.NewErrorWithStatusCode(errors.New(tc.message), types.ErrorCodeBadResponseStatusCode, tc.statusCode)
+			assert.Equal(t, tc.want, IsUpstreamUsageLimitError(err))
+		})
+	}
+}
+
+// The two 429 meanings still part company the same way, and a 403 is neither
+// of them: a burst limit is something to retry around, not to park over.
+func TestRateLimitedStillMeansOnly429(t *testing.T) {
+	burst := types.NewErrorWithStatusCode(
+		errors.New("Rate limit exceeded"), types.ErrorCodeBadResponseStatusCode, http.StatusTooManyRequests)
+	assert.True(t, IsUpstreamRateLimited(burst))
+
+	exhausted := types.NewErrorWithStatusCode(
+		errors.New("You've reached your usage limit for this billing cycle"),
+		types.ErrorCodeBadResponseStatusCode, http.StatusTooManyRequests)
+	assert.False(t, IsUpstreamRateLimited(exhausted), "an exhausted quota is parked, not retried around")
+
+	forbidden := types.NewErrorWithStatusCode(
+		errors.New("You've reached your usage limit for this billing cycle"),
+		types.ErrorCodeBadResponseStatusCode, http.StatusForbidden)
+	assert.False(t, IsUpstreamRateLimited(forbidden), "a 403 is not a burst limit")
+}

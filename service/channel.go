@@ -44,9 +44,23 @@ func EnableChannel(channelId int, usingKey string, channelName string) {
 	}
 }
 
-// upstreamUsageLimitKeywords match the 429 bodies providers send when an account
-// has exhausted a quota window rather than tripped a short burst limit. Both kinds
-// arrive as 429, but only the former is worth parking a channel over.
+// upstreamUsageLimitStatuses are the codes a provider answers with when the
+// account behind a channel has run out of quota. 429 is the usual one; Kimi
+// says the same thing with 403, and because only 429 was looked at, that
+// channel was never parked and stayed in rotation while exhausted — 473 calls
+// to a spent account across one day's logs, every one of them a wasted trip
+// upstream and a failover the caller waited through.
+//
+// The status alone never decides it. A bare 403 is a forbidden request and a
+// bare 429 is a burst limit; the wording below is what separates those from an
+// exhausted quota, and both have to agree.
+var upstreamUsageLimitStatuses = map[int]bool{
+	http.StatusTooManyRequests: true,
+	http.StatusForbidden:       true,
+}
+
+// upstreamUsageLimitKeywords match the bodies providers send when an account
+// has exhausted a quota window rather than tripped a short burst limit.
 var upstreamUsageLimitKeywords = []string{
 	"usage limit",
 	"quota exceeded",
@@ -64,7 +78,7 @@ var upstreamUsageLimitKeywords = []string{
 // a channel is out of quota for now, so the channel should be parked until the
 // provider's window rolls over.
 func IsUpstreamUsageLimitError(err *types.NewAPIError) bool {
-	if err == nil || err.StatusCode != http.StatusTooManyRequests {
+	if err == nil || !upstreamUsageLimitStatuses[err.StatusCode] {
 		return false
 	}
 	lowerMessage := strings.ToLower(err.Error())
