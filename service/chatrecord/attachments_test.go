@@ -288,3 +288,112 @@ func TestNothingIsStoredForAnImageRoute(t *testing.T) {
 		t.Fatalf("%d entries were written under the attachment root", len(entries))
 	}
 }
+
+// What the model produced has to be picked out of the reply, which arrives in
+// two quite different shapes, and be labelled as the model's — otherwise a
+// picture in the table says nothing about whether somebody sent it or was
+// answered with it.
+func TestGeneratedImagesAreFoundInEveryReplyShape(t *testing.T) {
+	pixel := base64.StdEncoding.EncodeToString([]byte("\x89PNG-not-really"))
+
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{
+			// The Responses built-in tool, which is how this gateway draws.
+			"responses image_generation_call",
+			`{"output":[{"type":"image_generation_call","result":"` + pixel + `"}]}`,
+		},
+		{
+			"responses output_image",
+			`{"output":[{"type":"message","content":[
+			   {"type":"output_image","image_url":"data:image/png;base64,` + pixel + `"}]}]}`,
+		},
+		{
+			// Some providers hang the picture off the message rather than
+			// putting it in the content.
+			"chat completions images",
+			`{"choices":[{"message":{"role":"assistant","images":[
+			   {"image_url":{"url":"data:image/png;base64,` + pixel + `"}}]}}]}`,
+		},
+		{
+			"claude content block",
+			`{"content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"` + pixel + `"}}]}`,
+		},
+		{
+			// A stream: not JSON at all, and the document only appears inside
+			// one of its events.
+			"streamed response.completed",
+			"data: {\"type\":\"response.output_text.delta\",\"delta\":\"画好了\"}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"output\":[" +
+				"{\"type\":\"image_generation_call\",\"result\":\"" + pixel + "\"}]}}\n\n" +
+				"data: [DONE]\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			found := ExtractReplyAttachments([]byte(tc.body), 1<<20)
+			if len(found) != 1 {
+				t.Fatalf("found %d attachments, want 1", len(found))
+			}
+			if found[0].Origin != OriginReply {
+				t.Errorf("origin = %q, want %q", found[0].Origin, OriginReply)
+			}
+			if found[0].Kind != "image" {
+				t.Errorf("kind = %q", found[0].Kind)
+			}
+			if len(found[0].Data) == 0 {
+				t.Error("the picture itself was not decoded")
+			}
+		})
+	}
+}
+
+// A stream restates the response as it completes, so the same picture arrives
+// several times. Decoding it once and leaving the database to reject the rest
+// is work nobody needs.
+func TestARepeatedPictureInAStreamIsCountedOnce(t *testing.T) {
+	pixel := base64.StdEncoding.EncodeToString([]byte("\x89PNG-not-really"))
+	event := "data: {\"type\":\"response.output_item.done\",\"item\":" +
+		"{\"type\":\"image_generation_call\",\"result\":\"" + pixel + "\"}}\n\n"
+	stream := event + event +
+		"data: {\"type\":\"response.completed\",\"response\":{\"output\":[" +
+		"{\"type\":\"image_generation_call\",\"result\":\"" + pixel + "\"}]}}\n"
+
+	found := ExtractReplyAttachments([]byte(stream), 1<<20)
+	if len(found) != 1 {
+		t.Fatalf("the same picture was collected %d times", len(found))
+	}
+}
+
+// A reply with nothing in it must not invent an attachment, and a body that is
+// not JSON at all — the transcript of an audio route, say — must not have
+// bytes read out of it as a picture.
+func TestAPlainReplyCarriesNoAttachments(t *testing.T) {
+	for _, body := range []string{
+		"",
+		`{"choices":[{"message":{"role":"assistant","content":"就这样"}}]}`,
+		"------form-boundary\r\nnot json at all\r\n------form-boundary--",
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"没有图\"}\n",
+	} {
+		if found := ExtractReplyAttachments([]byte(body), 1<<20); len(found) != 0 {
+			t.Errorf("%.30q produced %d attachments", body, len(found))
+		}
+	}
+}
+
+// The question's attachments keep saying they came with the question.
+func TestAttachmentsSentWithAQuestionAreLabelledAsSuch(t *testing.T) {
+	pixel := base64.StdEncoding.EncodeToString([]byte("\x89PNG-not-really"))
+	body := `{"messages":[{"role":"user","content":[
+	  {"type":"text","text":"这是什么"},
+	  {"type":"image_url","image_url":{"url":"data:image/png;base64,` + pixel + `"}}]}]}`
+
+	found := ExtractAttachments([]byte(body), 1<<20)
+	if len(found) != 1 {
+		t.Fatalf("found %d attachments, want 1", len(found))
+	}
+	if found[0].Origin != OriginPrompt {
+		t.Errorf("origin = %q, want %q", found[0].Origin, OriginPrompt)
+	}
+}

@@ -22,8 +22,17 @@ import (
 // They are pulled out of the request body on a worker, never on the request
 // path, and only the path they were written to goes in the database.
 
+// Origin says which half of the exchange a file came with. It travels with the
+// attachment rather than being decided where the row is written, so the two can
+// never drift apart.
+const (
+	OriginPrompt = "prompt" // attached to the question
+	OriginReply  = "reply"  // produced in the answer
+)
+
 type Attachment struct {
 	Kind      string // "image" or "file"
+	Origin    string // OriginPrompt or OriginReply
 	MediaType string
 	FileName  string
 	Data      []byte
@@ -67,6 +76,7 @@ func ExtractAttachments(body []byte, limit int) []Attachment {
 		if len(a.Data) == 0 && a.SourceURL == "" {
 			return
 		}
+		a.Origin = OriginPrompt
 		found = append(found, a)
 	}
 
@@ -309,4 +319,141 @@ func ResolveStoredPath(relative string) (string, error) {
 		return "", fmt.Errorf("chat record: refusing a path outside the attachment root")
 	}
 	return cleaned, nil
+}
+
+// ExtractReplyAttachments finds what the model produced, as opposed to what
+// somebody attached to their question. Both end up in the same table; the
+// origin column is what tells them apart, and it is the difference that makes
+// "which question was this picture drawn for" answerable at all.
+//
+// The reply arrives in one of two shapes. A finished document can be walked
+// directly. A stream cannot: it is SSE text, not JSON, and the whole document
+// only appears inside one of its events — so the events are unwrapped and each
+// walked in turn, with repeats folded, since a stream restates the response as
+// it completes.
+func ExtractReplyAttachments(body []byte, limit int) []Attachment {
+	trimmed := strings.TrimLeft(string(body), " \t\r\n")
+	if trimmed == "" {
+		return nil
+	}
+
+	var found []Attachment
+	seen := make(map[string]bool, 8)
+	add := func(a Attachment) {
+		if len(found) >= 32 || len(a.Data) > limit {
+			return
+		}
+		if len(a.Data) == 0 && a.SourceURL == "" {
+			return
+		}
+		// A stream repeats itself; decoding the same picture five times and
+		// leaving the database to reject four of them is work nobody needs.
+		mark := a.SourceURL
+		if mark == "" {
+			sum := sha256.Sum256(a.Data)
+			mark = string(sum[:])
+		}
+		if seen[mark] {
+			return
+		}
+		seen[mark] = true
+		a.Origin = OriginReply
+		found = append(found, a)
+	}
+
+	if strings.HasPrefix(trimmed, "{") && gjson.Valid(trimmed) {
+		walkReply(gjson.Parse(trimmed), add, 0)
+		return found
+	}
+
+	for _, line := range strings.Split(trimmed, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "" || payload == "[DONE]" || !gjson.Valid(payload) {
+			continue
+		}
+		walkReply(gjson.Parse(payload), add, 0)
+	}
+	return found
+}
+
+// walkReply covers the shapes a reply carries a file in. The depth guard is for
+// the streamed events, which wrap the very document this function also reads.
+func walkReply(doc gjson.Result, add func(Attachment), depth int) {
+	if depth > 3 {
+		return
+	}
+
+	// Responses: the finished list, and the single item a stream announces.
+	doc.Get("output").ForEach(func(_, item gjson.Result) bool {
+		replyItem(item, add)
+		return true
+	})
+	replyItem(doc.Get("item"), add)
+	if response := doc.Get("response"); response.IsObject() {
+		walkReply(response, add, depth+1)
+	}
+
+	// Chat Completions. Some providers hang generated pictures off the message
+	// rather than putting them in its content.
+	doc.Get("choices").ForEach(func(_, choice gjson.Result) bool {
+		message := choice.Get("message")
+		replyContent(message.Get("content"), add)
+		message.Get("images").ForEach(func(_, image gjson.Result) bool {
+			add(fromURLOrData("image", urlOf(image.Get("image_url")), ""))
+			return true
+		})
+		return true
+	})
+
+	// Claude Messages.
+	replyContent(doc.Get("content"), add)
+}
+
+func replyItem(item gjson.Result, add func(Attachment)) {
+	switch item.Get("type").String() {
+	case "image_generation_call":
+		// The built-in tool hands back bare base64 with no media type; PNG is
+		// what it produces, and the extension only decides the stored filename.
+		add(fromBase64("image", item.Get("result").String(), "image/png", ""))
+	case "message":
+		replyContent(item.Get("content"), add)
+	}
+}
+
+func replyContent(content gjson.Result, add func(Attachment)) {
+	if !content.IsArray() {
+		return
+	}
+	content.ForEach(func(_, part gjson.Result) bool {
+		switch part.Get("type").String() {
+		case "output_image", "image_url":
+			add(fromURLOrData("image", firstNonEmpty(
+				urlOf(part.Get("image_url")),
+				part.Get("result").String(),
+			), ""))
+		case "image":
+			source := part.Get("source")
+			switch source.Get("type").String() {
+			case "base64":
+				add(fromBase64("image", source.Get("data").String(),
+					source.Get("media_type").String(), ""))
+			case "url":
+				add(Attachment{Kind: "image", SourceURL: source.Get("url").String()})
+			}
+		}
+		return true
+	})
+}
+
+// urlOf reads an image_url written either way: a bare string, or an object with
+// the string inside it.
+func urlOf(value gjson.Result) string {
+	if value.IsObject() {
+		return value.Get("url").String()
+	}
+	return value.String()
 }

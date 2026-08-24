@@ -98,9 +98,16 @@ func captureResponseFor(path string) bool {
 	return true
 }
 
-// maxRetainedRequestBytes is how large a request body may be and still be worth
-// carrying to the writer.
-func maxRetainedRequestBytes(cfg *operation_setting.ChatRecordSetting, path string) int64 {
+// maxCapturedBytes is how large one side of an exchange may be and still be
+// worth carrying to the writer. The same rule holds in both directions: a
+// picture is the same size whether somebody attached it or the model drew it,
+// and a ceiling that only the request side was allowed to raise meant a
+// generated image was always cut off before the writer ever saw it.
+//
+// It is a ceiling, not an allocation. An ordinary text reply buffers what it
+// weighs; raising this only costs memory when a reply really does carry
+// megabytes, which is the case worth catching.
+func maxCapturedBytes(cfg *operation_setting.ChatRecordSetting, path string) int64 {
 	limit := int64(cfg.MaxCaptureBytesOrDefault())
 	// Routes whose attachments are not kept do not need the headroom, and those
 	// are exactly the routes that upload the largest bodies.
@@ -133,7 +140,10 @@ func ChatRecord() gin.HandlerFunc {
 		started := time.Now()
 		var writer *captureWriter
 		if captureResponseFor(c.Request.URL.Path) {
-			writer = &captureWriter{ResponseWriter: c.Writer, limit: cfg.MaxCaptureBytesOrDefault()}
+			writer = &captureWriter{
+				ResponseWriter: c.Writer,
+				limit:          int(maxCapturedBytes(cfg, c.Request.URL.Path)),
+			}
 			c.Writer = writer
 		}
 
@@ -160,7 +170,7 @@ func ChatRecord() gin.HandlerFunc {
 				// same body, so keeping files means allowing for them here —
 				// otherwise every image would be dropped before the worker ever
 				// saw it. The queue's byte budget is what bounds the total.
-				if storage.Size() <= maxRetainedRequestBytes(cfg, c.Request.URL.Path) {
+				if storage.Size() <= maxCapturedBytes(cfg, c.Request.URL.Path) {
 					requestBody, _ = storage.Bytes()
 				}
 			}

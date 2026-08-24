@@ -70,7 +70,7 @@ func (w *writer) sweepOnce(ctx context.Context) {
 const expireFilesStatement = `
 DELETE FROM chat_record_files
  WHERE id IN (SELECT id FROM chat_record_files WHERE created_at < $1 ORDER BY id LIMIT $2)
-RETURNING path`
+RETURNING record_id, path`
 
 // stillReferenced asks whether any surviving row points at this file. The same
 // picture sent in two conversations is stored once and referenced twice, so the
@@ -91,9 +91,15 @@ func (w *writer) expireFiles(ctx context.Context, cutoff time.Time, why string) 
 			return
 		}
 		paths := make([]string, 0, sweepBatch)
+		touched := make(map[int64]struct{}, sweepBatch)
 		for rows.Next() {
+			var recordID int64
 			var path string
-			if err := rows.Scan(&path); err == nil && path != "" {
+			if err := rows.Scan(&recordID, &path); err != nil {
+				continue
+			}
+			touched[recordID] = struct{}{}
+			if path != "" {
 				paths = append(paths, path)
 			}
 		}
@@ -118,6 +124,16 @@ func (w *writer) expireFiles(ctx context.Context, cutoff time.Time, why string) 
 			// directory with anything in it, which is exactly the test wanted.
 			_ = os.Remove(filepath.Dir(resolved))
 			removed++
+		}
+
+		// The turns those files belonged to name their attachments by id. A
+		// pruned file has to leave that list too, or the row points at rows
+		// that no longer exist.
+		for recordID := range touched {
+			if _, err := w.pool.Exec(batchCtx, countFilesStatement, recordID); err != nil {
+				common.SysError("chat record: " + why +
+					" could not refresh a turn's attachment list: " + err.Error())
+			}
 		}
 		cancel()
 

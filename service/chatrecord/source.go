@@ -239,6 +239,18 @@ func splitClientWrapper(message string) (wrapped bool, spoken string) {
 		return false, ""
 	}
 
+	// A client that says outright where its own preamble ends is believed over
+	// any amount of peeling. Codex writes everything it injected first — a file
+	// manifest, ambient UI state, standing instructions — and then introduces
+	// what the person actually typed under a heading of its own. Peeling from
+	// the front never reaches it: the preamble is a markdown heading, not a
+	// bracket or an element, so a turn with a picture attached lost the
+	// person's words entirely and was filed as tool-driven.
+	if tail, ok := afterRequestHeading(rest); ok {
+		wrapped = true
+		rest = strings.TrimSpace(tail)
+	}
+
 	// Peel wrappers one after another: clients stack them.
 	for range [4]struct{}{} {
 		tail, ok := afterWrapper(rest)
@@ -256,11 +268,69 @@ func splitClientWrapper(message string) (wrapped bool, spoken string) {
 	if len([]rune(rest)) < 4 {
 		return true, ""
 	}
+	// A client names the files it attached after the words, as markup rather
+	// than as something said. The picture is recorded as an attachment; its
+	// path is not part of the sentence.
+	rest = strings.TrimSpace(trimTrailingElements(rest))
+	if len([]rune(rest)) < 4 {
+		return true, ""
+	}
 	// What is left may itself be another machine block rather than speech.
 	if classifyText(rest, nil) == SourceAuto {
 		return true, ""
 	}
 	return true, rest
+}
+
+// requestHeadings are the ways a client announces "the rest of this is the
+// person talking". Only shapes seen in real traffic are listed: a guess here
+// would hand a memory somebody else's words as if they were a person's.
+var requestHeadings = []string{
+	"\n## My request:",
+	"\n# My request:",
+}
+
+// afterRequestHeading returns what follows the last such heading. The last,
+// not the first: a client may quote an earlier turn that contained one.
+func afterRequestHeading(message string) (string, bool) {
+	best := -1
+	width := 0
+	for _, heading := range requestHeadings {
+		if i := strings.LastIndex(message, heading); i > best {
+			best, width = i, len(heading)
+		}
+	}
+	if best < 0 {
+		return "", false
+	}
+	return message[best+width:], true
+}
+
+// trimTrailingElements drops the markup a client appends after the words —
+// "<image name=… path=…></image>" and its like. Only from the end, and only
+// whole elements, so a sentence that happens to contain an angle bracket is
+// left alone.
+func trimTrailingElements(message string) string {
+	for range [4]struct{}{} {
+		trimmed := strings.TrimRight(message, " \t\r\n")
+		if !strings.HasSuffix(trimmed, ">") {
+			return trimmed
+		}
+		open := strings.LastIndex(trimmed, "<")
+		if open < 0 {
+			return trimmed
+		}
+		// A close tag: step back over the element it closes.
+		if strings.HasPrefix(trimmed[open:], "</") {
+			name := strings.TrimSuffix(strings.TrimPrefix(trimmed[open:], "</"), ">")
+			if start := strings.LastIndex(trimmed[:open], "<"+name); start >= 0 {
+				message = trimmed[:start]
+				continue
+			}
+		}
+		message = trimmed[:open]
+	}
+	return message
 }
 
 // afterWrapper returns what follows one leading wrapper block.

@@ -1,6 +1,11 @@
 package chatrecord
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // These are real openers taken from recorded traffic, which is the only honest
 // way to judge the rules: they were written by looking at what clients actually
@@ -65,5 +70,108 @@ func TestOperatorPatternsCatchHouseTemplates(t *testing.T) {
 		if got := classifyText(message, patterns); got != SourceAuto {
 			t.Errorf("with the operator's list, %.40q = %s, want %s", message, got, SourceAuto)
 		}
+	}
+}
+
+// Taken from a real turn: someone pasted a screenshot into Codex and asked why
+// a page would not open. Codex sent its file manifest, its standing
+// instructions and the browser's ambient state first, then introduced the six
+// words the person actually typed under a heading of its own — 800 characters
+// of preamble around them.
+//
+// Peeling from the front never reached it, so the turn was filed as
+// tool-driven with no human words at all: the person's question was in the
+// table but invisible, and no memory could be built from it.
+func TestThePersonsWordsSurviveCodexsFileManifest(t *testing.T) {
+	message, err := os.ReadFile(filepath.Join("testdata", "codex_image_request.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wrapped, said := splitClientWrapper(string(message))
+	if !wrapped {
+		t.Fatal("the client's preamble was not recognised as a wrapper")
+	}
+	if said != "这个页面打不开" {
+		t.Errorf("spoken = %q, want %q", said, "这个页面打不开")
+	}
+
+	// And through the classifier, with Codex declaring a person's turn.
+	body := codexTurnBody(t, "user", string(message))
+	verdict := Classify(body, string(message), "gpt-5.6-sol", nil, nil)
+	if verdict.Source != SourceMixed {
+		t.Errorf("source = %q, want %q — the words are the person's, the manifest is not",
+			verdict.Source, SourceMixed)
+	}
+	if verdict.Confidence != ConfidenceHard {
+		t.Errorf("confidence = %q; the client said whose turn this is", verdict.Confidence)
+	}
+	if verdict.HumanText != "这个页面打不开" {
+		t.Errorf("human text = %q", verdict.HumanText)
+	}
+}
+
+// codexTurnBody builds the request shape Codex sends, with one user message.
+func codexTurnBody(t *testing.T, threadSource, message string) []byte {
+	t.Helper()
+	meta, err := json.Marshal(map[string]string{
+		"thread_source": threadSource,
+		"request_kind":  "turn",
+		"turn_id":       "01a030f1-0000-4000-8000-000000000000",
+		"session_id":    "01a030f1-0000-4000-8000-000000000001",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]any{
+		"client_metadata": map[string]string{"x-codex-turn-metadata": string(meta)},
+		"messages":        []any{map[string]string{"role": "user", "content": message}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+// The heading is only believed at the end of a client's own preamble. A person
+// who happens to type it themselves says all of it, and markup left after the
+// words is not part of them.
+func TestTheRequestHeadingIsReadCarefully(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		message string
+		wrapped bool
+		spoken  string
+	}{
+		{
+			"no heading at all",
+			"就是打不开而已",
+			false, "",
+		},
+		{
+			"trailing image markup is not speech",
+			"# Files mentioned by the user:\n\n## My request:\n看看这个\n<image name=[Image #1] path=\"C:\\x.png\"></image>",
+			true, "看看这个",
+		},
+		{
+			"a quoted earlier heading loses to the last one",
+			"# Files\n\n## My request:\n前一轮说的\n\n更多包装\n\n## My request:\n这一轮说的",
+			true, "这一轮说的",
+		},
+		{
+			"nothing but markup after the heading",
+			"# Files mentioned by the user:\n\n## My request:\n<image name=[Image #1] path=\"C:\\x.png\"></image>",
+			true, "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wrapped, spoken := splitClientWrapper(tc.message)
+			if wrapped != tc.wrapped {
+				t.Errorf("wrapped = %v, want %v", wrapped, tc.wrapped)
+			}
+			if spoken != tc.spoken {
+				t.Errorf("spoken = %q, want %q", spoken, tc.spoken)
+			}
+		})
 	}
 }

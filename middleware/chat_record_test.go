@@ -186,12 +186,12 @@ func TestRetainedRequestSizeAllowsForAttachments(t *testing.T) {
 	cfg.MaxFileBytes = 20 << 20
 
 	cfg.StoreFiles = false
-	if got := maxRetainedRequestBytes(cfg, "/v1/chat/completions"); got != 1<<20 {
+	if got := maxCapturedBytes(cfg, "/v1/chat/completions"); got != 1<<20 {
 		t.Fatalf("without file storage the limit is %d, want the capture limit", got)
 	}
 
 	cfg.StoreFiles = true
-	got := maxRetainedRequestBytes(cfg, "/v1/chat/completions")
+	got := maxCapturedBytes(cfg, "/v1/chat/completions")
 	if got <= int64(cfg.MaxFileBytes) {
 		t.Fatalf("limit %d cannot hold a %d-byte file once base64-encoded", got, cfg.MaxFileBytes)
 	}

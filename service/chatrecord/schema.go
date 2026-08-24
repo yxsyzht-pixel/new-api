@@ -37,6 +37,12 @@ CREATE TABLE IF NOT EXISTS chat_records (
     client_turn_id    VARCHAR(64) NOT NULL DEFAULT '',
     client_session_id VARCHAR(64) NOT NULL DEFAULT '',
     memory_sent  BOOLEAN      NOT NULL DEFAULT false,
+    -- The attachments belonging to this turn, split by who they came from.
+    -- The rows in chat_record_files are the record; these are that same fact
+    -- read from the message's side, kept in step by countFilesStatement rather
+    -- than written by hand, so they cannot drift from it.
+    prompt_file_ids BIGINT[]  NOT NULL DEFAULT '{}',
+    reply_file_ids  BIGINT[]  NOT NULL DEFAULT '{}',
     request_count INT         NOT NULL DEFAULT 1,
     file_count   INT          NOT NULL DEFAULT 0,
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -51,6 +57,8 @@ CREATE INDEX IF NOT EXISTS idx_chat_records_request_id ON chat_records (request_
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS staff_id VARCHAR(64) NOT NULL DEFAULT '';
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS turn_key VARCHAR(64) NOT NULL DEFAULT '';
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS memory_sent BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS prompt_file_ids BIGINT[] NOT NULL DEFAULT '{}';
+ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS reply_file_ids  BIGINT[] NOT NULL DEFAULT '{}';
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_chat_records_source ON chat_records (source);
 -- The raw signals are kept beside the verdict so a reader can apply their own
@@ -80,6 +88,11 @@ CREATE TABLE IF NOT EXISTS chat_record_files (
     record_id  BIGINT       NOT NULL DEFAULT 0,
     staff_id   VARCHAR(64)  NOT NULL DEFAULT '',
     kind       VARCHAR(16)  NOT NULL DEFAULT '',
+    -- origin says which half of the exchange the file came with: 'prompt' for
+    -- something a person attached to their question, 'reply' for something the
+    -- model produced in answer to it. kind describes what the file is; this
+    -- describes who it came from, and the two questions are not the same one.
+    origin     VARCHAR(8)   NOT NULL DEFAULT 'prompt',
     media_type VARCHAR(128) NOT NULL DEFAULT '',
     file_name  VARCHAR(255) NOT NULL DEFAULT '',
     file_size  BIGINT       NOT NULL DEFAULT 0,
@@ -88,14 +101,22 @@ CREATE TABLE IF NOT EXISTS chat_record_files (
     source_url TEXT         NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+-- Existing rows were all extracted from request bodies, so the default is
+-- their true value rather than a guess.
+ALTER TABLE chat_record_files ADD COLUMN IF NOT EXISTS origin VARCHAR(8) NOT NULL DEFAULT 'prompt';
 CREATE INDEX IF NOT EXISTS idx_chat_record_files_record   ON chat_record_files (record_id);
 CREATE INDEX IF NOT EXISTS idx_chat_record_files_staff    ON chat_record_files (staff_id);
 CREATE INDEX IF NOT EXISTS idx_chat_record_files_sha256   ON chat_record_files (sha256);
 CREATE INDEX IF NOT EXISTS idx_chat_record_files_created  ON chat_record_files (created_at DESC);
+
 -- An agent replays its conversation on every round-trip, so the same picture
--- arrives with every one of them. One row per file per turn.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_record_files_once
-    ON chat_record_files (record_id, sha256) WHERE sha256 <> '';
+-- arrives with every one of them. One row per file per turn — per direction:
+-- a picture someone sent and the same picture handed back in the answer are
+-- two different facts about the turn, and keying without the direction would
+-- silently drop the second one.
+DROP INDEX IF EXISTS idx_chat_record_files_once;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_record_files_once_per_side
+    ON chat_record_files (record_id, origin, sha256) WHERE sha256 <> '';
 
 -- The attachments belong to a turn, and the database should be the one saying
 -- so. Without the constraint the link is a convention: nothing stops a row
@@ -124,6 +145,12 @@ END $$;
 -- So a reader can tell from the turn itself whether anything came with it,
 -- instead of having to go and ask the other table.
 ALTER TABLE chat_records ADD COLUMN IF NOT EXISTS file_count INT NOT NULL DEFAULT 0;
+
+-- An earlier version of this exposed the same thing as a view. A view has to
+-- be dropped before the tables it reads can be, which turned every DROP TABLE
+-- into a silent no-op; the columns above say the same thing without standing
+-- in the way. The old view is removed if it is still there.
+DROP VIEW IF EXISTS chat_record_messages;
 UPDATE chat_records r SET file_count = c.total
   FROM (SELECT record_id, count(*) AS total FROM chat_record_files GROUP BY record_id) c
  WHERE c.record_id = r.id AND r.file_count <> c.total;
@@ -179,9 +206,9 @@ RETURNING id, (xmax = 0) AS inserted`
 
 const insertFileStatement = `
 INSERT INTO chat_record_files
-  (record_id, staff_id, kind, media_type, file_name, file_size, sha256, path, source_url, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-ON CONFLICT (record_id, sha256) WHERE sha256 <> '' DO NOTHING`
+  (record_id, staff_id, kind, origin, media_type, file_name, file_size, sha256, path, source_url, created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+ON CONFLICT (record_id, origin, sha256) WHERE sha256 <> '' DO NOTHING`
 
 // claimMemoryStatement decides, atomically, which request of a turn is the one
 // that tells the memory store about it.
@@ -207,17 +234,31 @@ RETURNING human_message, ai_message`
 // fileListStatement pages through attachments. An empty staff id means every
 // one of them, so the caller does not have to build two queries.
 const fileListStatement = `
-SELECT id, record_id, staff_id, kind, media_type, file_name, file_size, path, source_url, created_at
+SELECT id, record_id, staff_id, kind, origin, media_type, file_name, file_size, path, source_url, created_at
 FROM chat_record_files
 WHERE ($1 = '' OR staff_id = $1)
 ORDER BY id DESC LIMIT $2 OFFSET $3`
 
 // fileLookupStatement finds one stored attachment for the serving endpoint.
 // countFilesStatement keeps the turn's own tally in step with its attachments.
+// countFilesStatement brings a turn's view of its own attachments back in step
+// with the attachment table. Everything is recomputed from that table rather
+// than adjusted in place: an agent replays its conversation, so the same
+// picture arrives again and again and is stored once, and retention can take
+// files away later. Counting from the source is the only version that stays
+// true through both.
 const countFilesStatement = `
-UPDATE chat_records SET file_count =
-  (SELECT count(*) FROM chat_record_files WHERE record_id = $1)
-WHERE id = $1`
+UPDATE chat_records SET
+  file_count      = f.total,
+  prompt_file_ids = coalesce(f.prompt_ids, '{}'),
+  reply_file_ids  = coalesce(f.reply_ids, '{}')
+FROM (
+  SELECT count(*) AS total,
+         array_agg(id ORDER BY id) FILTER (WHERE origin = 'prompt') AS prompt_ids,
+         array_agg(id ORDER BY id) FILTER (WHERE origin = 'reply')  AS reply_ids
+    FROM chat_record_files WHERE record_id = $1
+) f
+WHERE chat_records.id = $1`
 
 const fileLookupStatement = `
 SELECT path, media_type, file_name, file_size, source_url
@@ -363,6 +404,7 @@ type FileListing struct {
 	RecordID  int64     `json:"record_id"`
 	StaffID   string    `json:"staff_id"`
 	Kind      string    `json:"kind"`
+	Origin    string    `json:"origin"` // "prompt" or "reply"
 	MediaType string    `json:"media_type"`
 	FileName  string    `json:"file_name"`
 	Size      int64     `json:"size"`
@@ -385,7 +427,7 @@ func ListFiles(dsn string, staffID string, limit, offset int) ([]FileListing, er
 		for rows.Next() {
 			var item FileListing
 			if err := rows.Scan(&item.ID, &item.RecordID, &item.StaffID, &item.Kind,
-				&item.MediaType, &item.FileName, &item.Size, &item.Path,
+				&item.Origin, &item.MediaType, &item.FileName, &item.Size, &item.Path,
 				&item.SourceURL, &item.CreatedAt); err != nil {
 				return err
 			}

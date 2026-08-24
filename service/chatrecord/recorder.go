@@ -177,7 +177,12 @@ func (r *recorder) ensureStarted(cfg *operation_setting.ChatRecordSetting, dsn s
 	// older shape would fail every write silently. The statements are additive
 	// and idempotent, and they run off the request path — a submitting request
 	// never waits for them, only the workers do.
+	// Tracked like any other goroutine this writer owns. Left untracked it
+	// outlives Stop, and a schema statement still holding table locks after its
+	// writer is gone collides with whatever the next one is doing.
+	running.running.Add(1)
 	go func() {
+		defer running.running.Done()
 		defer close(running.ready)
 		if err := InitSchema(dsn); err != nil {
 			// Carry on regardless: the tables are usually already there, and a
@@ -312,8 +317,13 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	// request path.
 	var stored []StoredAttachment
 	if cfg.StoreFiles && StoreAttachmentsFor(turn.Endpoint) {
-		stored = SaveAttachments(turn.StaffID, turn.CreatedAt,
-			ExtractAttachments(turn.RequestBody, cfg.MaxFileBytesOrDefault()))
+		// Both halves of the exchange. A picture somebody attached and a
+		// picture the model drew are the same kind of thing to store and a
+		// different thing to read later, which is what Origin records.
+		limit := cfg.MaxFileBytesOrDefault()
+		carried := ExtractAttachments(turn.RequestBody, limit)
+		carried = append(carried, ExtractReplyAttachments(turn.ResponseBody, limit)...)
+		stored = SaveAttachments(turn.StaffID, turn.CreatedAt, carried)
 	}
 
 	if userMessage == "" && assistantReply == "" && len(stored) == 0 {
@@ -386,7 +396,7 @@ func (w *writer) write(ctx context.Context, turn Turn) {
 	for _, attachment := range stored {
 		if _, err := w.pool.Exec(writeCtx, insertFileStatement,
 			recordID, clip(turn.StaffID, 64), clip(attachment.Kind, 16),
-			clip(attachment.MediaType, 128),
+			clip(attachment.Origin, 8), clip(attachment.MediaType, 128),
 			clip(attachment.FileName, 255), attachment.Size, attachment.SHA256,
 			attachment.Path, attachment.SourceURL, turn.CreatedAt); err != nil {
 			common.SysError("chat record: attachment row failed: " + err.Error())

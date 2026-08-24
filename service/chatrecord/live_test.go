@@ -2,6 +2,7 @@ package chatrecord
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -42,10 +43,10 @@ func TestAgainstLiveDatabase(t *testing.T) {
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files"); err != nil {
+			if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files CASCADE"); err != nil {
 				t.Logf("cleanup: %v", err)
 			}
-			if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records"); err != nil {
+			if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records CASCADE"); err != nil {
 				t.Logf("cleanup: %v", err)
 			}
 		}()
@@ -193,8 +194,8 @@ func TestAnAgentLoopFoldsIntoOneRow(t *testing.T) {
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files")
-			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files CASCADE")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records CASCADE")
 		}()
 	}
 
@@ -294,8 +295,8 @@ func TestToolRoundTripsDoNotDemoteAPersonsTurn(t *testing.T) {
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files")
-			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files CASCADE")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records CASCADE")
 		}()
 	}
 
@@ -396,8 +397,8 @@ func TestAttachmentsAreTiedToTheirTurn(t *testing.T) {
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files")
-			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files CASCADE")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records CASCADE")
 		}()
 	}
 
@@ -416,14 +417,14 @@ func TestAttachmentsAreTiedToTheirTurn(t *testing.T) {
 
 	// An attachment on a turn that does not exist must be refused outright.
 	_, err = pool.Exec(ctx, insertFileStatement,
-		recordID+9_000_000, "A1", "image", "image/png", "x.png", 10, "deadbeef", "p/x.png", "", time.Now())
+		recordID+9_000_000, "A1", "image", OriginPrompt, "image/png", "x.png", 10, "deadbeef", "p/x.png", "", time.Now())
 	if err == nil {
 		t.Error("an attachment pointing at a turn that does not exist was accepted")
 	}
 
 	// A real one is accepted and counted on the turn.
 	_, err = pool.Exec(ctx, insertFileStatement,
-		recordID, "A1", "image", "image/png", "x.png", 10, "cafebabe", "p/x.png", "", time.Now())
+		recordID, "A1", "image", OriginPrompt, "image/png", "x.png", 10, "cafebabe", "p/x.png", "", time.Now())
 	if err != nil {
 		t.Fatalf("inserting an attachment: %v", err)
 	}
@@ -474,8 +475,8 @@ func TestOnlyTheFirstRequestOfATurnIsNew(t *testing.T) {
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files")
-			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files CASCADE")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records CASCADE")
 		}()
 	}
 
@@ -540,8 +541,8 @@ func liveWriter(t *testing.T) *pgxpool.Pool {
 		if os.Getenv("CHATRECORD_TEST_KEEP") == "" {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files")
-			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files CASCADE")
+			_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records CASCADE")
 		}
 		pool.Close()
 	})
@@ -839,7 +840,7 @@ func TestRetentionRemovesOldTurnsAndTheirFiles(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
 		require.NoError(t, os.WriteFile(full, []byte("x"), 0o644))
 		_, err := pool.Exec(ctx, insertFileStatement,
-			recordID, "10000007", "image", "image/png", name, 1, name, relative, "", at)
+			recordID, "10000007", "image", OriginPrompt, "image/png", name, 1, name, relative, "", at)
 		require.NoError(t, err)
 		return full
 	}
@@ -847,6 +848,17 @@ func TestRetentionRemovesOldTurnsAndTheirFiles(t *testing.T) {
 	recentFile := attach(recentID, "new.png", recent)
 
 	writer := &writer{pool: pool, totals: &totals{}}
+
+	// Bring both rows' attachment lists up to date, so "the list was emptied"
+	// is a real assertion rather than one that was empty all along.
+	for _, id := range []int64{oldID, recentID} {
+		_, err := pool.Exec(ctx, countFilesStatement, id)
+		require.NoError(t, err)
+	}
+	var seeded []int64
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT prompt_file_ids FROM chat_records WHERE id = $1`, oldID).Scan(&seeded))
+	require.Len(t, seeded, 1, "the turn did not list its attachment to begin with")
 
 	// Retention off: a sweep must remove nothing at all.
 	cfg.FileRetentionDays, cfg.RecordRetentionDays = 0, 0
@@ -863,6 +875,16 @@ func TestRetentionRemovesOldTurnsAndTheirFiles(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT count(*) FROM chat_records WHERE id = $1`, oldID).Scan(&rows))
 	assert.Equal(t, 1, rows, "attachment retention removed the turn as well")
+
+	// The turn names its attachments by id. A pruned file has to leave that
+	// list too, or the row points at rows that no longer exist.
+	var ids []int64
+	var counted int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT prompt_file_ids, file_count FROM chat_records WHERE id = $1`,
+		oldID).Scan(&ids, &counted))
+	assert.Empty(t, ids, "the turn still lists an attachment that was pruned")
+	assert.Equal(t, 0, counted, "the turn's tally still counts a pruned attachment")
 
 	// Records too.
 	cfg.RecordRetentionDays = 30
@@ -894,8 +916,8 @@ func TestTurnsSubmittedDuringMigrationAreNotLost(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files")
-	_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records")
+	_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_record_files CASCADE")
+	_, _ = pool.Exec(ctx, "DROP TABLE IF EXISTS chat_records CASCADE")
 
 	cfg := operation_setting.GetChatRecordSetting()
 	previous := *cfg
@@ -904,8 +926,8 @@ func TestTurnsSubmittedDuringMigrationAreNotLost(t *testing.T) {
 		*cfg = previous
 		clean, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		_, _ = pool.Exec(clean, "DROP TABLE IF EXISTS chat_record_files")
-		_, _ = pool.Exec(clean, "DROP TABLE IF EXISTS chat_records")
+		_, _ = pool.Exec(clean, "DROP TABLE IF EXISTS chat_record_files CASCADE")
+		_, _ = pool.Exec(clean, "DROP TABLE IF EXISTS chat_records CASCADE")
 	})
 	cfg.Enabled, cfg.DSN, cfg.StoreFiles = true, dsn, false
 	cfg.MemoryEnabled = false
@@ -936,4 +958,147 @@ func TestTurnsSubmittedDuringMigrationAreNotLost(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}
 	assert.Equal(t, turns, landed, "turns submitted while the schema was being built were lost")
+}
+
+// The attachment table has always said which turn a file belongs to. What it
+// could not say is which half of the exchange it came with — and it never held
+// what the model produced at all, because only the request was ever read. Both
+// together are what makes "which question was this picture drawn for" a
+// question the table can answer.
+func TestBothHalvesOfATurnKeepTheirAttachments(t *testing.T) {
+	pool := liveWriter(t)
+
+	cfg := operation_setting.GetChatRecordSetting()
+	cfg.FileRoot = t.TempDir()
+	cfg.StoreFiles = true
+
+	sent := base64.StdEncoding.EncodeToString([]byte("\x89PNG-the-one-they-sent"))
+	drawn := base64.StdEncoding.EncodeToString([]byte("\x89PNG-the-one-it-drew"))
+
+	marker := "bothsides-" + time.Now().Format("150405.000")
+	Submit(Turn{
+		RequestID: marker, UserID: 9, TokenID: 999, TokenName: "k", StaffID: "10000009",
+		ModelName: "gpt-5.6-sol", Endpoint: "/v1/responses", StatusCode: 200,
+		CreatedAt: time.Now(),
+		RequestBody: []byte(`{"messages":[{"role":"user","content":[` +
+			`{"type":"text","text":"照这张图的风格再画一张"},` +
+			`{"type":"image_url","image_url":{"url":"data:image/png;base64,` + sent + `"}}]}]}`),
+		ResponseBody: []byte(`{"output":[{"type":"image_generation_call","result":"` + drawn + `"}]}`),
+	})
+
+	id := awaitRow(t, pool, marker)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	var promptIDs, replyIDs []int64
+	for deadline := time.Now().Add(15 * time.Second); ; {
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT prompt_file_ids, reply_file_ids FROM chat_records WHERE id = $1`,
+			id).Scan(&promptIDs, &replyIDs))
+		if len(promptIDs) == 1 && len(replyIDs) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// Read from the message side, which is the point: the row names its own
+	// attachments instead of leaving the reader to work out the join.
+	require.Len(t, promptIDs, 1, "the picture sent with the question is not on the message row")
+	require.Len(t, replyIDs, 1, "the picture the model drew is not on the message row")
+
+	var origin, kind string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT origin, kind FROM chat_record_files WHERE id = $1`, replyIDs[0]).Scan(&origin, &kind))
+	assert.Equal(t, "reply", origin)
+	assert.Equal(t, "image", kind)
+
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT origin FROM chat_record_files WHERE id = $1`, promptIDs[0]).Scan(&origin))
+	assert.Equal(t, "prompt", origin)
+
+	var counted int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT file_count FROM chat_records WHERE id = $1`, id).Scan(&counted))
+	assert.Equal(t, 2, counted, "the turn's own tally missed one of them")
+}
+
+// One picture, sent and handed straight back. Keyed on the turn and the hash
+// alone, the second one was swallowed as a duplicate and the answer looked
+// empty; the direction is part of what makes them two facts rather than one.
+func TestTheSamePictureSentAndReturnedIsBothThings(t *testing.T) {
+	pool := liveWriter(t)
+
+	cfg := operation_setting.GetChatRecordSetting()
+	cfg.FileRoot = t.TempDir()
+	cfg.StoreFiles = true
+
+	same := base64.StdEncoding.EncodeToString([]byte("\x89PNG-the-very-same-bytes"))
+	marker := "echoed-" + time.Now().Format("150405.000")
+	Submit(Turn{
+		RequestID: marker, UserID: 9, TokenID: 998, TokenName: "k", StaffID: "10000010",
+		ModelName: "gpt-5.6-sol", Endpoint: "/v1/responses", StatusCode: 200,
+		CreatedAt: time.Now(),
+		RequestBody: []byte(`{"messages":[{"role":"user","content":[` +
+			`{"type":"text","text":"把这张原样还我"},` +
+			`{"type":"image_url","image_url":{"url":"data:image/png;base64,` + same + `"}}]}]}`),
+		ResponseBody: []byte(`{"output":[{"type":"image_generation_call","result":"` + same + `"}]}`),
+	})
+
+	id := awaitRow(t, pool, marker)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	var origins []string
+	for deadline := time.Now().Add(15 * time.Second); ; {
+		rows, err := pool.Query(ctx,
+			`SELECT origin FROM chat_record_files WHERE record_id = $1 ORDER BY origin`, id)
+		require.NoError(t, err)
+		origins = origins[:0]
+		for rows.Next() {
+			var origin string
+			require.NoError(t, rows.Scan(&origin))
+			origins = append(origins, origin)
+		}
+		rows.Close()
+		if len(origins) == 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	assert.Equal(t, []string{"prompt", "reply"}, origins,
+		"the picture is recorded once, so one of the two directions was lost")
+}
+
+// The listing endpoint selects its columns by name and scans them by position,
+// which is a pairing that breaks silently the moment a column is added to one
+// list and not the other — and breaks the whole attachment page with it.
+func TestTheAttachmentListingReadsEveryColumnItSelects(t *testing.T) {
+	pool := liveWriter(t)
+	dsn := os.Getenv("CHATRECORD_TEST_DSN")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	var recordID int64
+	var inserted bool
+	require.NoError(t, pool.QueryRow(ctx, insertStatement,
+		"listing-"+time.Now().Format("150405.000"), 1, 4242, "k", "10000011",
+		"gpt-5.6-sol", "/v1/responses", 200, "一句话", "一句回答", time.Now(), "", 32000,
+		"human", "hard", "client.thread_source", "codex", "user", "", "",
+		"一句话", 5).Scan(&recordID, &inserted))
+
+	_, err := pool.Exec(ctx, insertFileStatement,
+		recordID, "10000011", "image", OriginReply, "image/png", "drawn.png",
+		12, "beefcafe", "10000011/2026-08-24/beefcafe.png", "", time.Now())
+	require.NoError(t, err)
+
+	items, err := ListFiles(dsn, "10000011", 10, 0)
+	require.NoError(t, err, "the listing could not read its own columns")
+	require.Len(t, items, 1)
+	assert.Equal(t, recordID, items[0].RecordID, "the listing does not say which turn the file belongs to")
+	assert.Equal(t, OriginReply, items[0].Origin, "the listing does not say who the file came from")
+	assert.Equal(t, "drawn.png", items[0].FileName)
 }
