@@ -253,3 +253,65 @@ func TestAKeyCanOptOutOfBeingRecorded(t *testing.T) {
 		})
 	}
 }
+
+// The reply is copied out of the stream as it passes, so the setting that says
+// how large an attachment may be must not also say how much heap one reply may
+// take. On a deployment with MaxFileBytes at 1GB the shared formula put that
+// ceiling at 2GB per request in flight; the request side can afford the same
+// formula because its body is already in memory.
+func TestTheReplyCeilingDoesNotFollowAOneGigabyteFileLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := *cfg
+	t.Cleanup(func() { chatrecord.Stop(); *cfg = previous })
+	cfg.Enabled, cfg.DSN = true, "postgres://u:p@127.0.0.1:1/none"
+	cfg.StoreFiles = true
+	cfg.MaxFileBytes = 1 << 30 // what this deployment actually runs with
+	cfg.MaxCaptureBytes = 1 << 20
+
+	// The request side keeps the full allowance: holding a body already in
+	// memory is a reference, not a copy.
+	assert.Greater(t, maxCapturedBytes(cfg, "/v1/chat/completions"), int64(maxResponseCapture),
+		"this test is pointless unless the shared formula exceeds the reply ceiling")
+
+	var captured *captureWriter
+	router := gin.New()
+	router.Use(ChatRecord())
+	router.POST("/v1/chat/completions", func(c *gin.Context) {
+		captured, _ = c.Writer.(*captureWriter)
+		c.String(http.StatusOK, "hi")
+	})
+	router.ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{}`)))
+
+	require.NotNil(t, captured, "a chat reply should still be captured")
+	assert.Equal(t, maxResponseCapture, captured.limit,
+		"one reply may buffer %d bytes; the file limit must not raise that", captured.limit)
+}
+
+// A modest file limit still gets its headroom — the cap is a ceiling, not a
+// replacement for the calculation.
+func TestASmallFileLimitStillSetsTheReplyCeiling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := operation_setting.GetChatRecordSetting()
+	previous := *cfg
+	t.Cleanup(func() { chatrecord.Stop(); *cfg = previous })
+	cfg.Enabled, cfg.DSN = true, "postgres://u:p@127.0.0.1:1/none"
+	cfg.StoreFiles = true
+	cfg.MaxFileBytes = 8 << 20
+	cfg.MaxCaptureBytes = 1 << 20
+
+	var captured *captureWriter
+	router := gin.New()
+	router.Use(ChatRecord())
+	router.POST("/v1/chat/completions", func(c *gin.Context) {
+		captured, _ = c.Writer.(*captureWriter)
+		c.String(http.StatusOK, "hi")
+	})
+	router.ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{}`)))
+
+	require.NotNil(t, captured)
+	assert.Equal(t, int(8<<20)*2+(1<<20), captured.limit,
+		"an 8MB file limit should still buy the reply its headroom")
+}

@@ -100,11 +100,27 @@ func captureResponseFor(path string) bool {
 	return true
 }
 
+// maxResponseCapture is the hard ceiling on what the reply side will buffer,
+// whatever the attachment limit is set to.
+//
+// The two directions look symmetric and are not. A request body is already in
+// memory by the time this decides anything, so letting the limit scale with
+// MaxFileBytes costs a reference. A reply is copied out of the stream byte by
+// byte as it passes, so the same formula makes the setting that says how large
+// an attachment may be also say how much heap one reply may take — and on this
+// deployment MaxFileBytes is 1GB, which put the reply ceiling at 2GB per
+// request in flight. Nothing had reached it, but no configuration should be
+// able to.
+//
+// A generated 1024×1024 PNG arrives as roughly 3.5MB of base64. This leaves
+// room for several of them and still bounds what one reply can cost.
+const maxResponseCapture = 64 << 20
+
 // maxCapturedBytes is how large one side of an exchange may be and still be
-// worth carrying to the writer. The same rule holds in both directions: a
-// picture is the same size whether somebody attached it or the model drew it,
-// and a ceiling that only the request side was allowed to raise meant a
-// generated image was always cut off before the writer ever saw it.
+// worth carrying to the writer. A picture is the same size whether somebody
+// attached it or the model drew it, and a ceiling that only the request side
+// was allowed to raise meant a generated image was always cut off before the
+// writer ever saw it.
 //
 // It is a ceiling, not an allocation. An ordinary text reply buffers what it
 // weighs; raising this only costs memory when a reply really does carry
@@ -142,10 +158,11 @@ func ChatRecord() gin.HandlerFunc {
 		started := time.Now()
 		var writer *captureWriter
 		if captureResponseFor(c.Request.URL.Path) {
-			writer = &captureWriter{
-				ResponseWriter: c.Writer,
-				limit:          int(maxCapturedBytes(cfg, c.Request.URL.Path)),
+			limit := maxCapturedBytes(cfg, c.Request.URL.Path)
+			if limit > maxResponseCapture {
+				limit = maxResponseCapture
 			}
+			writer = &captureWriter{ResponseWriter: c.Writer, limit: int(limit)}
 			c.Writer = writer
 		}
 
