@@ -156,3 +156,51 @@ func TestClipBoundsWithoutAddingToTheTail(t *testing.T) {
 		t.Error("a zero width holds nothing")
 	}
 }
+
+// PostgreSQL refuses two byte patterns in a text column, and refuses the whole
+// row for either — so one stray byte in a reply costs the turn. Both happen:
+// six turns were lost to a NUL and one to a stray 0xbb between 23 and 27
+// August, all of them logged as "invalid byte sequence for encoding UTF8".
+func TestAStrayByteDoesNotCostTheWholeTurn(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		given string
+		want  string
+	}{
+		{"a NUL in the middle", "登录不上去了\x00请看截图", "登录不上去了请看截图"},
+		{"a NUL at the end", "怎么打不开\x00", "怎么打不开"},
+		{
+			// What a reply cut mid-character leaves behind: a continuation
+			// byte with no lead byte in front of it.
+			"a dangling continuation byte",
+			"回复被截断了\xbb",
+			"回复被截断了",
+		},
+		{"both at once", "\x00混合\xbb内容\x00", "混合内容"},
+		{"nothing to clean", "一句正常的话", "一句正常的话"},
+		{"empty", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Truncate(tc.given, 32000); got != tc.want {
+				t.Errorf("Truncate = %q, want %q", got, tc.want)
+			}
+			if got := clip(tc.given, 128); got != tc.want {
+				t.Errorf("clip = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// Cleaning happens before the count, or a value that only fits once its
+// rubbish is gone gets truncated for length it does not have.
+func TestTheLengthIsMeasuredAfterCleaning(t *testing.T) {
+	// Ten NULs around four real characters: two runes of room is two real
+	// characters, not two bytes of rubbish.
+	given := "\x00\x00\x00\x00\x00abcd\x00\x00\x00\x00\x00"
+	if got := clip(given, 4); got != "abcd" {
+		t.Errorf("clip = %q, want %q", got, "abcd")
+	}
+	if got := Truncate(given, 4); got != "abcd" {
+		t.Errorf("Truncate = %q, want %q — a value that fits must not gain an ellipsis", got, "abcd")
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/tidwall/gjson"
 )
@@ -253,9 +254,33 @@ func replyFromStream(stream string) string {
 	return strings.TrimSpace(deltas.String())
 }
 
+// storable makes a value one a text column will accept. Two byte patterns are
+// refused by PostgreSQL and both cost the whole row rather than just
+// themselves: a NUL, which is valid UTF-8 and so survives every other check we
+// make, and a sequence that is not UTF-8 at all. Seven turns were lost to the
+// pair between 23 and 27 August — six to 0x00 and one to a stray 0xbb.
+//
+// Both arrive honestly. A reply cut mid-character leaves a dangling
+// continuation byte; a binary blob echoed into a message carries NULs. Neither
+// is worth losing the turn over, so they are dropped and the rest is kept.
+func storable(s string) string {
+	if !strings.ContainsRune(s, 0) && utf8.ValidString(s) {
+		return s
+	}
+	s = strings.ToValidUTF8(s, "")
+	return strings.Map(func(r rune) rune {
+		if r == 0 {
+			return -1
+		}
+		return r
+	}, s)
+}
+
 // Truncate bounds one stored message. Cutting on a rune boundary keeps the tail
-// from becoming a broken character.
+// from becoming a broken character, and the value is made storable first so the
+// count is of what will actually be written.
 func Truncate(s string, max int) string {
+	s = storable(s)
 	if max <= 0 || len([]rune(s)) <= max {
 		return s
 	}
@@ -274,6 +299,7 @@ func clip(s string, max int) string {
 	if max <= 0 {
 		return ""
 	}
+	s = storable(s)
 	runes := []rune(s)
 	if len(runes) <= max {
 		return s

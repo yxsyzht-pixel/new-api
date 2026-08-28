@@ -1102,3 +1102,33 @@ func TestTheAttachmentListingReadsEveryColumnItSelects(t *testing.T) {
 	assert.Equal(t, OriginReply, items[0].Origin, "the listing does not say who the file came from")
 	assert.Equal(t, "drawn.png", items[0].FileName)
 }
+
+// The unit tests prove the bytes are removed; this proves the row lands. That
+// is the part that was failing: PostgreSQL refuses the whole insert over one
+// byte, so the turn was lost rather than stored imperfectly.
+func TestATurnCarryingAStrayByteStillLands(t *testing.T) {
+	pool := liveWriter(t)
+
+	marker := "straybyte-" + time.Now().Format("150405.000")
+	Submit(Turn{
+		RequestID: marker, UserID: 4, TokenID: 444, TokenName: "k", StaffID: "10000004",
+		ModelName: "gpt-5.6-sol", Endpoint: "/v1/responses", StatusCode: 200,
+		CreatedAt: time.Now(),
+		RequestBody: []byte("{\"messages\":[{\"role\":\"user\",\"content\":\"" +
+			"登录不上去了\\u0000请看截图\"}]}"),
+		// A reply cut mid-character: a continuation byte with no lead byte.
+		ResponseBody: []byte("{\"choices\":[{\"message\":{\"content\":\"我看看\xbb\"}}]}"),
+	})
+
+	id := awaitRow(t, pool, marker)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	var user, ai string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT user_message, ai_message FROM chat_records WHERE id = $1`, id).Scan(&user, &ai))
+
+	assert.Equal(t, "登录不上去了请看截图", user, "the person's words should survive the byte that was dropped")
+	assert.NotContains(t, user, "\x00")
+	assert.NotContains(t, ai, "\xbb")
+}
