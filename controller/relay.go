@@ -338,12 +338,41 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	return channel, nil
 }
 
+// transportFailureBudget is how many failures that never reached an upstream
+// at all one request will accept before it stops moving to siblings.
+//
+// A do_request_failed carries no status and no body: the call did not get far
+// enough to be answered, so nothing about it says whose fault it was. One is
+// worth a retry — a single account can have its own network trouble. Two, on
+// two different channels, is not a channel problem any more; it is whatever
+// those channels share.
+//
+// On 27 August that shared thing was the proxy. Its password had been rotated
+// without the gateway being told, every CONNECT came back 403, and because the
+// failure looked channel-shaped, 150 requests each spent their whole retry
+// budget rediscovering it: 1,768 log lines, six upstream attempts apiece, all
+// of them certain to fail before they were made, and the caller waiting
+// through every one.
+const transportFailureBudget = 2
+
+// ginKeyTransportFailures counts those failures within a single request. The
+// budget is per request rather than global on purpose: a shared outage should
+// stop one caller quickly without any cross-request state to get stale.
+const ginKeyTransportFailures = "transport_failure_count"
+
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
 	if openaiErr == nil {
 		return false
 	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
+	}
+	if openaiErr.GetErrorCode() == types.ErrorCodeDoRequestFailed {
+		seen := c.GetInt(ginKeyTransportFailures) + 1
+		c.Set(ginKeyTransportFailures, seen)
+		if seen >= transportFailureBudget {
+			return false
+		}
 	}
 	if types.IsChannelError(openaiErr) {
 		return true
