@@ -345,9 +345,6 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 type attemptBudget struct {
 	limit      int
 	counterKey string
-	// why records what the number is for, so the next person to change it can
-	// see what it was measured against.
-	why string
 }
 
 // budgetedFailures are the classes that get a budget of their own. Anything not
@@ -364,18 +361,12 @@ var budgetedFailures = map[types.ErrorCode]attemptBudget{
 	// failure looked channel-shaped, 150 requests each spent their whole retry
 	// budget rediscovering it: 1,768 log lines, six upstream attempts apiece, all
 	// of them certain to fail before they were made.
-	types.ErrorCodeDoRequestFailed: {
-		limit: 2, counterKey: "transport_failure_count",
-		why: "a second identical transport failure is the shared dependency talking",
-	},
+	types.ErrorCodeDoRequestFailed: {limit: 2, counterKey: "transport_failure_count"},
 	// Cut streams do not fail fast: over 27–28 August the cut came a median 17
 	// seconds in, and 136 at the ninetieth percentile. Walking the whole channel
 	// list would have the caller waiting minutes to be told no, which is a worse
 	// answer than the one they could have had at once.
-	types.ErrorCodeStreamTruncated: {
-		limit: 2, counterKey: "truncated_stream_count",
-		why: "each attempt costs the caller too much waiting to spend five of them",
-	},
+	types.ErrorCodeStreamTruncated: {limit: 2, counterKey: "truncated_stream_count"},
 }
 
 // withinAttemptBudget records this failure against its class and reports whether
