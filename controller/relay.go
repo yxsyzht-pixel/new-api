@@ -338,38 +338,57 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	return channel, nil
 }
 
-// transportFailureBudget is how many failures that never reached an upstream
-// at all one request will accept before it stops moving to siblings.
-//
-// A do_request_failed carries no status and no body: the call did not get far
-// enough to be answered, so nothing about it says whose fault it was. One is
-// worth a retry — a single account can have its own network trouble. Two, on
-// two different channels, is not a channel problem any more; it is whatever
-// those channels share.
-//
-// On 27 August that shared thing was the proxy. Its password had been rotated
-// without the gateway being told, every CONNECT came back 403, and because the
-// failure looked channel-shaped, 150 requests each spent their whole retry
-// budget rediscovering it: 1,768 log lines, six upstream attempts apiece, all
-// of them certain to fail before they were made, and the caller waiting
-// through every one.
-const transportFailureBudget = 2
+// attemptBudget caps how many attempts one request spends on a class of failure
+// whose repetition says more about a shared cause than about the channel that
+// happened to report it. Counting is per request: a shared outage should cut one
+// caller's losses without leaving state behind to go stale for the next.
+type attemptBudget struct {
+	limit      int
+	counterKey string
+	// why records what the number is for, so the next person to change it can
+	// see what it was measured against.
+	why string
+}
 
-// ginKeyTransportFailures counts those failures within a single request. The
-// budget is per request rather than global on purpose: a shared outage should
-// stop one caller quickly without any cross-request state to get stale.
-const ginKeyTransportFailures = "transport_failure_count"
+// budgetedFailures are the classes that get a budget of their own. Anything not
+// listed keeps the general retry allowance.
+var budgetedFailures = map[types.ErrorCode]attemptBudget{
+	// A do_request_failed carries no status and no body: the call did not get far
+	// enough to be answered, so nothing about it says whose fault it was. One is
+	// worth a retry — a single account can have its own network trouble. Two, on
+	// two different channels, is not a channel problem any more; it is whatever
+	// those channels share.
+	//
+	// On 27 August that shared thing was the proxy. Its password had been rotated
+	// without the gateway being told, every CONNECT came back 403, and because the
+	// failure looked channel-shaped, 150 requests each spent their whole retry
+	// budget rediscovering it: 1,768 log lines, six upstream attempts apiece, all
+	// of them certain to fail before they were made.
+	types.ErrorCodeDoRequestFailed: {
+		limit: 2, counterKey: "transport_failure_count",
+		why: "a second identical transport failure is the shared dependency talking",
+	},
+	// Cut streams do not fail fast: over 27–28 August the cut came a median 17
+	// seconds in, and 136 at the ninetieth percentile. Walking the whole channel
+	// list would have the caller waiting minutes to be told no, which is a worse
+	// answer than the one they could have had at once.
+	types.ErrorCodeStreamTruncated: {
+		limit: 2, counterKey: "truncated_stream_count",
+		why: "each attempt costs the caller too much waiting to spend five of them",
+	},
+}
 
-// truncatedStreamBudget is how many attempts a caller spends on a stream the
-// upstream keeps cutting short.
-//
-// One retry, not five. These do not fail fast: the cut came a median 17 seconds
-// in over 27–28 August, and at the ninetieth percentile 136. Walking the whole
-// channel list would have the caller waiting minutes to be told no, which is a
-// worse answer than the one they would have had immediately.
-const truncatedStreamBudget = 2
-
-const ginKeyTruncatedStreams = "truncated_stream_count"
+// withinAttemptBudget records this failure against its class and reports whether
+// the request may try again. Classes without a budget are always allowed on.
+func withinAttemptBudget(c *gin.Context, code types.ErrorCode) bool {
+	budget, capped := budgetedFailures[code]
+	if !capped {
+		return true
+	}
+	seen := c.GetInt(budget.counterKey) + 1
+	c.Set(budget.counterKey, seen)
+	return seen < budget.limit
+}
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
 	if openaiErr == nil {
@@ -378,19 +397,8 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}
-	if openaiErr.GetErrorCode() == types.ErrorCodeDoRequestFailed {
-		seen := c.GetInt(ginKeyTransportFailures) + 1
-		c.Set(ginKeyTransportFailures, seen)
-		if seen >= transportFailureBudget {
-			return false
-		}
-	}
-	if openaiErr.GetErrorCode() == types.ErrorCodeStreamTruncated {
-		seen := c.GetInt(ginKeyTruncatedStreams) + 1
-		c.Set(ginKeyTruncatedStreams, seen)
-		if seen >= truncatedStreamBudget {
-			return false
-		}
+	if !withinAttemptBudget(c, openaiErr.GetErrorCode()) {
+		return false
 	}
 	if types.IsChannelError(openaiErr) {
 		return true

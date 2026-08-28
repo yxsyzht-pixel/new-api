@@ -281,10 +281,32 @@ func storable(s string) string {
 // count is of what will actually be written.
 func Truncate(s string, max int) string {
 	s = storable(s)
-	if max <= 0 || len([]rune(s)) <= max {
+	if max <= 0 {
 		return s
 	}
-	return string([]rune(s)[:max]) + "…"
+	cut := runePrefixBytes(s, max)
+	if cut == len(s) {
+		return s
+	}
+	return s[:cut] + "…"
+}
+
+// runePrefixBytes returns how many bytes the first max runes of s occupy, or
+// len(s) when s holds fewer than that.
+//
+// The obvious spelling — string([]rune(s)[:max]) — converts the whole string
+// first, so keeping 32000 runes of a reply that arrived at the 64MB ceiling
+// allocates a quarter of a gigabyte of runes to throw almost all of them away.
+// Walking to the cut instead costs the prefix and nothing more.
+func runePrefixBytes(s string, max int) int {
+	count := 0
+	for i := range s {
+		if count == max {
+			return i
+		}
+		count++
+	}
+	return len(s)
 }
 
 // clip bounds a value to a fixed-width column. Unlike Truncate it adds nothing
@@ -300,9 +322,5 @@ func clip(s string, max int) string {
 		return ""
 	}
 	s = storable(s)
-	runes := []rune(s)
-	if len(runes) <= max {
-		return s
-	}
-	return string(runes[:max])
+	return s[:runePrefixBytes(s, max)]
 }

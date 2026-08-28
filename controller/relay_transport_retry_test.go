@@ -84,3 +84,39 @@ func TestACutStreamIsWorthOneMoreAccount(t *testing.T) {
 		t.Fatal("断流只给一次重试机会,再试下去调用方要等太久")
 	}
 }
+
+// The budgets are per class, not one pooled allowance. Two different shared
+// causes in one request are two different pieces of evidence, and neither
+// should spend the other's chances — the general retry allowance still bounds
+// the total.
+func TestEachFailureClassCountsSeparately(t *testing.T) {
+	c := newTestContext()
+	truncated := types.NewOpenAIError(errors.New("cut short"), types.ErrorCodeStreamTruncated, http.StatusInternalServerError)
+
+	if !shouldRetry(c, transportFailure(), 5) {
+		t.Fatal("传输失败的第一次应该放行")
+	}
+	if !shouldRetry(c, truncated, 4) {
+		t.Fatal("断流有自己的预算,不该被传输失败花掉")
+	}
+	if shouldRetry(c, transportFailure(), 3) {
+		t.Fatal("传输失败的第二次应该拦下")
+	}
+	if shouldRetry(c, truncated, 2) {
+		t.Fatal("断流的第二次应该拦下")
+	}
+}
+
+// A class with no budget of its own keeps the general allowance — the table is
+// an exception list, not a whitelist.
+func TestAnUnbudgetedFailureIsUnaffected(t *testing.T) {
+	c := newTestContext()
+	if !withinAttemptBudget(c, types.ErrorCodeBadResponse) {
+		t.Fatal("没有单独预算的错误类别不应该被拦")
+	}
+	for i := 0; i < 10; i++ {
+		if !withinAttemptBudget(c, types.ErrorCodeBadResponse) {
+			t.Fatal("反复调用也不应该开始拦截")
+		}
+	}
+}
