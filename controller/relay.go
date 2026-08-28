@@ -360,6 +360,17 @@ const transportFailureBudget = 2
 // stop one caller quickly without any cross-request state to get stale.
 const ginKeyTransportFailures = "transport_failure_count"
 
+// truncatedStreamBudget is how many attempts a caller spends on a stream the
+// upstream keeps cutting short.
+//
+// One retry, not five. These do not fail fast: the cut came a median 17 seconds
+// in over 27–28 August, and at the ninetieth percentile 136. Walking the whole
+// channel list would have the caller waiting minutes to be told no, which is a
+// worse answer than the one they would have had immediately.
+const truncatedStreamBudget = 2
+
+const ginKeyTruncatedStreams = "truncated_stream_count"
+
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
 	if openaiErr == nil {
 		return false
@@ -371,6 +382,13 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 		seen := c.GetInt(ginKeyTransportFailures) + 1
 		c.Set(ginKeyTransportFailures, seen)
 		if seen >= transportFailureBudget {
+			return false
+		}
+	}
+	if openaiErr.GetErrorCode() == types.ErrorCodeStreamTruncated {
+		seen := c.GetInt(ginKeyTruncatedStreams) + 1
+		c.Set(ginKeyTruncatedStreams, seen)
+		if seen >= truncatedStreamBudget {
 			return false
 		}
 	}

@@ -67,3 +67,20 @@ func TestAnAnsweredFailureKeepsItsFullBudget(t *testing.T) {
 		}
 	}
 }
+
+// A cut stream is worth one more account, not five. Each attempt can sit for a
+// long time before the cut comes — a median 17 seconds over 27–28 August, 136
+// at the ninetieth percentile — so walking the whole list would keep the caller
+// waiting minutes only to fail anyway.
+func TestACutStreamIsWorthOneMoreAccount(t *testing.T) {
+	c := newTestContext()
+	truncated := types.NewOpenAIError(errors.New("upstream ended the response stream before it completed"),
+		types.ErrorCodeStreamTruncated, http.StatusInternalServerError)
+
+	if !shouldRetry(c, truncated, 5) {
+		t.Fatal("第一次断流应该换一个账号重试")
+	}
+	if shouldRetry(c, truncated, 4) {
+		t.Fatal("断流只给一次重试机会,再试下去调用方要等太久")
+	}
+}

@@ -51,6 +51,13 @@ const (
 	ErrorCodeGetChannelFailed   ErrorCode = "get_channel_failed"
 	ErrorCodeGenRelayInfoFailed ErrorCode = "gen_relay_info_failed"
 
+	// ErrorCodeStreamTruncated marks a stream the upstream stopped sending before
+	// it produced anything. It is separate from bad_response so the retry loop can
+	// give it a budget of its own: each attempt can sit for a long time before the
+	// cut comes, so walking the whole channel list would keep the caller waiting
+	// far longer than simply failing would.
+	ErrorCodeStreamTruncated ErrorCode = "stream_truncated"
+
 	// channel error
 	ErrorCodeChannelNoAvailableKey        ErrorCode = "channel:no_available_key"
 	ErrorCodeChannelParamOverrideInvalid  ErrorCode = "channel:param_override_invalid"

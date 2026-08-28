@@ -354,9 +354,28 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	// stall into something it can act on at once. A client that has already hung up
 	// has nobody left to tell.
 	if upstreamStreamErr == nil && shouldCloseTruncatedStream(info.StreamStatus, terminalSent) {
-		sendResponsesTerminalFailure(c, info, "", "", types.NewError(
+		truncated := types.NewError(
 			fmt.Errorf("upstream ended the response stream before it completed (%s)", info.StreamStatus.Summary()),
-			types.ErrorCodeBadResponse))
+			types.ErrorCodeStreamTruncated)
+
+		// A stream cut before it said anything has nothing worth keeping, so it
+		// is worth another account rather than an apology. Measured over 27–28
+		// August: 58 of 99 of these reached the caller with no output at all,
+		// and the ones that did died a median 17 seconds in — long enough that
+		// holding the preamble back to keep the response uncommitted would show
+		// the caller a blank window instead.
+		//
+		// Splicing a second attempt into a committed stream is what the
+		// in-stream `error` path above has been doing all along; this is the
+		// same move for a stream that stopped rather than complained. Once any
+		// content has gone out the choice is gone — the caller already has part
+		// of an answer, and a second attempt would contradict it — so that case
+		// keeps ending the stream cleanly, which is all it can do.
+		if !contentStarted {
+			return nil, truncated
+		}
+
+		sendResponsesTerminalFailure(c, info, "", "", truncated)
 	}
 
 	if upstreamStreamErr != nil {
