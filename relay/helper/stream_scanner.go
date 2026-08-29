@@ -193,6 +193,12 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 							time.Since(time.UnixMilli(lastUpstreamAt.Load())) >= info.HeartbeatAfter {
 							var sent bool
 							if sent, err = info.Heartbeat(c); sent && err == nil {
+								info.StreamStatus.Beat()
+								if info.StreamStatus.Heartbeats() == 1 {
+									logger.LogInfo(c, fmt.Sprintf(
+										"progress heartbeat started: upstream quiet for %.0fs",
+										time.Since(time.UnixMilli(lastUpstreamAt.Load())).Seconds()))
+								}
 								return
 							}
 							if err != nil {
