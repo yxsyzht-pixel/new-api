@@ -106,21 +106,31 @@ type RelayInfo struct {
 	RequestHeaders         map[string]string
 	ShouldIncludeUsage     bool
 	DisablePing            bool // 是否禁止向下游发送自定义 Ping
-	ClientWs               *websocket.Conn
-	TargetWs               *websocket.Conn
-	InputAudioFormat       string
-	OutputAudioFormat      string
-	RealtimeTools          []dto.RealTimeTool
-	IsFirstRequest         bool
-	AudioUsage             bool
-	ReasoningEffort        string
-	UserSetting            dto.UserSetting
-	UserEmail              string
-	UserQuota              int
-	RelayFormat            types.RelayFormat
-	SendResponseCount      int
-	ReceivedResponseCount  int
-	FinalPreConsumedQuota  int // 最终预消耗的配额
+	// Heartbeat, when set, is what the ping goroutine writes once the upstream
+	// has been quiet for HeartbeatAfter. The scanner knows when a stream has
+	// gone silent but not what silence is allowed to look like in the format
+	// being spoken, so the handler that speaks it supplies the beat.
+	//
+	// Returning false means the moment is not a safe one — once real output has
+	// started, the client is no longer idle and nothing should be inserted
+	// between the pieces of an answer it is already reading.
+	Heartbeat             func(*gin.Context) (bool, error)
+	HeartbeatAfter        time.Duration
+	ClientWs              *websocket.Conn
+	TargetWs              *websocket.Conn
+	InputAudioFormat      string
+	OutputAudioFormat     string
+	RealtimeTools         []dto.RealTimeTool
+	IsFirstRequest        bool
+	AudioUsage            bool
+	ReasoningEffort       string
+	UserSetting           dto.UserSetting
+	UserEmail             string
+	UserQuota             int
+	RelayFormat           types.RelayFormat
+	SendResponseCount     int
+	ReceivedResponseCount int
+	FinalPreConsumedQuota int // 最终预消耗的配额
 	// ForcePreConsume 为 true 时禁用 BillingSession 的信任额度旁路，
 	// 强制预扣全额。用于异步任务（视频/音乐生成等），因为请求返回后任务仍在运行，
 	// 必须在提交前锁定全额。
