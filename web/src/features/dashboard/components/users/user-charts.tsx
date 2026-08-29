@@ -31,10 +31,7 @@ import {
   getSelfQuotaDataByTokens,
   getUserQuotaDataByUsers,
 } from '@/features/dashboard/api'
-import {
-  TIME_GRANULARITY_OPTIONS,
-  TIME_RANGE_PRESETS,
-} from '@/features/dashboard/constants'
+import { TIME_GRANULARITY_OPTIONS } from '@/features/dashboard/constants'
 import {
   getDefaultDays,
   saveGranularity,
@@ -50,6 +47,8 @@ import { getRollingDateRange, type TimeGranularity } from '@/lib/time'
 import { VCHART_OPTION } from '@/lib/vchart'
 
 import { UserDimensionTabs, UserMetricTabs } from './user-metric-tabs'
+import { UserRangePicker } from './user-range-picker'
+import { UserScopeFilter } from './user-scope-filter'
 
 let themeManagerPromise: Promise<
   (typeof import('@visactor/vchart'))['ThemeManager']
@@ -107,17 +106,49 @@ export function UserCharts(props: UserChartsProps) {
   const dimension = isSelfScope ? 'token' : props.filters.dimension
   const onFiltersChange = props.onFiltersChange
 
+  const customStart = props.filters.customStart
+  const customEnd = props.filters.customEnd
+  const userFilter = props.filters.userFilter
+
   const timeRange = useMemo(() => {
+    // A hand-picked window wins while it is set; the presets stay visible as
+    // the way back to a rolling one.
+    if (customStart != null && customEnd != null) {
+      return { start_timestamp: customStart, end_timestamp: customEnd }
+    }
     const { start, end } = getRollingDateRange(selectedRange)
     return {
       start_timestamp: Math.floor(start.getTime() / 1000),
       end_timestamp: Math.floor(end.getTime() / 1000),
     }
-  }, [selectedRange])
+  }, [selectedRange, customStart, customEnd])
 
   const handleRangeChange = useCallback(
     (days: number) => {
-      onFiltersChange({ ...props.filters, selectedRange: days })
+      onFiltersChange({
+        ...props.filters,
+        selectedRange: days,
+        customStart: undefined,
+        customEnd: undefined,
+      })
+    },
+    [onFiltersChange, props.filters]
+  )
+
+  const handleCustomRangeChange = useCallback(
+    (start?: number, end?: number) => {
+      onFiltersChange({
+        ...props.filters,
+        customStart: start,
+        customEnd: end,
+      })
+    },
+    [onFiltersChange, props.filters]
+  )
+
+  const handleUserFilterChange = useCallback(
+    (username?: string) => {
+      onFiltersChange({ ...props.filters, userFilter: username })
     },
     [onFiltersChange, props.filters]
   )
@@ -189,39 +220,54 @@ export function UserCharts(props: UserChartsProps) {
     staleTime: 60_000,
   })
 
+  // The accounts that actually spent something in this window, heaviest first,
+  // so the dropdown opens on the ones someone is likely to be looking for.
+  const availableUsers = useMemo(() => {
+    if (dimension !== 'token') return []
+    const spend = new Map<string, number>()
+    for (const item of userData ?? []) {
+      if (!item.username) continue
+      spend.set(
+        item.username,
+        (spend.get(item.username) ?? 0) + (item.quota ?? 0)
+      )
+    }
+    return [...spend.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([username]) => username)
+  }, [userData, dimension])
+
+  // Filtering here rather than in the query keeps one fetch serving every
+  // account: switching between them is then instant and costs no request.
+  const scopedData = useMemo(() => {
+    const rows = isLoading ? [] : (userData ?? [])
+    if (dimension !== 'token' || !userFilter) return rows
+    return rows.filter((item) => item.username === userFilter)
+  }, [userData, isLoading, dimension, userFilter])
+
   const chartData = useMemo(
     () =>
       processUserChartData(
-        isLoading ? [] : (userData ?? []),
+        scopedData,
         timeGranularity,
         t,
         topUserLimit,
         metric,
         dimension
       ),
-    [userData, isLoading, timeGranularity, t, topUserLimit, metric, dimension]
+    [scopedData, timeGranularity, t, topUserLimit, metric, dimension]
   )
 
   return (
     <div className='space-y-3'>
       <div className='flex items-center gap-1.5 overflow-x-auto pb-1 sm:gap-2'>
-        <Tabs
-          value={String(selectedRange)}
-          onValueChange={(value) => handleRangeChange(Number(value))}
-          className='shrink-0'
-        >
-          <TabsList>
-            {TIME_RANGE_PRESETS.map((preset) => (
-              <TabsTrigger
-                key={preset.days}
-                value={String(preset.days)}
-                className='px-2.5 text-xs'
-              >
-                {t(preset.label)}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <UserRangePicker
+          selectedRange={selectedRange}
+          customStart={customStart}
+          customEnd={customEnd}
+          onPresetChange={handleRangeChange}
+          onCustomChange={handleCustomRangeChange}
+        />
 
         <Tabs
           value={timeGranularity}
@@ -272,6 +318,14 @@ export function UserCharts(props: UserChartsProps) {
         )}
 
         <UserMetricTabs value={metric} onValueChange={handleMetricChange} />
+
+        {!isSelfScope && dimension === 'token' && (
+          <UserScopeFilter
+            users={availableUsers}
+            value={userFilter}
+            onValueChange={handleUserFilterChange}
+          />
+        )}
 
         {isLoading && (
           <Loader2 className='text-muted-foreground size-4 animate-spin' />

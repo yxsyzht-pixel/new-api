@@ -218,6 +218,19 @@ export interface UserChartsFilters {
   topUserLimit: number
   metric: UserAnalyticsMetric
   dimension: UserAnalyticsDimension
+  /**
+   * A window chosen by hand, in seconds. Both ends are set together or not at
+   * all; while they are set the rolling presets are only a way back out, so
+   * picking one clears these.
+   */
+  customStart?: number
+  customEnd?: number
+  /**
+   * Narrows the key charts to one account. The ranking otherwise mixes every
+   * team's keys together, and a department of one heavy user pushes everyone
+   * else's off the chart. Empty means all of them.
+   */
+  userFilter?: string
 }
 
 // ============================================================================
