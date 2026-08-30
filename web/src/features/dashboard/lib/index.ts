@@ -21,6 +21,7 @@ export {
   buildQueryParams,
   getSavedGranularity,
   saveGranularity,
+  granularityForWindow,
   getDefaultDays,
   getSavedChartPreferences,
   saveChartPreferences,

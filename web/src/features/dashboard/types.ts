@@ -213,15 +213,13 @@ export interface DashboardChartPreferences {
 // User analytics selections are held by the dashboard parent so they survive
 // switching between dashboard sub-sections, matching the model/flow filters.
 export interface UserChartsFilters {
-  timeGranularity: TimeGranularity
-  selectedRange: number
   topUserLimit: number
   metric: UserAnalyticsMetric
   dimension: UserAnalyticsDimension
   /**
-   * A window chosen by hand, in seconds. Both ends are set together or not at
-   * all; while they are set the rolling presets are only a way back out, so
-   * picking one clears these.
+   * The window the charts cover, in seconds. Both ends are set together or not
+   * at all — a half-open window would silently mean "everything since". It
+   * opens on the last 24 hours; clearing the field falls back to the same.
    */
   customStart?: number
   customEnd?: number

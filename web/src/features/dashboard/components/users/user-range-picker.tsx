@@ -16,57 +16,29 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useTranslation } from 'react-i18next'
-
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { TIME_RANGE_PRESETS } from '@/features/dashboard/constants'
 import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/compact-date-time-range-picker'
 
 interface UserRangePickerProps {
-  /** Rolling window in days, used whenever no custom window is set. */
-  selectedRange: number
   customStart?: number
   customEnd?: number
-  onPresetChange: (days: number) => void
   onCustomChange: (start?: number, end?: number) => void
 }
 
 /**
- * The quick presets plus a window chosen by hand.
+ * The window the charts cover, chosen by hand.
  *
- * The two are one control rather than two: a custom window and a rolling one
- * cannot both be in force, and showing a preset as selected while the charts
- * cover some other fortnight is the kind of thing people only notice after
- * they have drawn a conclusion from it. So while a custom window is set, no
- * preset is highlighted, and picking one clears the window.
+ * It opens on the last 24 hours (see buildDefaultUserChartsFilters) rather
+ * than on a set of preset buttons: the presets and the date field were two
+ * controls for one thing, and a preset shown as selected while the charts
+ * covered some other fortnight is the kind of mismatch people only notice
+ * after they have drawn a conclusion from it.
  *
  * The picker itself is the one the logs page uses. Two different date fields
  * in one product is a small tax on everyone who learns the first one.
  */
 export function UserRangePicker(props: UserRangePickerProps) {
-  const { t } = useTranslation()
-
-  const hasCustom = props.customStart != null && props.customEnd != null
-
   return (
     <div className='flex shrink-0 items-center gap-1.5'>
-      <Tabs
-        value={hasCustom ? '' : String(props.selectedRange)}
-        onValueChange={(value) => value && props.onPresetChange(Number(value))}
-      >
-        <TabsList>
-          {TIME_RANGE_PRESETS.map((preset) => (
-            <TabsTrigger
-              key={preset.days}
-              value={String(preset.days)}
-              className='px-2.5 text-xs'
-            >
-              {t(preset.label)}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-
       <CompactDateTimeRangePicker
         className='h-8 w-auto min-w-40 text-xs'
         start={

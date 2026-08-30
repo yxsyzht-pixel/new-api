@@ -32,6 +32,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { ROLE } from '@/lib/roles'
+import { getRollingDateRange } from '@/lib/time'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -41,9 +42,7 @@ import { OverviewDashboard } from './components/overview/overview-dashboard'
 import { DEFAULT_TIME_GRANULARITY } from './constants'
 import {
   buildDefaultDashboardFilters,
-  getDefaultDays,
   getSavedChartPreferences,
-  getSavedGranularity,
   saveChartPreferences,
 } from './lib'
 import {
@@ -194,13 +193,16 @@ export function Dashboard() {
   )
   const [userChartsFilters, setUserChartsFilters] = useState<UserChartsFilters>(
     () => {
-      const granularity = getSavedGranularity()
+      // Open on the last 24 hours: the view is read to answer "what happened
+      // today", and a window shown as concrete dates beats a preset the reader
+      // has to translate.
+      const { start, end } = getRollingDateRange(1)
       return {
-        timeGranularity: granularity,
-        selectedRange: getDefaultDays(granularity),
         topUserLimit: 10,
         metric: 'quota',
         dimension: 'user',
+        customStart: Math.floor(start.getTime() / 1000),
+        customEnd: Math.floor(end.getTime() / 1000),
       }
     }
   )

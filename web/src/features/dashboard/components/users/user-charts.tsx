@@ -31,10 +31,8 @@ import {
   getSelfQuotaDataByTokens,
   getUserQuotaDataByUsers,
 } from '@/features/dashboard/api'
-import { TIME_GRANULARITY_OPTIONS } from '@/features/dashboard/constants'
 import {
-  getDefaultDays,
-  saveGranularity,
+  granularityForWindow,
   processUserChartData,
 } from '@/features/dashboard/lib'
 import type {
@@ -43,7 +41,7 @@ import type {
   UserAnalyticsMetric,
   UserChartsFilters,
 } from '@/features/dashboard/types'
-import { getRollingDateRange, type TimeGranularity } from '@/lib/time'
+import { getRollingDateRange } from '@/lib/time'
 import { VCHART_OPTION } from '@/lib/vchart'
 
 import { UserDimensionTabs, UserMetricTabs } from './user-metric-tabs'
@@ -96,8 +94,6 @@ export function UserCharts(props: UserChartsProps) {
 
   // The selection is owned by the dashboard parent so it persists across
   // sub-section switches; the rolling window is derived from the chosen range.
-  const timeGranularity = props.filters.timeGranularity
-  const selectedRange = props.filters.selectedRange
   const topUserLimit = props.filters.topUserLimit
   const metric = props.filters.metric
   const isSelfScope = props.scope === 'self'
@@ -111,28 +107,23 @@ export function UserCharts(props: UserChartsProps) {
   const userFilter = props.filters.userFilter
 
   const timeRange = useMemo(() => {
-    // A hand-picked window wins while it is set; the presets stay visible as
-    // the way back to a rolling one.
     if (customStart != null && customEnd != null) {
       return { start_timestamp: customStart, end_timestamp: customEnd }
     }
-    const { start, end } = getRollingDateRange(selectedRange)
+    // Clearing the field falls back to the same window the view opens on,
+    // rather than to everything ever recorded.
+    const { start, end } = getRollingDateRange(1)
     return {
       start_timestamp: Math.floor(start.getTime() / 1000),
       end_timestamp: Math.floor(end.getTime() / 1000),
     }
-  }, [selectedRange, customStart, customEnd])
+  }, [customStart, customEnd])
 
-  const handleRangeChange = useCallback(
-    (days: number) => {
-      onFiltersChange({
-        ...props.filters,
-        selectedRange: days,
-        customStart: undefined,
-        customEnd: undefined,
-      })
-    },
-    [onFiltersChange, props.filters]
+  // Derived rather than chosen: see granularityForWindow.
+  const timeGranularity = useMemo(
+    () =>
+      granularityForWindow(timeRange.start_timestamp, timeRange.end_timestamp),
+    [timeRange]
   )
 
   const handleCustomRangeChange = useCallback(
@@ -149,18 +140,6 @@ export function UserCharts(props: UserChartsProps) {
   const handleUserFilterChange = useCallback(
     (username?: string) => {
       onFiltersChange({ ...props.filters, userFilter: username })
-    },
-    [onFiltersChange, props.filters]
-  )
-
-  const handleGranularityChange = useCallback(
-    (g: TimeGranularity) => {
-      saveGranularity(g)
-      onFiltersChange({
-        ...props.filters,
-        timeGranularity: g,
-        selectedRange: getDefaultDays(g),
-      })
     },
     [onFiltersChange, props.filters]
   )
@@ -262,32 +241,10 @@ export function UserCharts(props: UserChartsProps) {
     <div className='space-y-3'>
       <div className='flex items-center gap-1.5 overflow-x-auto pb-1 sm:gap-2'>
         <UserRangePicker
-          selectedRange={selectedRange}
           customStart={customStart}
           customEnd={customEnd}
-          onPresetChange={handleRangeChange}
           onCustomChange={handleCustomRangeChange}
         />
-
-        <Tabs
-          value={timeGranularity}
-          onValueChange={(value) =>
-            handleGranularityChange(value as TimeGranularity)
-          }
-          className='shrink-0'
-        >
-          <TabsList>
-            {TIME_GRANULARITY_OPTIONS.map((opt) => (
-              <TabsTrigger
-                key={opt.value}
-                value={opt.value}
-                className='px-2.5 text-xs'
-              >
-                {t(opt.label)}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
 
         <Tabs
           value={String(topUserLimit)}

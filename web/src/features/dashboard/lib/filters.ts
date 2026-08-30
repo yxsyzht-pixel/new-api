@@ -82,6 +82,27 @@ export function getSavedGranularity(
   return getSavedChartPreferences().defaultTimeGranularity
 }
 
+/** Seconds in a day, for the window thresholds below. */
+const DAY_SEC = 86_400
+
+/**
+ * Pick the bucket size from the length of the window.
+ *
+ * The user analytics view has no granularity control: bucketing a day by week
+ * yields one bar, and bucketing a quarter by hour yields two thousand, so
+ * neither reading is worth an extra control that can be left on the wrong
+ * setting. The thresholds keep every window between roughly 20 and 100 points.
+ */
+export function granularityForWindow(
+  startSec: number,
+  endSec: number
+): TimeGranularity {
+  const spanSec = Math.abs(endSec - startSec)
+  if (spanSec <= 2 * DAY_SEC) return 'hour'
+  if (spanSec <= 92 * DAY_SEC) return 'day'
+  return 'week'
+}
+
 export function saveGranularity(granularity: TimeGranularity): void {
   if (typeof window === 'undefined') return
   saveChartPreferences({
