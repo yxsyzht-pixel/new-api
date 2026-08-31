@@ -87,6 +87,40 @@ func priorityTiers(abilities []Ability) []int {
 	return tiers
 }
 
+// pickPriorityTier chooses the priority a retry should aim at, and reports
+// whether there is anything left to aim at.
+//
+// This is the one piece both selection paths have to agree on. They differ
+// everywhere else — the cached path walks channel IDs and weights them with a
+// smoothing factor, the database path walks abilities and weights them with a
+// floor — but the retry counter means the same thing to both, and when it did
+// not, the disagreement only showed up with the memory cache in one state and
+// not the other. Keeping it here means a change lands on both at once.
+//
+//   - Nothing to serve: not ok. The tiers are derived from the candidates, so an
+//     empty tier list is the only way to say that.
+//   - One candidate and a retry: not ok. The index walks down the tiers, and a
+//     single candidate is a list of one — asking again returns the upstream
+//     that just refused, which is how one 429 became six.
+//   - Otherwise the index is clamped into range: past the last tier it re-rolls
+//     within that tier, which is worth something when the tier has several
+//     channels to choose between.
+func pickPriorityTier(tiers []int, candidates int, retry int) (int, bool) {
+	if len(tiers) == 0 {
+		return 0, false
+	}
+	if candidates == 1 && retry > 0 {
+		return 0, false
+	}
+	if retry < 0 {
+		retry = 0
+	}
+	if retry >= len(tiers) {
+		retry = len(tiers) - 1
+	}
+	return tiers[retry], true
+}
+
 // abilitiesAtPriority narrows candidates to one tier.
 func abilitiesAtPriority(abilities []Ability, priority int) []Ability {
 	tier := make([]Ability, 0, len(abilities))
@@ -142,21 +176,11 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 		return nil, nil
 	}
 
-	// One ability is the same channel on every attempt — see the matching guard
-	// in GetRandomSatisfiedChannel. Report exhaustion rather than handing back
-	// the upstream that just refused.
-	if len(abilities) == 1 && retry > 0 {
+	targetPriority, ok := pickPriorityTier(priorityTiers(abilities), len(abilities), retry)
+	if !ok {
 		return nil, nil
 	}
-
-	tiers := priorityTiers(abilities)
-	if retry >= len(tiers) {
-		retry = len(tiers) - 1
-	}
-	if retry < 0 {
-		retry = 0
-	}
-	chosen, ok := pickWeightedAbility(abilitiesAtPriority(abilities, tiers[retry]))
+	chosen, ok := pickWeightedAbility(abilitiesAtPriority(abilities, targetPriority))
 	if !ok {
 		return nil, nil
 	}

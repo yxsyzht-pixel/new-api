@@ -135,51 +135,42 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 
 	channels = dropSuspendedChannels(channels)
 
-	if len(channels) == 1 {
-		// One channel is the same channel on every attempt. The retry index walks
-		// down the priority list, and a list of one has nowhere to walk to: asking
-		// again returns the upstream that just refused, so a rate-limited channel
-		// gets the request six more times and its limit six more reasons to hold.
-		// Report exhaustion instead and let the caller keep the real error.
-		if retry > 0 {
-			return nil, nil
-		}
-		if channel, ok := channelsIDM[channels[0]]; ok {
-			return channel, nil
-		}
-		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
-	}
-
-	uniquePriorities := make(map[int]bool)
+	// Resolve the candidates once. Gathering the priorities and then the tier
+	// used to be two passes over channelsIDM, each carrying its own copy of the
+	// consistency check.
+	candidates := make([]*Channel, 0, len(channels))
 	for _, channelId := range channels {
-		if channel, ok := channelsIDM[channelId]; ok {
-			uniquePriorities[int(channel.GetPriority())] = true
-		} else {
+		channel, ok := channelsIDM[channelId]
+		if !ok {
 			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 		}
+		candidates = append(candidates, channel)
 	}
-	var sortedUniquePriorities []int
-	for priority := range uniquePriorities {
-		sortedUniquePriorities = append(sortedUniquePriorities, priority)
-	}
-	sort.Sort(sort.Reverse(sort.IntSlice(sortedUniquePriorities)))
 
-	if retry >= len(uniquePriorities) {
-		retry = len(uniquePriorities) - 1
+	seen := make(map[int]bool, len(candidates))
+	tiers := make([]int, 0, len(candidates))
+	for _, channel := range candidates {
+		priority := int(channel.GetPriority())
+		if !seen[priority] {
+			seen[priority] = true
+			tiers = append(tiers, priority)
+		}
 	}
-	targetPriority := int64(sortedUniquePriorities[retry])
+	sort.Sort(sort.Reverse(sort.IntSlice(tiers)))
 
-	// get the priority for the given retry number
+	// Shared with the database path — see pickPriorityTier.
+	tier, ok := pickPriorityTier(tiers, len(candidates), retry)
+	if !ok {
+		return nil, nil
+	}
+	targetPriority := int64(tier)
+
 	var sumWeight = 0
 	var targetChannels []*Channel
-	for _, channelId := range channels {
-		if channel, ok := channelsIDM[channelId]; ok {
-			if channel.GetPriority() == targetPriority {
-				sumWeight += channel.GetWeight()
-				targetChannels = append(targetChannels, channel)
-			}
-		} else {
-			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+	for _, channel := range candidates {
+		if channel.GetPriority() == targetPriority {
+			sumWeight += channel.GetWeight()
+			targetChannels = append(targetChannels, channel)
 		}
 	}
 
