@@ -111,11 +111,6 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	generalSettings := operation_setting.GetGeneralSetting()
 	pingEnabled := generalSettings.PingIntervalEnabled && !info.DisablePing
 
-	// lastUpstreamAt is when the upstream last said anything. The ping branch
-	// reads it to tell a stream that is merely slow from one that has gone
-	// quiet; only the quiet one gets a heartbeat.
-	var lastUpstreamAt atomic.Int64
-	lastUpstreamAt.Store(time.Now().UnixMilli())
 	pingInterval := time.Duration(generalSettings.PingIntervalSeconds) * time.Second
 	if pingInterval <= 0 {
 		pingInterval = DefaultPingInterval
@@ -184,27 +179,6 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 						writeMutex.Lock()
 						defer writeMutex.Unlock()
 						ExtendWriteDeadline(c)
-						// A comment keeps the socket warm and costs nothing, so it
-						// stays the default and every ordinary request sees exactly
-						// what it saw before. Only a stream that has said nothing
-						// for HeartbeatAfter is offered the beat, and the handler
-						// still gets to refuse the moment.
-						if info.Heartbeat != nil && info.HeartbeatAfter > 0 &&
-							time.Since(time.UnixMilli(lastUpstreamAt.Load())) >= info.HeartbeatAfter {
-							var sent bool
-							if sent, err = info.Heartbeat(c); sent && err == nil {
-								info.StreamStatus.Beat()
-								if info.StreamStatus.Heartbeats() == 1 {
-									logger.LogInfo(c, fmt.Sprintf(
-										"progress heartbeat started: upstream quiet for %.0fs",
-										time.Since(time.UnixMilli(lastUpstreamAt.Load())).Seconds()))
-								}
-								return
-							}
-							if err != nil {
-								return
-							}
-						}
 						err = PingData(c)
 					}()
 					if err != nil {
@@ -242,7 +216,6 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		}()
 		sr := newStreamResult(info.StreamStatus)
 		for data := range dataChan {
-			lastUpstreamAt.Store(time.Now().UnixMilli())
 			sr.reset()
 			func() {
 				writeMutex.Lock()

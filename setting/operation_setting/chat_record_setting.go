@@ -164,8 +164,8 @@ var chatRecordSetting = ChatRecordSetting{
 	MemoryUserObserveOthers: false,
 	MemoryAIObserveMe:       false,
 	MemoryAIObserveOthers:   false,
-	FileRoot:             "data/chat-record-files",
-	MaxFileBytes:         20 << 20,
+	FileRoot:                "data/chat-record-files",
+	MaxFileBytes:            20 << 20,
 }
 
 // AutomationModelList splits the operator's list of background-only models.

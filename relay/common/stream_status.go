@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -37,27 +36,6 @@ type StreamStatus struct {
 	mu         sync.Mutex
 	Errors     []StreamErrorEntry
 	ErrorCount int
-
-	// heartbeats counts the protocol events sent into this stream while the
-	// upstream had nothing to say. It rides along in Summary so the one line
-	// every stream already logs says whether the beat was needed here and how
-	// long the quiet ran, which is what tells us afterwards whether it helped.
-	heartbeats atomic.Int64
-}
-
-// Beat records that a heartbeat went out.
-func (s *StreamStatus) Beat() {
-	if s != nil {
-		s.heartbeats.Add(1)
-	}
-}
-
-// Heartbeats reports how many went out.
-func (s *StreamStatus) Heartbeats() int64 {
-	if s == nil {
-		return 0
-	}
-	return s.heartbeats.Load()
 }
 
 func NewStreamStatus() *StreamStatus {
@@ -130,8 +108,5 @@ func (s *StreamStatus) Summary() string {
 		fmt.Fprintf(b, " soft_errors=%d", s.ErrorCount)
 	}
 	s.mu.Unlock()
-	if n := s.heartbeats.Load(); n > 0 {
-		fmt.Fprintf(b, " heartbeats=%d", n)
-	}
 	return b.String()
 }

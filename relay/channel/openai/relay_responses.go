@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -16,7 +15,6 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -236,40 +234,6 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	var contentStarted atomic.Bool
 	terminalSent := false
 
-	// upstreamResponseID is the id the caller already saw in response.created.
-	// A heartbeat has to carry it: an in_progress announcing some other response
-	// would be a different answer arriving in the middle of this one.
-	var upstreamResponseID atomic.Value
-
-	if hb := operation_setting.GetGeneralSetting(); hb.ProgressHeartbeatEnabled && hb.ProgressHeartbeatAfterSeconds > 0 {
-		info.HeartbeatAfter = time.Duration(hb.ProgressHeartbeatAfterSeconds) * time.Second
-		info.Heartbeat = func(c *gin.Context) (bool, error) {
-			// Once output has started the caller is not idle, and an event slipped
-			// between the pieces of an answer they are already reading buys nothing
-			// and risks confusing it.
-			if contentStarted.Load() {
-				return false, nil
-			}
-			id, _ := upstreamResponseID.Load().(string)
-			if id == "" {
-				return false, nil
-			}
-			payload, err := common.Marshal(map[string]any{
-				"type": responsesStreamTypeInProgress,
-				"response": map[string]any{
-					"id":     id,
-					"object": "response",
-					"status": "in_progress",
-				},
-			})
-			if err != nil {
-				return false, nil
-			}
-			err = helper.ResponseChunkData(c,
-				dto.ResponsesStreamResponse{Type: responsesStreamTypeInProgress}, string(payload))
-			return err == nil, err
-		}
-	}
 	freeform := relaycommon.NewFreeformStreamState()
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
@@ -313,9 +277,6 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				sr.Stop(upstreamStreamErr.Err)
 			}
 			return
-		}
-		if streamResponse.Response != nil && streamResponse.Response.ID != "" {
-			upstreamResponseID.Store(streamResponse.Response.ID)
 		}
 		if !responsesStreamTypeIsPreamble(streamResponse.Type) {
 			contentStarted.Store(true)
