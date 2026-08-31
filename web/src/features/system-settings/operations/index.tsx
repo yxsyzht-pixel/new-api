@@ -92,7 +92,7 @@ const defaultOperationsSettings: OperationsSettings = {
   'chat_record_setting.memory_user_observe_me': true,
   'chat_record_setting.memory_user_observe_others': false,
   'chat_record_setting.memory_ai_observe_me': false,
-  'chat_record_setting.memory_ai_observe_others': true,
+  'chat_record_setting.memory_ai_observe_others': false,
   'chat_record_setting.memory_min_chars': 4,
 }
 

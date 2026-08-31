@@ -155,15 +155,15 @@ var chatRecordSetting = ChatRecordSetting{
 	// whichever ceiling is reached first is the one that holds.
 	MemoryMaxQueuedBytes: 16 << 20,
 	MemoryWorkers:        2,
-	// Matching the Hermes agents pointed at the same store, so a person's
-	// memories look the same whichever side wrote them: the person is observed
-	// and does not observe back, the assistant is not observed and observes the
-	// person. Anything else leaves two halves of one workspace disagreeing about
-	// whose picture is being built.
+	// Only the person is observed. The gateway writes to the memory store and
+	// never reads back from it, so an assistant-side picture here has no reader:
+	// a client queries the store through its own assistant peer, and none of
+	// them is this one. It would be an inference per turn producing a
+	// representation nothing can retrieve.
 	MemoryUserObserveMe:     true,
 	MemoryUserObserveOthers: false,
 	MemoryAIObserveMe:       false,
-	MemoryAIObserveOthers:   true,
+	MemoryAIObserveOthers:   false,
 	FileRoot:             "data/chat-record-files",
 	MaxFileBytes:         20 << 20,
 }

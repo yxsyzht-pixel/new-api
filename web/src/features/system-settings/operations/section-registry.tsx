@@ -174,8 +174,8 @@ const OPERATIONS_SECTIONS = [
             "{agent}-{staff_id}",
           memorySessionMode:
             settings["chat_record_setting.memory_session_mode"] ?? "person",
-          // Matching the Hermes agents on the same store, so a person's
-          // memories look the same whichever side wrote them.
+          // Only the person is observed: the gateway writes to the store and
+          // never reads back, so an assistant-side picture here has no reader.
           memoryUserObserveMe:
             settings["chat_record_setting.memory_user_observe_me"] ?? true,
           memoryUserObserveOthers:
@@ -183,7 +183,7 @@ const OPERATIONS_SECTIONS = [
           memoryAiObserveMe:
             settings["chat_record_setting.memory_ai_observe_me"] ?? false,
           memoryAiObserveOthers:
-            settings["chat_record_setting.memory_ai_observe_others"] ?? true,
+            settings["chat_record_setting.memory_ai_observe_others"] ?? false,
           memoryMinChars: settings["chat_record_setting.memory_min_chars"] ?? 4,
           memoryMaxChars:
             settings["chat_record_setting.memory_max_chars"] ?? 20000,
