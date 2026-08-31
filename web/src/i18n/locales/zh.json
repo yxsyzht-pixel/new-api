@@ -5466,6 +5466,14 @@
     "Copy it now — it is shown once. Everything else about this key is unchanged: quota, usage, staff ID, group and limits.": "现在复制——只显示这一次。这个密钥的其他一切都没变:额度、用量、工号、分组和限制。",
     "Apply": "应用",
     "All Users": "全部用户",
-    "Filter by user": "按用户筛选"
+    "Filter by user": "按用户筛选",
+    "Build a picture of the person": "为这个人建画像",
+    "Lets the store read what someone says and keep what it learns about them. This is the memory itself — with it off, turns are still filed but nothing is ever concluded from them.": "让记忆库读这个人说的话,并把学到的东西记下来。这一项就是记忆本身——关掉之后对话照样归档,但不会从中得出任何结论。",
+    "Let the person observe the assistant": "让这个人观察助手",
+    "Keeps a picture of the assistant as seen by the person. Rarely wanted: it costs an inference per turn to describe something that is not a person.": "保留「这个人眼中的助手」这份画像。很少需要:每轮多烧一次推理,去描述一个并不是人的东西。",
+    "Build a picture of the assistant": "为助手建画像",
+    "Keeps a picture of the assistant from its own replies. Off by default — an inference per reply, describing something with no memory worth keeping.": "从助手自己的回复里给它建画像。默认关闭——每条回复多烧一次推理,而助手没有值得保留的记忆。",
+    "Let the assistant observe the person": "让助手观察这个人",
+    "Keeps this assistant’s own view of the person, separate from the shared picture. What makes an agent remember someone its own way; costs an inference per turn.": "保留「这个助手眼中的这个人」,与共享画像分开存放。这是让一个 agent 用自己的方式记住某人的开关;每轮多烧一次推理。"
   }
 }

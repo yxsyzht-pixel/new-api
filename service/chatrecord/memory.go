@@ -76,30 +76,29 @@ type memoryWriter struct {
 	// are gone rather than merely told to go.
 	running sync.WaitGroup
 
-	// silenced remembers which assistants have already been quietened, so the
-	// extra call happens once per session instead of once per turn. It belongs
-	// to the generation: a store that has just been pointed somewhere else has
-	// quietened nobody, and carrying the marks over would leave every assistant
-	// observed — an inference per reply, describing something that is not a
-	// person.
-	silenced sync.Map
-	marks    atomic.Int64
+	// configured remembers which peers have already been told what to observe,
+	// so the extra calls happen once per session instead of once per turn. It
+	// belongs to the generation: a store that has just been pointed somewhere
+	// else has been told nothing, and carrying the marks over would leave every
+	// peer on the store's own defaults.
+	configured sync.Map
+	marks      atomic.Int64
 
 	totals *memoryQueue
 }
 
-// silencedCap bounds that map. In "conversation" mode the session names follow
+// configuredCap bounds that map. In "conversation" mode the session names follow
 // the client's own conversations, which never stop arriving, so the map has no
 // natural ceiling. Forgetting the lot occasionally costs one redundant call per
 // live session — much cheaper than a map that only ever grows.
-const silencedCap = 20000
+const configuredCap = 20000
 
-// forgetSilenced empties the map in place. Ranging and deleting rather than
+// forgetConfigured empties the map in place. Ranging and deleting rather than
 // assigning a fresh sync.Map: workers may be reading it right now, and a
 // sync.Map is safe to share but not to overwrite.
-func (w *memoryWriter) forgetSilenced() {
-	w.silenced.Range(func(key, _ any) bool {
-		w.silenced.Delete(key)
+func (w *memoryWriter) forgetConfigured() {
+	w.configured.Range(func(key, _ any) bool {
+		w.configured.Delete(key)
 		return true
 	})
 	w.marks.Store(0)
@@ -359,34 +358,53 @@ func (w *memoryWriter) deliver(ctx context.Context, turn MemoryTurn) {
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
 	w.totals.Sent.Add(1)
 
-	// Ask the store not to build a picture of the assistant. Its default is to
-	// observe every peer, which would cost a second inference for every reply
-	// to describe something that is not a person and has no memory worth
-	// keeping. Once per session is enough.
-	if assistant != "" {
-		w.silenceAssistant(writeCtx, cfg, turn.Session, assistant)
+	// Tell the store what to observe on each side. Left alone it falls back to
+	// its own defaults, which observe every peer — a second inference for every
+	// reply, describing something that is not a person. Once per session is
+	// enough.
+	w.applyObservation(writeCtx, cfg, turn.Session, person, assistant)
+}
+
+// applyObservation settles what the store builds a picture of, for both sides
+// of this session. The two peers are configured separately because they are
+// asked for opposite things: the person is observed and does not observe back,
+// the assistant is not observed and observes the person.
+func (w *memoryWriter) applyObservation(ctx context.Context, cfg *operation_setting.ChatRecordSetting, session, person, assistant string) {
+	if person != "" {
+		w.configurePeer(ctx, cfg, session, person,
+			cfg.MemoryUserObserveMe, cfg.MemoryUserObserveOthers)
+	}
+	if assistant != "" && assistant != person {
+		w.configurePeer(ctx, cfg, session, assistant,
+			cfg.MemoryAIObserveMe, cfg.MemoryAIObserveOthers)
 	}
 }
 
-func (w *memoryWriter) silenceAssistant(ctx context.Context, cfg *operation_setting.ChatRecordSetting, session, assistant string) {
+func (w *memoryWriter) configurePeer(ctx context.Context, cfg *operation_setting.ChatRecordSetting, session, peer string, observeMe, observeOthers bool) {
 	// The workspace is part of the mark: a store can be repointed at another
-	// workspace without its address changing, and the assistants over there
-	// have not been quietened.
+	// workspace without its address changing, and the peers over there have
+	// been told nothing. So are the flags — an operator who changes what is
+	// observed means it to reach the sessions already running, not only the
+	// ones opened after the next restart.
 	workspace := cfg.MemoryWorkspaceOrDefault()
-	mark := workspace + "\x00" + session + "\x00" + assistant
+	mark := fmt.Sprintf("%s\x00%s\x00%s\x00%t:%t",
+		workspace, session, peer, observeMe, observeOthers)
 
-	if w.marks.Load() >= silencedCap {
-		w.forgetSilenced()
+	if w.marks.Load() >= configuredCap {
+		w.forgetConfigured()
 	}
-	if _, done := w.silenced.LoadOrStore(mark, true); done {
+	if _, done := w.configured.LoadOrStore(mark, true); done {
 		return
 	}
 	w.marks.Add(1)
 
 	url := fmt.Sprintf("%s/v3/workspaces/%s/sessions/%s/peers/%s/config",
 		strings.TrimRight(strings.TrimSpace(cfg.MemoryBaseURL), "/"),
-		workspace, session, assistant)
-	body, err := json.Marshal(map[string]any{"observe_me": false})
+		workspace, session, peer)
+	body, err := json.Marshal(map[string]any{
+		"observe_me":     observeMe,
+		"observe_others": observeOthers,
+	})
 	if err != nil {
 		return
 	}
@@ -413,7 +431,7 @@ func (w *memoryWriter) silenceAssistant(ctx context.Context, cfg *operation_sett
 
 // forget drops one mark so the next turn tries again.
 func (w *memoryWriter) forget(mark string) {
-	if _, loaded := w.silenced.LoadAndDelete(mark); loaded {
+	if _, loaded := w.configured.LoadAndDelete(mark); loaded {
 		w.marks.Add(-1)
 	}
 }

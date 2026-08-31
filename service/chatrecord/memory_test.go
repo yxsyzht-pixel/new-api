@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -243,11 +244,11 @@ func TestLongRemarksAreCutToWhatTheMemoryAccepts(t *testing.T) {
 // Driven directly rather than through the queue, so the two configurations are
 // separate values and the test does not have to mutate shared settings while a
 // worker reads them.
-func TestAnAssistantIsQuietenedOncePerSessionAndWorkspace(t *testing.T) {
-	var silenced atomic.Int64
+func TestAPeerIsConfiguredOncePerSessionAndWorkspace(t *testing.T) {
+	var calls atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/config") {
-			silenced.Add(1)
+			calls.Add(1)
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -263,24 +264,68 @@ func TestAnAssistantIsQuietenedOncePerSessionAndWorkspace(t *testing.T) {
 	queue := &memoryWriter{totals: &memoryQueue{}}
 	ctx := context.Background()
 
-	queue.silenceAssistant(ctx, here, "staff-10018037", "codex-10018037")
-	require.Equal(t, int64(1), silenced.Load(), "the first turn of a session must quieten the assistant")
+	queue.configurePeer(ctx, here, "staff-10018037", "codex-10018037", false, true)
+	require.Equal(t, int64(1), calls.Load(), "the first turn of a session must settle what is observed")
 
-	queue.silenceAssistant(ctx, here, "staff-10018037", "codex-10018037")
-	queue.silenceAssistant(ctx, here, "staff-10018037", "codex-10018037")
-	require.Equal(t, int64(1), silenced.Load(), "repeating it on every turn is the cost this map exists to avoid")
+	queue.configurePeer(ctx, here, "staff-10018037", "codex-10018037", false, true)
+	queue.configurePeer(ctx, here, "staff-10018037", "codex-10018037", false, true)
+	require.Equal(t, int64(1), calls.Load(), "repeating it on every turn is the cost this map exists to avoid")
 
-	queue.silenceAssistant(ctx, here, "staff-10053662", "codex-10053662")
-	require.Equal(t, int64(2), silenced.Load(), "another session is another assistant to quieten")
+	queue.configurePeer(ctx, here, "staff-10053662", "codex-10053662", false, true)
+	require.Equal(t, int64(2), calls.Load(), "another session is another peer to settle")
 
-	queue.silenceAssistant(ctx, elsewhere, "staff-10018037", "codex-10018037")
-	require.Equal(t, int64(3), silenced.Load(), "another workspace has quietened nobody")
+	queue.configurePeer(ctx, elsewhere, "staff-10018037", "codex-10018037", false, true)
+	require.Equal(t, int64(3), calls.Load(), "another workspace has been told nothing")
+
+	// An operator who changes what is observed means it to reach the sessions
+	// already running, not only the ones opened after the next restart.
+	queue.configurePeer(ctx, here, "staff-10018037", "codex-10018037", true, true)
+	require.Equal(t, int64(4), calls.Load(), "changed flags must be sent even for a session already settled")
+}
+
+// The two sides are asked for opposite things, and each side's pair of flags
+// has to arrive on its own peer: sending the person's settings to the assistant
+// is how an assistant ends up with a picture nobody asked for.
+func TestEachSideOfTheConversationGetsItsOwnFlags(t *testing.T) {
+	type sent struct {
+		Me     bool `json:"observe_me"`
+		Others bool `json:"observe_others"`
+	}
+	seen := map[string]sent{}
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/config") {
+			parts := strings.Split(strings.TrimSuffix(r.URL.Path, "/config"), "/")
+			var body sent
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			seen[parts[len(parts)-1]] = body
+			mu.Unlock()
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cfg := &operation_setting.ChatRecordSetting{
+		MemoryBaseURL: server.URL, MemoryAPIKey: "test-key", MemoryWorkspace: "yxsy",
+		MemoryUserObserveMe: true, MemoryUserObserveOthers: false,
+		MemoryAIObserveMe: false, MemoryAIObserveOthers: true,
+	}
+	queue := &memoryWriter{totals: &memoryQueue{}}
+	queue.applyObservation(context.Background(), cfg, "staff-10018037", "10018037", "codex-10018037")
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, sent{Me: true, Others: false}, seen["10018037"],
+		"the person is observed and does not observe back")
+	require.Equal(t, sent{Me: false, Others: true}, seen["codex-10018037"],
+		"the assistant is not observed and observes the person")
 }
 
 // Stopping the writer has to forget what it knew, or a memory store brought up
-// again — or swapped for another one — keeps deriving a picture of an assistant
-// that nobody ever asked it to stop.
-func TestStoppingTheWriterForgetsWhatWasQuietened(t *testing.T) {
+// again — or swapped for another one — is left on its own defaults, deriving
+// pictures nobody asked for.
+func TestStoppingTheWriterForgetsWhatWasConfigured(t *testing.T) {
 	var silenced atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/config") {
@@ -319,31 +364,33 @@ func TestStoppingTheWriterForgetsWhatWasQuietened(t *testing.T) {
 		t.Fatalf("%s: quietened %d times, want %d", why, silenced.Load(), want)
 	}
 
+	// Two calls a turn, not one: the person and the assistant are asked for
+	// opposite things and are settled separately.
 	send()
-	waitFor(1, "the first turn of a session")
+	waitFor(2, "the first turn of a session")
 	send()
 	time.Sleep(300 * time.Millisecond)
-	require.Equal(t, int64(1), silenced.Load(), "a second turn quietened the same assistant again")
+	require.Equal(t, int64(2), silenced.Load(), "a second turn settled the same peers again")
 
 	StopMemory()
 	send()
-	waitFor(2, "after the writer was restarted")
+	waitFor(4, "after the writer was restarted")
 }
 
 // In "conversation" mode the session names follow the client's own
 // conversations, which never stop arriving, so the map that remembers them
 // needs a ceiling or it is a leak that only shows up after weeks.
-func TestTheSilencedMapDoesNotGrowForever(t *testing.T) {
+func TestTheConfiguredMapDoesNotGrowForever(t *testing.T) {
 	queue := &memoryWriter{totals: &memoryQueue{}}
-	for i := 0; i < silencedCap+10; i++ {
-		queue.silenced.Store(strconv.Itoa(i), true)
+	for i := 0; i < configuredCap+10; i++ {
+		queue.configured.Store(strconv.Itoa(i), true)
 	}
-	queue.marks.Store(silencedCap + 10)
+	queue.marks.Store(configuredCap + 10)
 
-	queue.forgetSilenced()
+	queue.forgetConfigured()
 
 	left := 0
-	queue.silenced.Range(func(any, any) bool { left++; return true })
+	queue.configured.Range(func(any, any) bool { left++; return true })
 	if left != 0 {
 		t.Errorf("%d marks survived being forgotten", left)
 	}

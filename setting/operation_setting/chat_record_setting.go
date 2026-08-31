@@ -108,6 +108,17 @@ type ChatRecordSetting struct {
 	MemoryQueueSize int `json:"memory_queue_size"`
 	MemoryWorkers   int `json:"memory_workers"`
 
+	// What the memory store is asked to observe, per side of the conversation.
+	// These map 1:1 onto Honcho's SessionPeerConfig and are applied once per
+	// session per peer. observe_me builds a picture of that peer from their own
+	// words; observe_others builds that peer's picture of everyone else — the
+	// second is what gives an agent its own view of a person, and it costs an
+	// inference per turn, so it is worth being able to turn off.
+	MemoryUserObserveMe     bool `json:"memory_user_observe_me"`
+	MemoryUserObserveOthers bool `json:"memory_user_observe_others"`
+	MemoryAIObserveMe       bool `json:"memory_ai_observe_me"`
+	MemoryAIObserveOthers   bool `json:"memory_ai_observe_others"`
+
 	// AutoMessagePatterns marks messages as machine-sent when they contain one
 	// of these, one per line. Structural giveaways — a bracketed tag, an XML
 	// envelope, a system prompt handed over as a user turn — are recognised
@@ -144,6 +155,15 @@ var chatRecordSetting = ChatRecordSetting{
 	// whichever ceiling is reached first is the one that holds.
 	MemoryMaxQueuedBytes: 16 << 20,
 	MemoryWorkers:        2,
+	// Matching the Hermes agents pointed at the same store, so a person's
+	// memories look the same whichever side wrote them: the person is observed
+	// and does not observe back, the assistant is not observed and observes the
+	// person. Anything else leaves two halves of one workspace disagreeing about
+	// whose picture is being built.
+	MemoryUserObserveMe:     true,
+	MemoryUserObserveOthers: false,
+	MemoryAIObserveMe:       false,
+	MemoryAIObserveOthers:   true,
 	FileRoot:             "data/chat-record-files",
 	MaxFileBytes:         20 << 20,
 }

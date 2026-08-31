@@ -5463,6 +5463,14 @@
     "Reset this key’s secret?": "Reset this key’s secret?",
     "Anything still using the old secret stops working immediately. The key keeps its quota, usage history, staff ID and settings — only the secret changes.": "Anything still using the old secret stops working immediately. The key keeps its quota, usage history, staff ID and settings — only the secret changes.",
     "New key issued": "New key issued",
-    "Copy it now — it is shown once. Everything else about this key is unchanged: quota, usage, staff ID, group and limits.": "Copy it now — it is shown once. Everything else about this key is unchanged: quota, usage, staff ID, group and limits."
+    "Copy it now — it is shown once. Everything else about this key is unchanged: quota, usage, staff ID, group and limits.": "Copy it now — it is shown once. Everything else about this key is unchanged: quota, usage, staff ID, group and limits.",
+    "Build a picture of the person": "Build a picture of the person",
+    "Lets the store read what someone says and keep what it learns about them. This is the memory itself — with it off, turns are still filed but nothing is ever concluded from them.": "Lets the store read what someone says and keep what it learns about them. This is the memory itself — with it off, turns are still filed but nothing is ever concluded from them.",
+    "Let the person observe the assistant": "Let the person observe the assistant",
+    "Keeps a picture of the assistant as seen by the person. Rarely wanted: it costs an inference per turn to describe something that is not a person.": "Keeps a picture of the assistant as seen by the person. Rarely wanted: it costs an inference per turn to describe something that is not a person.",
+    "Build a picture of the assistant": "Build a picture of the assistant",
+    "Keeps a picture of the assistant from its own replies. Off by default — an inference per reply, describing something with no memory worth keeping.": "Keeps a picture of the assistant from its own replies. Off by default — an inference per reply, describing something with no memory worth keeping.",
+    "Let the assistant observe the person": "Let the assistant observe the person",
+    "Keeps this assistant’s own view of the person, separate from the shared picture. What makes an agent remember someone its own way; costs an inference per turn.": "Keeps this assistant’s own view of the person, separate from the shared picture. What makes an agent remember someone its own way; costs an inference per turn."
   }
 }

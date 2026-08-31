@@ -174,6 +174,16 @@ const OPERATIONS_SECTIONS = [
             "{agent}-{staff_id}",
           memorySessionMode:
             settings["chat_record_setting.memory_session_mode"] ?? "person",
+          // Matching the Hermes agents on the same store, so a person's
+          // memories look the same whichever side wrote them.
+          memoryUserObserveMe:
+            settings["chat_record_setting.memory_user_observe_me"] ?? true,
+          memoryUserObserveOthers:
+            settings["chat_record_setting.memory_user_observe_others"] ?? false,
+          memoryAiObserveMe:
+            settings["chat_record_setting.memory_ai_observe_me"] ?? false,
+          memoryAiObserveOthers:
+            settings["chat_record_setting.memory_ai_observe_others"] ?? true,
           memoryMinChars: settings["chat_record_setting.memory_min_chars"] ?? 4,
           memoryMaxChars:
             settings["chat_record_setting.memory_max_chars"] ?? 20000,

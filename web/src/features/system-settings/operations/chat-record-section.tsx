@@ -57,6 +57,10 @@ const schema = z.object({
   memoryPeerTemplate: z.string(),
   memoryAssistantPeer: z.string(),
   memorySessionMode: z.enum(["person", "conversation"]),
+  memoryUserObserveMe: z.boolean(),
+  memoryUserObserveOthers: z.boolean(),
+  memoryAiObserveMe: z.boolean(),
+  memoryAiObserveOthers: z.boolean(),
   memoryMinChars: z.coerce.number().int().min(1),
   memoryMaxChars: z.coerce.number().int().min(1),
   queueSize: z.coerce.number().int().min(1),
@@ -265,6 +269,26 @@ export function ChatRecordSection({
       "chat_record_setting.memory_session_mode",
       values.memorySessionMode,
       saved.memorySessionMode,
+    );
+    push(
+      "chat_record_setting.memory_user_observe_me",
+      values.memoryUserObserveMe,
+      saved.memoryUserObserveMe,
+    );
+    push(
+      "chat_record_setting.memory_user_observe_others",
+      values.memoryUserObserveOthers,
+      saved.memoryUserObserveOthers,
+    );
+    push(
+      "chat_record_setting.memory_ai_observe_me",
+      values.memoryAiObserveMe,
+      saved.memoryAiObserveMe,
+    );
+    push(
+      "chat_record_setting.memory_ai_observe_others",
+      values.memoryAiObserveOthers,
+      saved.memoryAiObserveOthers,
     );
     push(
       "chat_record_setting.memory_min_chars",
@@ -755,6 +779,98 @@ export function ChatRecordSection({
               )}
             />
           </div>
+
+          <FormField
+            control={form.control}
+            name="memoryUserObserveMe"
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t("Build a picture of the person")}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      "Lets the store read what someone says and keep what it learns about them. This is the memory itself — with it off, turns are still filed but nothing is ever concluded from them.",
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="memoryUserObserveOthers"
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t("Let the person observe the assistant")}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      "Keeps a picture of the assistant as seen by the person. Rarely wanted: it costs an inference per turn to describe something that is not a person.",
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="memoryAiObserveMe"
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t("Build a picture of the assistant")}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      "Keeps a picture of the assistant from its own replies. Off by default — an inference per reply, describing something with no memory worth keeping.",
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="memoryAiObserveOthers"
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t("Let the assistant observe the person")}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      "Keeps this assistant’s own view of the person, separate from the shared picture. What makes an agent remember someone its own way; costs an inference per turn.",
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
 
           <FormField
             control={form.control}
