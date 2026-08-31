@@ -125,7 +125,14 @@ var QuotaForNewUser = 0
 var QuotaForInviter = 0
 var QuotaForInvitee = 0
 var ChannelDisableThreshold = 5.0
-var AutomaticDisableChannelEnabled = false
+// AutomaticDisableChannelEnabled takes a channel out of rotation when it fails
+// in a way that will not fix itself — by default a 401, which means the
+// upstream credential is dead and every further request is another failure
+// handed to a caller. Left off, one expired key served 81 consecutive 401s in a
+// single evening, each one a client-visible disconnect. Re-enabling is
+// deliberately separate (AutomaticEnableChannelEnabled): a credential comes
+// back when someone logs in again, not on a timer.
+var AutomaticDisableChannelEnabled = true
 var AutomaticEnableChannelEnabled = false
 var QuotaRemindThreshold = 1000
 var PreConsumedQuota = 500

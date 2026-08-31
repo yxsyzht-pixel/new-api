@@ -142,6 +142,13 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 		return nil, nil
 	}
 
+	// One ability is the same channel on every attempt — see the matching guard
+	// in GetRandomSatisfiedChannel. Report exhaustion rather than handing back
+	// the upstream that just refused.
+	if len(abilities) == 1 && retry > 0 {
+		return nil, nil
+	}
+
 	tiers := priorityTiers(abilities)
 	if retry >= len(tiers) {
 		retry = len(tiers) - 1

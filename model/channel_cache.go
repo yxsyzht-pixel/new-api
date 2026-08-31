@@ -136,6 +136,14 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	channels = dropSuspendedChannels(channels)
 
 	if len(channels) == 1 {
+		// One channel is the same channel on every attempt. The retry index walks
+		// down the priority list, and a list of one has nowhere to walk to: asking
+		// again returns the upstream that just refused, so a rate-limited channel
+		// gets the request six more times and its limit six more reasons to hold.
+		// Report exhaustion instead and let the caller keep the real error.
+		if retry > 0 {
+			return nil, nil
+		}
 		if channel, ok := channelsIDM[channels[0]]; ok {
 			return channel, nil
 		}

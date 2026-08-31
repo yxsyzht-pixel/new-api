@@ -206,7 +206,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
-			newAPIError = channelErr
+			// Running out of channels on a retry is how the search ends, not what
+			// went wrong: the caller asked about a rate limit or a bad gateway and
+			// deserves to hear about that, not "no channel available".
+			if newAPIError == nil {
+				newAPIError = channelErr
+			}
 			break
 		}
 		addUsedChannel(c, channel.Id)

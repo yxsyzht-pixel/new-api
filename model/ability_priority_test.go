@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -99,4 +101,36 @@ func TestZeroWeightChannelCanStillBePicked(t *testing.T) {
 
 	_, ok = pickWeightedAbility(nil)
 	assert.False(t, ok, "an empty tier yields no channel rather than a zero value")
+}
+
+// A model served by one channel has nowhere for the retry index to walk. Handing
+// the same channel back on every attempt turned one 429 into six: the rate limit
+// that refused the first request refused the next five, and the upstream counted
+// all six against the caller.
+func TestASoleChannelIsNotOfferedAgainOnRetry(t *testing.T) {
+	priority := int64(7)
+	sole := &Channel{Id: 21, Priority: &priority, Status: common.ChannelStatusEnabled}
+
+	prevCache, prevIDM, prevG2M := common.MemoryCacheEnabled, channelsIDM, group2model2channels
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled, channelsIDM, group2model2channels = prevCache, prevIDM, prevG2M
+	})
+	common.MemoryCacheEnabled = true
+	channelsIDM = map[int]*Channel{21: sole}
+	group2model2channels = map[string]map[string][]int{"default": {"kimi-k3": {21}}}
+
+	// The first attempt is still served — a single-channel model keeps working
+	// when nothing has gone wrong.
+	got, err := GetRandomSatisfiedChannel("default", "kimi-k3", 0, "/v1/chat/completions")
+	require.NoError(t, err)
+	require.NotNil(t, got, "the first attempt must reach the only channel there is")
+	assert.Equal(t, 21, got.Id)
+
+	// Every retry reports exhaustion instead, so the caller stops rather than
+	// asking the upstream that just refused.
+	for retry := 1; retry <= 5; retry++ {
+		got, err = GetRandomSatisfiedChannel("default", "kimi-k3", retry, "/v1/chat/completions")
+		require.NoError(t, err)
+		assert.Nil(t, got, "retry %d was offered the channel that already refused", retry)
+	}
 }
