@@ -29,6 +29,12 @@ func taskPluginProtocolHandlers(protocol, operation string) ([]gin.HandlerFunc, 
 	case "openai_responses.create":
 		return []gin.HandlerFunc{
 			middleware.RouteTag("relay"), middleware.SystemPerformanceCheck(), middleware.TokenAuth(),
+			// Codex speaks this route and nothing else, so a transcript that skips
+			// it records none of what Codex users say. The relay router carries
+			// ChatRecord for every other protocol; moving this one out from under
+			// it took the recording with it, silently — the turn still relays and
+			// still bills, it just never reaches the transcript or the memory.
+			middleware.ChatRecord(),
 			middleware.ModelRequestRateLimit(), middleware.PinTaskPluginEndpoint(), middleware.PrepareTaskPluginEndpoint(), middleware.Distribute(),
 			func(c *gin.Context) {
 				controller.RelayTaskPluginEndpoint(c, func(c *gin.Context) { controller.Relay(c, types.RelayFormatOpenAIResponses) })
