@@ -125,6 +125,7 @@ var QuotaForNewUser = 0
 var QuotaForInviter = 0
 var QuotaForInvitee = 0
 var ChannelDisableThreshold = 5.0
+
 // AutomaticDisableChannelEnabled takes a channel out of rotation when it fails
 // in a way that will not fix itself — by default a 401, which means the
 // upstream credential is dead and every further request is another failure
