@@ -97,19 +97,14 @@ func priorityTiers(abilities []Ability) []int {
 // not, the disagreement only showed up with the memory cache in one state and
 // not the other. Keeping it here means a change lands on both at once.
 //
-//   - Nothing to serve: not ok. The tiers are derived from the candidates, so an
-//     empty tier list is the only way to say that.
-//   - One candidate and a retry: not ok. The index walks down the tiers, and a
-//     single candidate is a list of one — asking again returns the upstream
-//     that just refused, which is how one 429 became six.
-//   - Otherwise the index is clamped into range: past the last tier it re-rolls
-//     within that tier, which is worth something when the tier has several
-//     channels to choose between.
-func pickPriorityTier(tiers []int, candidates int, retry int) (int, bool) {
+// The tiers are derived from candidates the caller has already narrowed: parked
+// channels dropped, and on a retry the channels this request has been served
+// before. So an empty tier list is how "nothing left to try" arrives here, and
+// the index only ever has somewhere to land. Past the last tier it clamps and
+// re-rolls within it, which is worth something when the tier still holds
+// several channels to choose between.
+func pickPriorityTier(tiers []int, retry int) (int, bool) {
 	if len(tiers) == 0 {
-		return 0, false
-	}
-	if candidates == 1 && retry > 0 {
 		return 0, false
 	}
 	if retry < 0 {
@@ -162,7 +157,7 @@ func pickWeightedAbility(abilities []Ability) (Ability, bool) {
 // times running while five healthy accounts on the upper tier sat idle. Tiers
 // derived from the survivors cannot name a tier that has nothing left to give,
 // which is how the in-memory path has always done it.
-func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+func GetChannel(group string, model string, retry int, requestPath string, tried map[int]bool) (*Channel, error) {
 	var abilities []Ability
 	err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
 		Order("weight DESC").Find(&abilities).Error
@@ -172,11 +167,12 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 
 	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
 	abilities = dropSuspendedAbilities(abilities)
+	abilities = dropTriedAbilities(abilities, tried)
 	if len(abilities) == 0 {
 		return nil, nil
 	}
 
-	targetPriority, ok := pickPriorityTier(priorityTiers(abilities), len(abilities), retry)
+	targetPriority, ok := pickPriorityTier(priorityTiers(abilities), retry)
 	if !ok {
 		return nil, nil
 	}
@@ -188,6 +184,23 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 	channel := Channel{}
 	err = DB.First(&channel, "id = ?", chosen.ChannelId).Error
 	return &channel, err
+}
+
+// dropTriedAbilities removes the channels this request has already been served
+// by. A retry exists to reach a different upstream; the weighted draw has no
+// memory of its own, so without this a tier of nine could hand back the one
+// that just refused, and a tier of one always did.
+func dropTriedAbilities(abilities []Ability, tried map[int]bool) []Ability {
+	if len(tried) == 0 {
+		return abilities
+	}
+	kept := make([]Ability, 0, len(abilities))
+	for _, ability := range abilities {
+		if !tried[ability.ChannelId] {
+			kept = append(kept, ability)
+		}
+	}
+	return kept
 }
 
 // filterAbilitiesByRequestPathAndModel restricts candidates by request path and

@@ -111,10 +111,10 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
-func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string, tried map[int]bool) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, requestPath)
+		return GetChannel(group, model, retry, requestPath, tried)
 	}
 
 	channelSyncLock.RLock()
@@ -144,6 +144,10 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		if !ok {
 			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 		}
+		// A retry exists to reach a different upstream — see dropTriedAbilities.
+		if tried[channelId] {
+			continue
+		}
 		candidates = append(candidates, channel)
 	}
 
@@ -159,7 +163,7 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	sort.Sort(sort.Reverse(sort.IntSlice(tiers)))
 
 	// Shared with the database path — see pickPriorityTier.
-	tier, ok := pickPriorityTier(tiers, len(candidates), retry)
+	tier, ok := pickPriorityTier(tiers, retry)
 	if !ok {
 		return nil, nil
 	}

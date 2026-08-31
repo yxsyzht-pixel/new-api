@@ -103,33 +103,65 @@ func TestZeroWeightChannelCanStillBePicked(t *testing.T) {
 	assert.False(t, ok, "an empty tier yields no channel rather than a zero value")
 }
 
-// A model served by one channel has nowhere for the retry index to walk. Handing
-// the same channel back on every attempt turned one 429 into six: the rate limit
-// that refused the first request refused the next five, and the upstream counted
-// all six against the caller.
+// A retry exists to reach a different upstream. The weighted draw has no memory
+// of its own, so the caller has to say which channels this request has already
+// been served by — without that, a tier of nine could hand back the one that
+// just refused, and a tier of one always did: 141 retry chains in one day, every
+// one of them the same channel six times over.
+func TestARetryIsNotOfferedAChannelItHasAlreadyTried(t *testing.T) {
+	priority := int64(7)
+	mk := func(id int) *Channel {
+		p := priority
+		return &Channel{Id: id, Priority: &p, Status: common.ChannelStatusEnabled}
+	}
+	restore := useChannelCache(t,
+		map[int]*Channel{2: mk(2), 3: mk(3), 22: mk(22)},
+		map[string]map[string][]int{"default": {"gpt-5.6-sol": {2, 3, 22}}})
+	defer restore()
+
+	pick := func(retry int, tried map[int]bool) *Channel {
+		got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-sol", retry, "", tried)
+		require.NoError(t, err)
+		return got
+	}
+
+	// One tier of three: each retry must land somewhere new.
+	first := pick(0, nil)
+	require.NotNil(t, first)
+
+	second := pick(1, map[int]bool{first.Id: true})
+	require.NotNil(t, second)
+	assert.NotEqual(t, first.Id, second.Id, "the retry was handed the channel that just refused")
+
+	// The last one standing is still worth an attempt — refusing it here is the
+	// mistake a plain "only one candidate left" rule would make.
+	third := pick(2, map[int]bool{first.Id: true, second.Id: true})
+	require.NotNil(t, third, "the one channel not yet tried must still be offered")
+	assert.NotContains(t, []int{first.Id, second.Id}, third.Id)
+
+	// With all three tried there is nothing left, and that is what exhaustion is.
+	assert.Nil(t, pick(3, map[int]bool{2: true, 3: true, 22: true}),
+		"every channel had its turn; the search is over")
+}
+
+// A model behind a single channel is the same case with the numbers turned down,
+// and it is the one that actually hurt: one 429 became six.
 func TestASoleChannelIsNotOfferedAgainOnRetry(t *testing.T) {
 	priority := int64(7)
 	sole := &Channel{Id: 21, Priority: &priority, Status: common.ChannelStatusEnabled}
+	restore := useChannelCache(t,
+		map[int]*Channel{21: sole},
+		map[string]map[string][]int{"default": {"kimi-k3": {21}}})
+	defer restore()
 
-	prevCache, prevIDM, prevG2M := common.MemoryCacheEnabled, channelsIDM, group2model2channels
-	t.Cleanup(func() {
-		common.MemoryCacheEnabled, channelsIDM, group2model2channels = prevCache, prevIDM, prevG2M
-	})
-	common.MemoryCacheEnabled = true
-	channelsIDM = map[int]*Channel{21: sole}
-	group2model2channels = map[string]map[string][]int{"default": {"kimi-k3": {21}}}
-
-	// The first attempt is still served — a single-channel model keeps working
-	// when nothing has gone wrong.
-	got, err := GetRandomSatisfiedChannel("default", "kimi-k3", 0, "/v1/chat/completions")
+	got, err := GetRandomSatisfiedChannel("default", "kimi-k3", 0, "/v1/chat/completions", nil)
 	require.NoError(t, err)
 	require.NotNil(t, got, "the first attempt must reach the only channel there is")
 	assert.Equal(t, 21, got.Id)
 
-	// Every retry reports exhaustion instead, so the caller stops rather than
-	// asking the upstream that just refused.
 	for retry := 1; retry <= 5; retry++ {
-		got, err = GetRandomSatisfiedChannel("default", "kimi-k3", retry, "/v1/chat/completions")
+		got, err = GetRandomSatisfiedChannel("default", "kimi-k3", retry, "/v1/chat/completions",
+			map[int]bool{21: true})
 		require.NoError(t, err)
 		assert.Nil(t, got, "retry %d was offered the channel that already refused", retry)
 	}
@@ -142,26 +174,22 @@ func TestPickPriorityTier(t *testing.T) {
 	tiers := []int{9, 8, 7}
 
 	for _, tc := range []struct {
-		why        string
-		tiers      []int
-		candidates int
-		retry      int
-		want       int
-		wantOK     bool
+		why    string
+		tiers  []int
+		retry  int
+		want   int
+		wantOK bool
 	}{
-		{"first attempt takes the highest tier", tiers, 6, 0, 9, true},
-		{"each retry steps one tier down", tiers, 6, 1, 8, true},
-		{"and again", tiers, 6, 2, 7, true},
-		{"past the last tier it re-rolls within it", tiers, 6, 3, 7, true},
-		{"however far past", tiers, 6, 99, 7, true},
-		{"a negative index is the first attempt", tiers, 6, -1, 9, true},
-		{"one candidate serves the first attempt", []int{7}, 1, 0, 7, true},
-		{"but not a retry — it is the channel that just refused", []int{7}, 1, 1, 0, false},
-		{"nor any later retry", []int{7}, 1, 5, 0, false},
-		{"nothing to serve", nil, 0, 0, 0, false},
-		{"candidates without tiers cannot be placed", nil, 3, 0, 0, false},
+		{"first attempt takes the highest tier", tiers, 0, 9, true},
+		{"each retry steps one tier down", tiers, 1, 8, true},
+		{"and again", tiers, 2, 7, true},
+		{"past the last tier it re-rolls within it", tiers, 3, 7, true},
+		{"however far past", tiers, 99, 7, true},
+		{"a negative index is the first attempt", tiers, -1, 9, true},
+		{"a single tier takes every index", []int{7}, 4, 7, true},
+		{"nothing left to try", nil, 0, 0, false},
 	} {
-		got, ok := pickPriorityTier(tc.tiers, tc.candidates, tc.retry)
+		got, ok := pickPriorityTier(tc.tiers, tc.retry)
 		assert.Equal(t, tc.wantOK, ok, tc.why)
 		if tc.wantOK {
 			assert.Equal(t, tc.want, got, tc.why)
@@ -176,20 +204,17 @@ func TestPickPriorityTier(t *testing.T) {
 // path really does, rather than having kept a copy of the rule.
 func TestCachedSelectionFollowsTheSharedTierRule(t *testing.T) {
 	high, low := int64(9), int64(8)
-	top := &Channel{Id: 2, Priority: &high, Status: common.ChannelStatusEnabled}
-	alsoTop := &Channel{Id: 3, Priority: &high, Status: common.ChannelStatusEnabled}
-	bottom := &Channel{Id: 22, Priority: &low, Status: common.ChannelStatusEnabled}
-
-	prevCache, prevIDM, prevG2M := common.MemoryCacheEnabled, channelsIDM, group2model2channels
-	t.Cleanup(func() {
-		common.MemoryCacheEnabled, channelsIDM, group2model2channels = prevCache, prevIDM, prevG2M
-	})
-	common.MemoryCacheEnabled = true
-	channelsIDM = map[int]*Channel{2: top, 3: alsoTop, 22: bottom}
-	group2model2channels = map[string]map[string][]int{"default": {"gpt-5.6-sol": {2, 3, 22}}}
+	restore := useChannelCache(t,
+		map[int]*Channel{
+			2:  {Id: 2, Priority: &high, Status: common.ChannelStatusEnabled},
+			3:  {Id: 3, Priority: &high, Status: common.ChannelStatusEnabled},
+			22: {Id: 22, Priority: &low, Status: common.ChannelStatusEnabled},
+		},
+		map[string]map[string][]int{"default": {"gpt-5.6-sol": {2, 3, 22}}})
+	defer restore()
 
 	pick := func(retry int) *Channel {
-		got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-sol", retry, "")
+		got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-sol", retry, "", nil)
 		require.NoError(t, err)
 		require.NotNil(t, got, "retry %d", retry)
 		return got
@@ -197,8 +222,42 @@ func TestCachedSelectionFollowsTheSharedTierRule(t *testing.T) {
 
 	assert.Contains(t, []int{2, 3}, pick(0).Id, "the first attempt takes the top tier")
 	assert.Equal(t, 22, pick(1).Id, "the retry steps down a tier")
-	// Past the last tier the index clamps rather than giving up: more than one
-	// channel is left overall, so there is still somewhere for a re-roll to land.
+	// Past the last tier the index clamps rather than giving up: whether there is
+	// anything left to try is the tried set's business, not the index's.
 	assert.Equal(t, 22, pick(2).Id, "past the last tier it stays there")
 	assert.Equal(t, 22, pick(9).Id, "however far past")
+}
+
+// useChannelCache points the package-level cache at a fixture and gives back the
+// restore, so a test reads as what it is arranging rather than as bookkeeping.
+func useChannelCache(t *testing.T, byID map[int]*Channel, byGroup map[string]map[string][]int) func() {
+	t.Helper()
+	prevCache, prevIDM, prevG2M := common.MemoryCacheEnabled, channelsIDM, group2model2channels
+	common.MemoryCacheEnabled = true
+	channelsIDM = byID
+	group2model2channels = byGroup
+	return func() {
+		common.MemoryCacheEnabled, channelsIDM, group2model2channels = prevCache, prevIDM, prevG2M
+	}
+}
+
+// The database path narrows its candidates with this before the tiers are worked
+// out, so it decides on its own whether a retry can reach somewhere new.
+func TestDropTriedAbilities(t *testing.T) {
+	all := []Ability{ability(2, 9, 100), ability(3, 9, 100), ability(22, 8, 100)}
+
+	assert.Len(t, dropTriedAbilities(all, nil), 3, "a first attempt has tried nothing")
+	assert.Len(t, dropTriedAbilities(all, map[int]bool{}), 3, "nor has an empty set")
+
+	kept := dropTriedAbilities(all, map[int]bool{3: true})
+	require.Len(t, kept, 2)
+	for _, a := range kept {
+		assert.NotEqual(t, 3, a.ChannelId, "the channel that already refused came back")
+	}
+
+	assert.Empty(t, dropTriedAbilities(all, map[int]bool{2: true, 3: true, 22: true}),
+		"every channel had its turn; nothing is left to narrow to")
+
+	// A channel that is not a candidate here cannot subtract from the ones that are.
+	assert.Len(t, dropTriedAbilities(all, map[int]bool{99: true}), 3)
 }

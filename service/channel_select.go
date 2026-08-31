@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -17,6 +18,26 @@ type RetryParam struct {
 	RequestPath  string
 	Retry        *int
 	resetNextTry bool
+}
+
+// triedChannels is the set of channels this request has already been served by.
+// The retry loop records each one before it attempts it (addUsedChannel), and
+// until now that record was only ever read back to write a log line.
+func (p *RetryParam) triedChannels() map[int]bool {
+	if p == nil || p.Ctx == nil {
+		return nil
+	}
+	used := p.Ctx.GetStringSlice("use_channel")
+	if len(used) == 0 {
+		return nil
+	}
+	tried := make(map[int]bool, len(used))
+	for _, s := range used {
+		if id, err := strconv.Atoi(s); err == nil {
+			tried[id] = true
+		}
+	}
+	return tried
 }
 
 func (p *RetryParam) GetRetry() int {
@@ -115,7 +136,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = model.GetRandomSatisfiedChannel(autoGroup, param.ModelName, priorityRetry, param.RequestPath)
+			channel, _ = model.GetRandomSatisfiedChannel(autoGroup, param.ModelName, priorityRetry, param.RequestPath, param.triedChannels())
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组
@@ -153,7 +174,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
-		channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath)
+		channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath, param.triedChannels())
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}
