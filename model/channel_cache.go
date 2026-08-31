@@ -160,16 +160,11 @@ func GetRandomSatisfiedChannel(
 		candidates = append(candidates, channel)
 	}
 
-	seen := make(map[int]bool, len(candidates))
-	tiers := make([]int, 0, len(candidates))
+	priorities := make([]int, 0, len(candidates))
 	for _, channel := range candidates {
-		priority := int(channel.GetPriority())
-		if !seen[priority] {
-			seen[priority] = true
-			tiers = append(tiers, priority)
-		}
+		priorities = append(priorities, int(channel.GetPriority()))
 	}
-	sort.Sort(sort.Reverse(sort.IntSlice(tiers)))
+	tiers := descendingTiers(priorities)
 
 	// Shared with the database path — see pickPriorityTier.
 	tier, ok := pickPriorityTier(tiers, retry)

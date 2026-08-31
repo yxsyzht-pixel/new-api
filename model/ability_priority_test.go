@@ -261,3 +261,14 @@ func TestDropTriedAbilities(t *testing.T) {
 	// A channel that is not a candidate here cannot subtract from the ones that are.
 	assert.Len(t, dropTriedAbilities(all, map[int]bool{99: true}), 3)
 }
+
+// Both selectors read their priorities from different types and hand the plain
+// numbers here, so the ladder they walk is built in one place.
+func TestDescendingTiers(t *testing.T) {
+	assert.Equal(t, []int{9, 8, 7}, descendingTiers([]int{8, 9, 7, 8, 9}),
+		"each level once, highest first")
+	assert.Equal(t, []int{5}, descendingTiers([]int{5, 5, 5}))
+	assert.Empty(t, descendingTiers(nil))
+	assert.Equal(t, []int{0, -1}, descendingTiers([]int{-1, 0}),
+		"a negative priority still sorts below zero rather than being dropped")
+}

@@ -73,10 +73,21 @@ func abilityPriority(ability Ability) int {
 // first. The retry counter indexes into this list, so a tier that holds no
 // candidate never gets a turn.
 func priorityTiers(abilities []Ability) []int {
-	seen := make(map[int]bool, len(abilities))
-	tiers := make([]int, 0, len(abilities))
+	priorities := make([]int, 0, len(abilities))
 	for _, ability := range abilities {
-		priority := abilityPriority(ability)
+		priorities = append(priorities, abilityPriority(ability))
+	}
+	return descendingTiers(priorities)
+}
+
+// descendingTiers turns the candidates' priorities into the ladder a retry walks
+// down: each distinct level once, highest first. Both selectors need it and read
+// their priorities from different types, so this takes the numbers rather than
+// the candidates.
+func descendingTiers(priorities []int) []int {
+	seen := make(map[int]bool, len(priorities))
+	tiers := make([]int, 0, len(priorities))
+	for _, priority := range priorities {
 		if !seen[priority] {
 			seen[priority] = true
 			tiers = append(tiers, priority)
@@ -161,51 +172,6 @@ func dropTriedAbilities(abilities []Ability, tried map[int]bool) []Ability {
 		}
 	}
 	return kept
-}
-
-func getPriority(group string, model string, retry int) (int, error) {
-
-	var priorities []int
-	err := DB.Model(&Ability{}).
-		Select("DISTINCT(priority)").
-		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
-		Order("priority DESC").              // 按优先级降序排序
-		Pluck("priority", &priorities).Error // Pluck用于将查询的结果直接扫描到一个切片中
-
-	if err != nil {
-		// 处理错误
-		return 0, err
-	}
-
-	if len(priorities) == 0 {
-		// 如果没有查询到优先级，则返回错误
-		return 0, errors.New("数据库一致性被破坏")
-	}
-
-	// 确定要使用的优先级
-	var priorityToUse int
-	if retry >= len(priorities) {
-		// 如果重试次数大于优先级数，则使用最小的优先级
-		priorityToUse = priorities[len(priorities)-1]
-	} else {
-		priorityToUse = priorities[retry]
-	}
-	return priorityToUse, nil
-}
-
-func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
-	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
-	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
-	if retry != 0 {
-		priority, err := getPriority(group, model, retry)
-		if err != nil {
-			return nil, err
-		} else {
-			channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority)
-		}
-	}
-
-	return channelQuery, nil
 }
 
 func GetChannel(
