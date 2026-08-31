@@ -20,6 +20,7 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
@@ -60,16 +61,16 @@ func TestDatabaseSelectionSkipsChannelsAlreadyTried(t *testing.T) {
 		},
 		[]Channel{{Id: 2, Status: common.ChannelStatusEnabled}, {Id: 3, Status: common.ChannelStatusEnabled}})
 
-	first, err := GetChannel("default", "kimi-k3", 0, "", nil)
+	first, err := GetChannel("default", "kimi-k3", 0, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, first)
 
-	second, err := GetChannel("default", "kimi-k3", 1, "", map[int]bool{first.Id: true})
+	second, err := GetChannel("default", "kimi-k3", 1, nil, map[int]bool{first.Id: true})
 	require.NoError(t, err)
 	require.NotNil(t, second, "the untried channel must still be reachable")
 	assert.NotEqual(t, first.Id, second.Id, "the retry was handed the channel that just refused")
 
-	exhausted, err := GetChannel("default", "kimi-k3", 2, "", map[int]bool{2: true, 3: true})
+	exhausted, err := GetChannel("default", "kimi-k3", 2, nil, map[int]bool{2: true, 3: true})
 	require.NoError(t, err)
 	assert.Nil(t, exhausted, "with both tried there is nothing left to offer")
 }
@@ -83,12 +84,52 @@ func TestCachelessSelectionUsesTheDatabasePath(t *testing.T) {
 		[]Ability{{Group: "default", Model: "kimi-k3", ChannelId: 21, Enabled: true, Priority: &priority, Weight: 100}},
 		[]Channel{{Id: 21, Status: common.ChannelStatusEnabled}})
 
-	got, err := GetRandomSatisfiedChannel("default", "kimi-k3", 0, "", nil)
+	got, err := GetRandomSatisfiedChannel("default", "kimi-k3", 0, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, 21, got.Id)
 
-	got, err = GetRandomSatisfiedChannel("default", "kimi-k3", 1, "", map[int]bool{21: true})
+	got, err = GetRandomSatisfiedChannel("default", "kimi-k3", 1, nil, map[int]bool{21: true})
 	require.NoError(t, err)
 	assert.Nil(t, got, "the sole channel had its turn")
+}
+
+// A channel parked for an upstream usage limit must not be offered by either
+// selector. This nearly went missing in an upstream merge: the cached half of
+// the check lived in the file upstream rewrote, and taking their version
+// wholesale dropped it without a single test noticing.
+func TestBothSelectorsSkipSuspendedChannels(t *testing.T) {
+	priority := int64(7)
+	newSelectionDB(t,
+		[]Ability{
+			{Group: "default", Model: "kimi-k3", ChannelId: 2, Enabled: true, Priority: &priority, Weight: 100},
+			{Group: "default", Model: "kimi-k3", ChannelId: 3, Enabled: true, Priority: &priority, Weight: 100},
+		},
+		[]Channel{{Id: 2, Status: common.ChannelStatusEnabled}, {Id: 3, Status: common.ChannelStatusEnabled}})
+
+	SuspendChannel(2, time.Hour, "usage limit")
+	t.Cleanup(func() { ClearChannelSuspension(2) })
+
+	// Database path.
+	for i := 0; i < 8; i++ {
+		got, err := GetChannel("default", "kimi-k3", 0, nil, nil)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, 3, got.Id, "the parked channel was offered by the database path")
+	}
+
+	// Cached path, same fixture.
+	restore := useChannelCache(t,
+		map[int]*Channel{
+			2: {Id: 2, Priority: &priority, Status: common.ChannelStatusEnabled},
+			3: {Id: 3, Priority: &priority, Status: common.ChannelStatusEnabled},
+		},
+		map[string]map[string][]int{"default": {"kimi-k3": {2, 3}}})
+	defer restore()
+	for i := 0; i < 8; i++ {
+		got, err := GetRandomSatisfiedChannel("default", "kimi-k3", 0, nil, nil)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, 3, got.Id, "the parked channel was offered by the cached path")
+	}
 }

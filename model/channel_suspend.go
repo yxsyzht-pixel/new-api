@@ -97,6 +97,22 @@ func dropSuspendedAbilities(abilities []Ability) []Ability {
 	return available
 }
 
+// dropSuspendedChannels removes channels currently parked for an upstream usage
+// limit. When every candidate is parked the full list is kept: refusing to serve
+// is worse than probing a channel whose limit may already have lifted.
+func dropSuspendedChannels(channels []int) []int {
+	available := make([]int, 0, len(channels))
+	for _, channelId := range channels {
+		if !IsChannelSuspended(channelId) {
+			available = append(available, channelId)
+		}
+	}
+	if len(available) == 0 {
+		return channels
+	}
+	return available
+}
+
 // SuspendedChannels lists the currently parked channels and their release times,
 // so operators can see why a channel is quiet without reading relay logs.
 func SuspendedChannels() map[int]time.Time {

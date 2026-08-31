@@ -8,8 +8,7 @@ import (
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/dto"
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"
@@ -147,25 +146,85 @@ func pickWeightedAbility(abilities []Ability) (Ability, bool) {
 	return abilities[len(abilities)-1], true
 }
 
-// GetChannel picks the channel that serves this model for the given retry.
-//
-// Parked channels are removed before the priority tiers are worked out, not
-// after. Doing it the other way round pins every retry to whichever tier the
-// counter lands on, and if that tier is entirely parked the fallback inside
-// dropSuspendedAbilities hands those same parked channels straight back: a
-// caller with two exhausted accounts on the lower tier retried into them five
-// times running while five healthy accounts on the upper tier sat idle. Tiers
-// derived from the survivors cannot name a tier that has nothing left to give,
-// which is how the in-memory path has always done it.
-func GetChannel(group string, model string, retry int, requestPath string, tried map[int]bool) (*Channel, error) {
+// dropTriedAbilities removes the channels this request has already been served
+// by. A retry exists to reach a different upstream; the weighted draw has no
+// memory of its own, so without this a tier of nine could hand back the one
+// that just refused, and a tier of one always did.
+func dropTriedAbilities(abilities []Ability, tried map[int]bool) []Ability {
+	if len(tried) == 0 {
+		return abilities
+	}
+	kept := make([]Ability, 0, len(abilities))
+	for _, ability := range abilities {
+		if !tried[ability.ChannelId] {
+			kept = append(kept, ability)
+		}
+	}
+	return kept
+}
+
+func getPriority(group string, model string, retry int) (int, error) {
+
+	var priorities []int
+	err := DB.Model(&Ability{}).
+		Select("DISTINCT(priority)").
+		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
+		Order("priority DESC").              // 按优先级降序排序
+		Pluck("priority", &priorities).Error // Pluck用于将查询的结果直接扫描到一个切片中
+
+	if err != nil {
+		// 处理错误
+		return 0, err
+	}
+
+	if len(priorities) == 0 {
+		// 如果没有查询到优先级，则返回错误
+		return 0, errors.New("数据库一致性被破坏")
+	}
+
+	// 确定要使用的优先级
+	var priorityToUse int
+	if retry >= len(priorities) {
+		// 如果重试次数大于优先级数，则使用最小的优先级
+		priorityToUse = priorities[len(priorities)-1]
+	} else {
+		priorityToUse = priorities[retry]
+	}
+	return priorityToUse, nil
+}
+
+func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
+	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
+	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
+	if retry != 0 {
+		priority, err := getPriority(group, model, retry)
+		if err != nil {
+			return nil, err
+		} else {
+			channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority)
+		}
+	}
+
+	return channelQuery, nil
+}
+
+func GetChannel(
+	group string,
+	model string,
+	retry int,
+	filters []dto.ChannelFilter,
+	tried map[int]bool,
+) (*Channel, error) {
 	var abilities []Ability
-	err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
-		Order("weight DESC").Find(&abilities).Error
+	err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).Order("priority DESC, weight DESC").Find(&abilities).Error
 	if err != nil {
 		return nil, err
 	}
-
-	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
+	abilities = filterAbilitiesByConstraints(abilities, model, filters)
+	// Parked channels leave before the tiers are worked out, not after: tiers
+	// derived from the survivors cannot name a tier that has nothing left to
+	// give. Channels this request has already been served by leave with them —
+	// a retry exists to reach a different upstream.
 	abilities = dropSuspendedAbilities(abilities)
 	abilities = dropTriedAbilities(abilities, tried)
 	if len(abilities) == 0 {
@@ -186,31 +245,12 @@ func GetChannel(group string, model string, retry int, requestPath string, tried
 	return &channel, err
 }
 
-// dropTriedAbilities removes the channels this request has already been served
-// by. A retry exists to reach a different upstream; the weighted draw has no
-// memory of its own, so without this a tier of nine could hand back the one
-// that just refused, and a tier of one always did.
-func dropTriedAbilities(abilities []Ability, tried map[int]bool) []Ability {
-	if len(tried) == 0 {
-		return abilities
-	}
-	kept := make([]Ability, 0, len(abilities))
-	for _, ability := range abilities {
-		if !tried[ability.ChannelId] {
-			kept = append(kept, ability)
-		}
-	}
-	return kept
-}
-
-// filterAbilitiesByRequestPathAndModel restricts candidates by request path and
-// model for the DB (non-memory-cache) selection path. Only Advanced Custom
-// (type 58) channels are path-checked: kept only when one of their routes matches
-// requestPath and model; all other channel types always pass. When requestPath is
-// empty, filtering is skipped.
-func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath string, model string) []Ability {
-	if requestPath == "" || len(abilities) == 0 {
-		return abilities
+// filterAbilitiesByConstraints applies the same ChannelSatisfiesFilters
+// predicate used by the memory-cache path. A failed channel lookup fails
+// closed when a task-plugin identity is required and fails open otherwise.
+func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters []dto.ChannelFilter) []Ability {
+	if len(abilities) == 0 {
+		return nil
 	}
 
 	channelIds := make([]int, 0, len(abilities))
@@ -225,29 +265,34 @@ func filterAbilitiesByRequestPathAndModel(abilities []Ability, requestPath strin
 
 	var channels []*Channel
 	if err := DB.Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
-		// On error, fall back to unfiltered candidates to avoid blocking selection
+		if identityFilterRequiresKey(filters) {
+			return nil
+		}
 		return abilities
 	}
 
-	advancedConfigs := make(map[int]*dto.AdvancedCustomConfig)
+	channelsByID := make(map[int]*Channel, len(channels))
 	for _, channel := range channels {
-		if channel.Type == constant.ChannelTypeAdvancedCustom {
-			advancedConfigs[channel.Id] = channel.GetOtherSettings().AdvancedCustom
-		}
+		channelsByID[channel.Id] = channel
 	}
 
 	filtered := make([]Ability, 0, len(abilities))
 	for _, ability := range abilities {
-		config, isAdvancedCustom := advancedConfigs[ability.ChannelId]
-		if !isAdvancedCustom {
-			filtered = append(filtered, ability)
-			continue
-		}
-		if config != nil && config.SupportsPathForModel(requestPath, model) {
+		channel := channelsByID[ability.ChannelId]
+		if ok, _ := ChannelSatisfiesFilters(channel, modelName, filters); ok {
 			filtered = append(filtered, ability)
 		}
 	}
 	return filtered
+}
+
+func identityFilterRequiresKey(filters []dto.ChannelFilter) bool {
+	for _, filter := range filters {
+		if filter.Kind == dto.FilterTaskPluginIdentity && filter.TaskPluginKey != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {

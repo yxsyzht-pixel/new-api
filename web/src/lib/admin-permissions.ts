@@ -24,18 +24,20 @@ export type AdminPermissionMatrix = Record<string, Record<string, boolean>>;
 export type AdminCapabilities = AdminPermissionMatrix;
 
 export const ADMIN_PERMISSION_RESOURCES = {
-  CHANNEL: "channel",
-  TOKEN: "token",
-} as const;
+  CHANNEL: 'channel',
+  TOKEN: 'token',
+  TASK_PLUGIN: 'task_plugin',
+} as const
 
 export const ADMIN_PERMISSION_ACTIONS = {
-  READ: "read",
-  OPERATE: "operate",
-  WRITE: "write",
-  SENSITIVE_WRITE: "sensitive_write",
-  SECRET_VIEW: "secret_view",
-  MANAGE_ALL: "manage_all",
-} as const;
+  READ: 'read',
+  OPERATE: 'operate',
+  WRITE: 'write',
+  SENSITIVE_WRITE: 'sensitive_write',
+  SECRET_VIEW: 'secret_view',
+  MANAGE_ALL: 'manage_all',
+  BIND: 'bind',
+} as const
 
 // The role whose baseline grants are used as defaults in the permission editor.
 export const ADMIN_ROLE_KEY = "admin";

@@ -120,7 +120,7 @@ func TestARetryIsNotOfferedAChannelItHasAlreadyTried(t *testing.T) {
 	defer restore()
 
 	pick := func(retry int, tried map[int]bool) *Channel {
-		got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-sol", retry, "", tried)
+		got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-sol", retry, nil, tried)
 		require.NoError(t, err)
 		return got
 	}
@@ -154,13 +154,13 @@ func TestASoleChannelIsNotOfferedAgainOnRetry(t *testing.T) {
 		map[string]map[string][]int{"default": {"kimi-k3": {21}}})
 	defer restore()
 
-	got, err := GetRandomSatisfiedChannel("default", "kimi-k3", 0, "/v1/chat/completions", nil)
+	got, err := GetRandomSatisfiedChannel("default", "kimi-k3", 0, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, got, "the first attempt must reach the only channel there is")
 	assert.Equal(t, 21, got.Id)
 
 	for retry := 1; retry <= 5; retry++ {
-		got, err = GetRandomSatisfiedChannel("default", "kimi-k3", retry, "/v1/chat/completions",
+		got, err = GetRandomSatisfiedChannel("default", "kimi-k3", retry, nil,
 			map[int]bool{21: true})
 		require.NoError(t, err)
 		assert.Nil(t, got, "retry %d was offered the channel that already refused", retry)
@@ -214,7 +214,7 @@ func TestCachedSelectionFollowsTheSharedTierRule(t *testing.T) {
 	defer restore()
 
 	pick := func(retry int) *Channel {
-		got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-sol", retry, "", nil)
+		got, err := GetRandomSatisfiedChannel("default", "gpt-5.6-sol", retry, nil, nil)
 		require.NoError(t, err)
 		require.NotNil(t, got, "retry %d", retry)
 		return got
