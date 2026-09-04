@@ -317,14 +317,17 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	}
 
 	cleanup()
-	switch {
-	case info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors():
+	// The level follows StreamStatus.Outcome so it cannot drift from the status
+	// the panel shows for the same stream. A caller who hung up is logged like
+	// an ordinary end rather than into the error log: nothing failed, and at 86%
+	// of every warning there — with the remainder being nothing at all — the
+	// level was saying less than no level would. The reason and the received
+	// count stay in the line for whoever goes looking.
+	switch info.StreamStatus.Outcome() {
+	case relaycommon.StreamOutcomeOK:
 		logger.LogInfo(c, fmt.Sprintf("stream ended: %s", info.StreamStatus.Summary()))
-	case info.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone:
-		// The caller hung up — an editor closing a tab, a user pressing escape. Worth
-		// seeing, but it says nothing is wrong here, and at 3163 lines a day it drowns
-		// out the failures that are.
-		logger.LogWarn(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
+	case relaycommon.StreamOutcomeAborted:
+		logger.LogInfo(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
 	default:
 		logger.LogError(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
 	}

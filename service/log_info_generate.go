@@ -140,19 +140,13 @@ func appendStreamStatus(relayInfo *relaycommon.RelayInfo, other *model.LogOther)
 		return
 	}
 	ss := relayInfo.StreamStatus
-	status := "ok"
-	switch {
-	case ss.HasErrors():
-		status = "error"
-	case ss.EndReason == relaycommon.StreamEndReasonClientGone:
-		// The caller hung up — escape in the editor, a closed tab, a client that
-		// had read enough. Nothing failed here, and lumping it in with real faults
-		// buried them: over 8 hours on 2026-08-14 the panel flagged 1656 streams,
-		// of which 1653 were this and 3 were genuine.
-		status = "aborted"
-	case !ss.IsNormalEnd():
-		status = "error"
-	}
+	// "aborted" is its own state rather than a failure: the caller hung up —
+	// escape in the editor, a closed tab, a client that had read enough. Lumping
+	// those in with real faults buried them; over 8 hours on 2026-08-14 the panel
+	// flagged 1656 streams, of which 1653 were this and 3 were genuine. The
+	// classification lives on StreamStatus so the scanner's log level says the
+	// same thing about the same stream.
+	status := string(ss.Outcome())
 	streamInfo := map[string]interface{}{
 		"status":     status,
 		"end_reason": string(ss.EndReason),

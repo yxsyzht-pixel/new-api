@@ -110,3 +110,39 @@ func (s *StreamStatus) Summary() string {
 	s.mu.Unlock()
 	return b.String()
 }
+
+// StreamOutcome is what a finished stream amounted to. It exists because the
+// same three-way judgement was being made in two places — the panel's status
+// field and the scanner's log level — and they had drifted into asking the
+// questions in opposite orders, so a stream that collected real faults and then
+// lost its caller was a fault in the panel and a mere warning in the log.
+type StreamOutcome string
+
+const (
+	// StreamOutcomeOK is a stream that ran to a normal end carrying no errors.
+	StreamOutcomeOK StreamOutcome = "ok"
+	// StreamOutcomeAborted is a caller who hung up — an editor closing a tab, a
+	// user pressing escape, a client that had read enough. Nothing failed.
+	StreamOutcomeAborted StreamOutcome = "aborted"
+	// StreamOutcomeError is everything else: a fault upstream, a timeout, a
+	// stream that stopped without saying why.
+	StreamOutcomeError StreamOutcome = "error"
+)
+
+// Outcome classifies a finished stream. Errors are asked about first, so a
+// hangup never hides a fault that had already been recorded.
+//
+// A nil status is the non-streamed turn and answers ok, which falls out of the
+// nil handling the three accessors already do rather than needing its own guard.
+func (s *StreamStatus) Outcome() StreamOutcome {
+	switch {
+	case s.HasErrors():
+		return StreamOutcomeError
+	case s.IsNormalEnd():
+		return StreamOutcomeOK
+	case s.EndReason == StreamEndReasonClientGone:
+		return StreamOutcomeAborted
+	default:
+		return StreamOutcomeError
+	}
+}
