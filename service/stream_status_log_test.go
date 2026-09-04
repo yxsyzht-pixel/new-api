@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 
 	"github.com/stretchr/testify/assert"
@@ -19,9 +20,9 @@ func TestStreamStatusSeparatesAClientHangupFromAFault(t *testing.T) {
 		for i := 0; i < softErrors; i++ {
 			status.RecordError("soft")
 		}
-		other := map[string]interface{}{}
+		other := model.NewLogOther()
 		appendStreamStatus(&relaycommon.RelayInfo{IsStream: true, StreamStatus: status}, other)
-		return other["stream_status"].(map[string]interface{})["status"].(string)
+		return other.Snapshot()["stream_status"].(map[string]interface{})["status"].(string)
 	}
 
 	assert.Equal(t, "ok", build(relaycommon.StreamEndReasonEOF, nil, 0))

@@ -28,11 +28,12 @@ func TestFunctionCallIDSurvivesGeminiConversion(t *testing.T) {
 }
 
 func TestFunctionOutputCarriesTheCallID(t *testing.T) {
-	part := responsesFunctionOutputItemToGeminiPart(map[string]any{
+	part, err := responsesFunctionOutputItemToGeminiPart(map[string]any{
 		"call_id": "call_abc",
 		"output":  "15 degrees",
 	}, map[string]string{"call_abc": "get_weather"})
 
+	require.NoError(t, err)
 	require.NotNil(t, part.FunctionResponse)
 	assert.Equal(t, "get_weather", part.FunctionResponse.Name,
 		"the name is recovered from the matching call")
@@ -45,11 +46,12 @@ func TestFunctionOutputCarriesTheCallID(t *testing.T) {
 // An item with no call id must not gain an empty one, which upstream would
 // reject as an invalid identifier.
 func TestFunctionOutputWithoutCallIDOmitsIt(t *testing.T) {
-	part := responsesFunctionOutputItemToGeminiPart(map[string]any{
+	part, err := responsesFunctionOutputItemToGeminiPart(map[string]any{
 		"name":   "get_weather",
 		"output": "15 degrees",
 	}, map[string]string{})
 
+	require.NoError(t, err)
 	require.NotNil(t, part.FunctionResponse)
 	assert.Empty(t, part.FunctionResponse.ID)
 }

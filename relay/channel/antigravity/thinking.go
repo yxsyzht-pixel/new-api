@@ -89,7 +89,7 @@ func thinkingConfigForEffort(model string, effort string, maxOutputTokens *uint)
 		if !fits {
 			return nil
 		}
-		return &dto.GeminiThinkingConfig{ThinkingBudget: intPointer(budget), IncludeThoughts: true}
+		return &dto.GeminiThinkingConfig{ThinkingBudget: intPointer(budget), IncludeThoughts: boolPointer(true)}
 	}
 
 	switch effort {
@@ -99,9 +99,9 @@ func thinkingConfigForEffort(model string, effort string, maxOutputTokens *uint)
 		}
 		return &dto.GeminiThinkingConfig{ThinkingLevel: "low"}
 	case "minimal", "low":
-		return &dto.GeminiThinkingConfig{ThinkingLevel: "low", IncludeThoughts: true}
+		return &dto.GeminiThinkingConfig{ThinkingLevel: "low", IncludeThoughts: boolPointer(true)}
 	case "medium", "high", "xhigh":
-		return &dto.GeminiThinkingConfig{ThinkingLevel: "high", IncludeThoughts: true}
+		return &dto.GeminiThinkingConfig{ThinkingLevel: "high", IncludeThoughts: boolPointer(true)}
 	}
 	return nil
 }
@@ -117,6 +117,12 @@ func applyThinkingEffort(request any, model string, effort string) {
 	if config := thinkingConfigForEffort(model, effort, geminiRequest.GenerationConfig.MaxOutputTokens); config != nil {
 		geminiRequest.GenerationConfig.ThinkingConfig = config
 	}
+}
+
+// boolPointer exists because IncludeThoughts became a pointer upstream, where
+// unset and explicitly false are now different things on the wire.
+func boolPointer(value bool) *bool {
+	return &value
 }
 
 func intPointer(value int) *int {

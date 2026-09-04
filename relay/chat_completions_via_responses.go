@@ -70,45 +70,46 @@ func applySystemPromptIfNeeded(c *gin.Context, info *relaycommon.RelayInfo, requ
 	}
 }
 
-func chatCompletionsViaResponses(c *gin.Context, info *relaycommon.RelayInfo, adaptor channel.Adaptor, request *dto.GeneralOpenAIRequest) (*dto.Usage, *types.NewAPIError) {
-	chatJSON, err := common.Marshal(request)
-	if err != nil {
-		return nil, types.NewError(fmt.Errorf("marshal Chat Completions compatibility request: %w", err), types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
-	}
-
-	chatJSON, err = relaycommon.RemoveDisabledFields(chatJSON, info.ChannelOtherSettings, info.ChannelSetting.PassThroughBodyEnabled)
-	if err != nil {
-		return nil, types.NewError(fmt.Errorf("filter Chat Completions compatibility request: %w", err), types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
-	}
-
-	if len(info.ParamOverride) > 0 {
-		chatJSON, err = relaycommon.ApplyParamOverrideWithRelayInfo(chatJSON, info)
+func textRequestViaResponses(c *gin.Context, info *relaycommon.RelayInfo, adaptor channel.Adaptor, request any) (*dto.Usage, *types.NewAPIError) {
+	paramOverrideApplied := false
+	if chatRequest, ok := request.(*dto.GeneralOpenAIRequest); ok {
+		chatJSON, err := common.Marshal(chatRequest)
 		if err != nil {
-			return nil, newAPIErrorFromParamOverride(err)
+			return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
+
+		chatJSON, err = relaycommon.RemoveDisabledFields(chatJSON, info.ChannelOtherSettings, info.ChannelSetting.PassThroughBodyEnabled)
+		if err != nil {
+			return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+
+		if len(info.ParamOverride) > 0 {
+			chatJSON, err = relaycommon.ApplyParamOverrideWithRelayInfo(chatJSON, info)
+			if err != nil {
+				return nil, newAPIErrorFromParamOverride(err)
+			}
+			paramOverrideApplied = true
+		}
+
+		var overriddenChatReq dto.GeneralOpenAIRequest
+		if err := common.Unmarshal(chatJSON, &overriddenChatReq); err != nil {
+			return nil, types.NewError(err, types.ErrorCodeChannelParamOverrideInvalid, types.ErrOptionWithSkipRetry())
+		}
+		request = &overriddenChatReq
 	}
 
-	var overriddenChatReq dto.GeneralOpenAIRequest
-	if err := common.Unmarshal(chatJSON, &overriddenChatReq); err != nil {
-		return nil, types.NewError(fmt.Errorf("decode overridden Chat Completions compatibility request: %w", err), types.ErrorCodeChannelParamOverrideInvalid, types.ErrOptionWithSkipRetry())
-	}
-
-	result, err := service.ConvertRequestVia(c, info, &overriddenChatReq, types.RelayFormatOpenAI, types.RelayFormatOpenAIResponses)
+	result, err := service.ConvertRequest(c, info, types.RelayFormatOpenAIResponses, request)
 	if err != nil {
-		return nil, types.NewErrorWithStatusCode(fmt.Errorf("convert Chat Completions request to Responses: %w", err), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+		return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
 	responsesReq, ok := result.Value.(*dto.OpenAIResponsesRequest)
 	if !ok {
 		return nil, types.NewError(fmt.Errorf("expected OpenAI responses request, got %T", result.Value), types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 	}
-	clientStream := prepareChatCompletionsResponsesStream(info, responsesReq)
-	restoreClientStream := true
-	defer func() {
-		if restoreClientStream && info != nil {
-			info.IsStream = clientStream
-		}
-	}()
+	return relayResponsesRequest(c, info, adaptor, responsesReq, paramOverrideApplied)
+}
 
+func relayResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, adaptor channel.Adaptor, responsesReq *dto.OpenAIResponsesRequest, paramOverrideApplied bool) (*dto.Usage, *types.NewAPIError) {
 	savedRelayMode := info.RelayMode
 	savedRequestURLPath := info.RequestURLPath
 	defer func() {
@@ -119,20 +120,39 @@ func chatCompletionsViaResponses(c *gin.Context, info *relaycommon.RelayInfo, ad
 	info.RelayMode = relayconstant.RelayModeResponses
 	info.RequestURLPath = "/v1/responses"
 
+	// Codex answers /v1/responses as a stream and nothing else, so a caller who
+	// did not ask for one still has to request it upstream; the reply is
+	// buffered back below. clientStream is what the caller actually asked for,
+	// and has to be restored on every path that returns before a handler takes
+	// over — a handler sets info.IsStream for itself.
+	clientStream := prepareResponsesUpstreamStream(info, responsesReq)
+	restoreClientStream := true
+	defer func() {
+		if restoreClientStream && info != nil {
+			info.IsStream = clientStream
+		}
+	}()
+
 	convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *responsesReq)
 	if err != nil {
-		return nil, types.NewError(fmt.Errorf("adapt converted Responses request for upstream: %w", err), types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		return nil, newConvertRequestFailedError(c, info, err)
 	}
 	relaycommon.AppendRequestConversionFromRequest(info, convertedRequest)
 
 	jsonData, err := common.Marshal(convertedRequest)
 	if err != nil {
-		return nil, types.NewError(fmt.Errorf("marshal converted Responses upstream request: %w", err), types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 	}
 
 	jsonData, err = relaycommon.RemoveDisabledFields(jsonData, info.ChannelOtherSettings, info.ChannelSetting.PassThroughBodyEnabled)
 	if err != nil {
-		return nil, types.NewError(fmt.Errorf("filter converted Responses upstream request: %w", err), types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+	}
+	if !paramOverrideApplied && len(info.ParamOverride) > 0 {
+		jsonData, err = relaycommon.ApplyParamOverrideWithRelayInfo(jsonData, info)
+		if err != nil {
+			return nil, newAPIErrorFromParamOverride(err)
+		}
 	}
 
 	body, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
@@ -190,7 +210,11 @@ func chatCompletionsViaResponses(c *gin.Context, info *relaycommon.RelayInfo, ad
 	return usage, nil
 }
 
-func prepareChatCompletionsResponsesStream(info *relaycommon.RelayInfo, request *dto.OpenAIResponsesRequest) bool {
+// prepareResponsesUpstreamStream reports the stream mode the caller asked for,
+// having switched the upstream request to streaming where the channel serves
+// nothing else. Codex is such a channel: a non-streaming /v1/responses call is
+// refused outright, so there would be no reply to buffer back.
+func prepareResponsesUpstreamStream(info *relaycommon.RelayInfo, request *dto.OpenAIResponsesRequest) bool {
 	clientStream := info != nil && info.IsStream
 	if info != nil && request != nil && info.ChannelType == constant.ChannelTypeCodex {
 		upstreamStream := true
@@ -200,6 +224,9 @@ func prepareChatCompletionsResponsesStream(info *relaycommon.RelayInfo, request 
 	return clientStream
 }
 
+// isResponsesUpstreamStream answers whether the reply is a stream. The
+// content type settles it when the upstream sets one; a channel we switched to
+// streaming ourselves counts even when it does not.
 func isResponsesUpstreamStream(info *relaycommon.RelayInfo, request *dto.OpenAIResponsesRequest, contentType string) bool {
 	if isResponsesEventStreamContentType(contentType) {
 		return true
