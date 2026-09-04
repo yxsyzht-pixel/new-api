@@ -7,7 +7,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
 )
 
@@ -433,7 +432,7 @@ func IncreaseTokenQuota(tokenId int, key string, quota int) (err error) {
 		return errors.New("quota 不能为负数！")
 	}
 	if common.RedisEnabled {
-		gopool.Go(func() {
+		backgroundGo(func() {
 			// 守卫式增量：哈希不存在时跳过，由下次读取从数据库水合，
 			// 绝不创建只有配额字段的残缺哈希。
 			if _, err := cacheApplyTokenQuotaDelta(tokenId, key, int64(quota)); err != nil {
@@ -464,7 +463,7 @@ func DecreaseTokenQuota(id int, key string, quota int) (err error) {
 		return errors.New("quota 不能为负数！")
 	}
 	if common.RedisEnabled {
-		gopool.Go(func() {
+		backgroundGo(func() {
 			if _, err := cacheApplyTokenQuotaDelta(id, key, int64(-quota)); err != nil {
 				common.SysLog("failed to decrease token quota: " + err.Error())
 			}

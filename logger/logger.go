@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -26,9 +27,13 @@ const (
 
 const maxLogCount = 1000000
 
-var logCount int
+// logCount and setupLogWorking are read and written from every goroutine that
+// logs, so they are atomic. The count itself may drift harmlessly, but
+// setupLogWorking is a guard: a plain bool gave no happens-before, and two
+// goroutines could both see it unset and both queue a rotation.
+var logCount atomic.Int64
 var setupLogLock sync.Mutex
-var setupLogWorking bool
+var setupLogWorking atomic.Bool
 var currentLogPath string
 var currentLogPathMu sync.RWMutex
 var currentLogFile *os.File
@@ -40,9 +45,7 @@ func GetCurrentLogPath() string {
 }
 
 func SetupLogger() {
-	defer func() {
-		setupLogWorking = false
-	}()
+	defer setupLogWorking.Store(false)
 	if *common.LogDir != "" {
 		ok := setupLogLock.TryLock()
 		if !ok {
@@ -55,7 +58,13 @@ func SetupLogger() {
 		logPath := filepath.Join(*common.LogDir, fmt.Sprintf("oneapi-%s.log", time.Now().Format("20060102150405")))
 		fd, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			log.Fatal("failed to open log file")
+			// Rotation runs in a goroutine that a busy hour starts on its own,
+			// so exiting here took the gateway down for a full disk or an
+			// exhausted fd table — a transient fault answered by the most
+			// permanent response available. Keep writing to the file already
+			// open and say so; the next rotation will try again.
+			log.Printf("failed to open log file %s, keeping the current one: %v", logPath, err)
+			return
 		}
 		currentLogPathMu.Lock()
 		oldFile := currentLogFile
@@ -112,14 +121,28 @@ func logHelper(ctx context.Context, level string, msg string) {
 	}
 	_, _ = fmt.Fprintf(writer, "[%s] %v | %s | %s \n", level, now.Format("2006/01/02 - 15:04:05"), id, msg)
 	common.LogWriterMu.RUnlock()
-	logCount++ // we don't need accurate count, so no lock here
-	if logCount > maxLogCount && !setupLogWorking {
-		logCount = 0
-		setupLogWorking = true
+	if claimRotation() {
 		gopool.Go(func() {
 			SetupLogger()
 		})
 	}
+}
+
+// claimRotation reports whether this caller is the one that should rotate the
+// log. Every goroutine that logs runs this, so the claim is a compare-and-swap
+// rather than a read followed by a write: as a plain bool it carried no
+// happens-before, and two callers could both see it unset and both start a
+// rotation. The count is only reset by whoever wins, so a losing caller does
+// not rewind it and delay the rotation that is already starting.
+func claimRotation() bool {
+	if logCount.Add(1) <= maxLogCount {
+		return false
+	}
+	if !setupLogWorking.CompareAndSwap(false, true) {
+		return false
+	}
+	logCount.Store(0)
+	return true
 }
 
 func LogQuota(quota int) string {

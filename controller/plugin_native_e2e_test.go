@@ -73,6 +73,11 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	previousBatchUpdate := common.BatchUpdateEnabled
 	previousLogConsume := common.LogConsumeEnabled
 	previousRedisEnabled := common.RedisEnabled
+	// The quota paths fire detached goroutines that read RedisEnabled. Swapping
+	// it while one is still running is a data race, and it need not have been
+	// started by this test — so drain both before taking the globals and before
+	// giving them back.
+	model.WaitForBackgroundWork()
 	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Channel{}, &model.Task{}, &model.Log{}))
@@ -85,6 +90,7 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 	previousModelRatios := ratio_setting.ModelRatio2JSONString()
 	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"kling-v1":1}`))
 	t.Cleanup(func() {
+		model.WaitForBackgroundWork()
 		model.DB = previousDB
 		model.LOG_DB = previousLogDB
 		common.MemoryCacheEnabled = previousMemoryCache

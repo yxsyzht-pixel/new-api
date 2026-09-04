@@ -12,7 +12,6 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
-	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -1206,7 +1205,7 @@ func GetUserGroup(id int, fromDB bool) (group string, err error) {
 	defer func() {
 		// Update Redis cache asynchronously on successful DB read
 		if shouldUpdateRedis(fromDB, err) {
-			gopool.Go(func() {
+			backgroundGo(func() {
 				if err := RefreshUserGroupCache(id); err != nil {
 					common.SysLog("failed to update user group cache: " + err.Error())
 				}
@@ -1235,7 +1234,7 @@ func GetUserSetting(id int, fromDB bool) (settingMap dto.UserSetting, err error)
 	defer func() {
 		// Update Redis cache asynchronously on successful DB read
 		if shouldUpdateRedis(fromDB, err) {
-			gopool.Go(func() {
+			backgroundGo(func() {
 				if err := updateUserSettingCache(id, setting); err != nil {
 					common.SysLog("failed to update user setting cache: " + err.Error())
 				}
@@ -1276,7 +1275,7 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 	}
 	if !db && common.BatchUpdateEnabled {
 		addNewRecord(BatchUpdateTypeUserQuota, id, quota)
-		gopool.Go(func() {
+		backgroundGo(func() {
 			if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
 				common.SysLog("failed to increase user quota: " + err.Error())
 			}
@@ -1286,7 +1285,7 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 	if err := increaseUserQuota(id, quota); err != nil {
 		return err
 	}
-	gopool.Go(func() {
+	backgroundGo(func() {
 		if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
 			common.SysLog("failed to increase user quota: " + err.Error())
 		}
@@ -1318,7 +1317,7 @@ func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
-	gopool.Go(func() {
+	backgroundGo(func() {
 		err := cacheDecrUserQuota(id, int64(quota))
 		if err != nil {
 			common.SysLog("failed to decrease user quota: " + err.Error())
@@ -1426,7 +1425,7 @@ func GetUsernameById(id int, fromDB bool) (username string, err error) {
 	defer func() {
 		// Update Redis cache asynchronously on successful DB read
 		if shouldUpdateRedis(fromDB, err) {
-			gopool.Go(func() {
+			backgroundGo(func() {
 				if err := updateUserNameCache(id, username); err != nil {
 					common.SysLog("failed to update user name cache: " + err.Error())
 				}

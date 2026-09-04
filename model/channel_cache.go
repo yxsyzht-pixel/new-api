@@ -103,13 +103,13 @@ func InitChannelCache() {
 	// invalidating the pricing cache, otherwise the reversed order deadlocks.
 	InvalidatePricingCache()
 	rebuildTaskAliasView()
-	common.SysLog("channels synced from database")
+	logSyncHeartbeat("channels synced from database")
 }
 
 func SyncChannelCache(frequency int) {
 	for {
 		time.Sleep(time.Duration(frequency) * time.Second)
-		common.SysLog("syncing channels from database")
+		logSyncHeartbeat("syncing channels from database")
 		InitChannelCache()
 	}
 }

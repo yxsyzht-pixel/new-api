@@ -16,6 +16,10 @@ import (
 
 func useUserCacheMiniRedis(t *testing.T) *miniredis.Miniredis {
 	t.Helper()
+	// Drain before touching the globals, not only after. The goroutine that
+	// races here belongs to whichever earlier test last moved quota — it need
+	// not have used this helper, so draining in cleanup alone protects nothing.
+	WaitForBackgroundWork()
 	server := miniredis.RunT(t)
 	oldRedisEnabled := common.RedisEnabled
 	oldRDB := common.RDB
@@ -24,6 +28,8 @@ func useUserCacheMiniRedis(t *testing.T) *miniredis.Miniredis {
 	common.SyncFrequency = 2
 	common.RDB = redis.NewClient(&redis.Options{Addr: server.Addr()})
 	t.Cleanup(func() {
+		// And again before restoring them, for the same reason.
+		WaitForBackgroundWork()
 		_ = common.RDB.Close()
 		common.RedisEnabled = oldRedisEnabled
 		common.RDB = oldRDB
