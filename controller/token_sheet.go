@@ -322,6 +322,15 @@ func applySheetRow(c *gin.Context, scope model.TokenScope, manages bool, columns
 		token.Name = name
 	}
 	if group, ok := filledCell(columns, row, "group"); ok {
+		// Same rule as the page, and checked the same way as the staff number
+		// above: only a group that is actually changing has to be one the owner
+		// could pick today, so tightening the usable groups does not strand the
+		// keys already sitting in a group nobody can pick any more.
+		if group != token.Group {
+			if err := checkTokenGroupSelectable(c, token.UserId, group); err != nil {
+				return err
+			}
+		}
 		token.Group = group
 	}
 	if value, ok := filledCell(columns, row, "status"); ok {

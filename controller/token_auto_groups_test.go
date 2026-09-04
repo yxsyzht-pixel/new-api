@@ -24,7 +24,10 @@ func configureTokenAutoGroupsTest(t *testing.T, maxCount string, autoGroups stri
 	originalRatios := ratio_setting.GroupRatio2JSONString()
 	require.NoError(t, setting.UpdateMaxTokenAutoGroups(maxCount))
 	require.NoError(t, setting.UpdateAutoGroupsByJsonString(autoGroups))
-	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","vip":"VIP"}`))
+	// "auto" has to be offered here for the same reason the key page offers it:
+	// its presence in UserUsableGroups is what makes it selectable at all, and
+	// every case below creates a key that is already in it.
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","vip":"VIP","auto":"Auto"}`))
 	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"vip":1}`))
 	t.Cleanup(func() {
 		require.NoError(t, setting.UpdateMaxTokenAutoGroups(stringInt(originalMax)))

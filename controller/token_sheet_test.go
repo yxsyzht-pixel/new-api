@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
@@ -295,4 +296,75 @@ func TestImportRefusesASheetBeyondTheCeiling(t *testing.T) {
 
 	ImportTokens(c)
 	assert.Contains(t, recorder.Body.String(), "一次最多导入")
+}
+
+// The page offers only the groups a key's owner may select. The import wrote
+// the column with no check at all, so the same user could export their key,
+// type another group into the cell and load it back — reaching every model that
+// group serves. Same rule, same two paths.
+func TestImportHoldsGroupsToTheSameRule(t *testing.T) {
+	columns := headerPositions([]string{"id", "group"})
+
+	selfActor := func(t *testing.T, group string) *gin.Context {
+		t.Helper()
+		c := sheetActor(t, 9, common.RoleCommonUser)
+		common.SetContextKey(c, constant.ContextKeyUserGroup, group)
+		return c
+	}
+
+	t.Run("普通用户挪不进别的分组", func(t *testing.T) {
+		configureTokenGroupTest(t, `{"default":"Default"}`, `{"default":1,"svip":1}`)
+		sheetTestDB(t, model.Token{Id: 1, UserId: 9, CreatedBy: 9, Key: "k", Name: "n", Group: "default"})
+
+		err := applySheetRow(selfActor(t, "default"), model.CreatorScope(9),
+			false, columns, []string{"1", "svip"})
+		require.Error(t, err)
+
+		var after model.Token
+		require.NoError(t, model.DB.First(&after, 1).Error)
+		assert.Equal(t, "default", after.Group, "the group changed despite the refusal")
+	})
+
+	// Unchanged is not a change, exactly as with the staff number: tightening
+	// the usable groups must not strand the keys already sitting in one.
+	t.Run("分组没动就不回查", func(t *testing.T) {
+		configureTokenGroupTest(t, `{"default":"Default"}`, `{"default":1}`)
+		sheetTestDB(t, model.Token{Id: 1, UserId: 9, CreatedBy: 9, Key: "k", Name: "n", Group: "kimi-code-private"})
+
+		require.NoError(t, applySheetRow(selfActor(t, "default"), model.CreatorScope(9),
+			false, columns, []string{"1", "kimi-code-private"}))
+	})
+
+	t.Run("自己的分组挪得进去", func(t *testing.T) {
+		configureTokenGroupTest(t, `{}`, `{"default":1,"svip":1}`)
+		sheetTestDB(t, model.Token{Id: 1, UserId: 9, CreatedBy: 9, Key: "k", Name: "n", Group: ""})
+
+		require.NoError(t, applySheetRow(selfActor(t, "svip"), model.CreatorScope(9),
+			false, columns, []string{"1", "svip"}))
+
+		var after model.Token
+		require.NoError(t, model.DB.First(&after, 1).Error)
+		assert.Equal(t, "svip", after.Group)
+	})
+
+	// An administrator importing somebody else's sheet is measured against that
+	// person's group, not their own — the same contract getTokenOwnerGroup states.
+	t.Run("管理员导别人的表用归属人的分组", func(t *testing.T) {
+		configureTokenGroupTest(t, `{}`, `{"default":1,"svip":1}`)
+		sheetTestDB(t, model.Token{Id: 1, UserId: 9, CreatedBy: 9, Key: "k", Name: "n", Group: "default"})
+		require.NoError(t, model.DB.AutoMigrate(&model.User{}))
+		require.NoError(t, model.DB.Create(&model.User{
+			Id: 9, Username: "owner", Password: "p", Group: "default",
+			Status: common.UserStatusEnabled, AffCode: "owner",
+		}).Error)
+
+		admin := sheetActor(t, 1, common.RoleAdminUser)
+		common.SetContextKey(admin, constant.ContextKeyUserGroup, "svip")
+		err := applySheetRow(admin, model.AllOwnersScope(), true, columns, []string{"1", "svip"})
+		require.Error(t, err)
+
+		var after model.Token
+		require.NoError(t, model.DB.First(&after, 1).Error)
+		assert.Equal(t, "default", after.Group)
+	})
 }

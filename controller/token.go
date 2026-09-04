@@ -383,6 +383,50 @@ func getTokenOwnerGroup(c *gin.Context, ownerId int) (string, error) {
 	return model.GetUserGroup(c.GetInt("id"), false)
 }
 
+// checkTokenGroupSelectable enforces on the API what the key page only enforces
+// in its dropdown: a key may sit only in a group its owner could actually
+// select. The group is otherwise taken verbatim from the request body, so
+// without this the whole group-based model split is a client-side suggestion —
+// a plain POST names any group and the key then serves that group's models.
+//
+// An empty group is not a group but the inherit-from-owner default, so it
+// carries the owner's own permissions and needs no check of its own.
+//
+// Like the staff-number rule, this reports rather than writes, because the same
+// check has to hold on two paths that answer differently: the page, which fails
+// the request, and the spreadsheet import, which reports per row and carries on.
+func checkTokenGroupSelectable(c *gin.Context, ownerId int, group string) error {
+	if group == "" {
+		return nil
+	}
+	userGroup, err := getTokenOwnerGroup(c, ownerId)
+	if err != nil {
+		return err
+	}
+	// IsUserSelectableGroup deliberately declines to rule on "auto", which has
+	// no ratio of its own. Its availability rests on the usable-group list
+	// alone, which is exactly how GetUserGroups decides whether to offer it.
+	selectable := service.IsUserSelectableGroup(userGroup, group)
+	if group == "auto" {
+		selectable = service.GroupInUserUsableGroups(userGroup, "auto")
+	}
+	if !selectable {
+		// Rendered through common.TranslateMessage rather than i18n.T, which
+		// dereferences a localizer that only exists once i18n.Init has run and
+		// panics otherwise. The indirection falls back to the key instead.
+		return errors.New(common.TranslateMessage(c, i18n.MsgTokenGroupInvalid, map[string]any{"Group": group}))
+	}
+	return nil
+}
+
+func validateTokenGroup(c *gin.Context, ownerId int, group string) bool {
+	if err := checkTokenGroupSelectable(c, ownerId, group); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return false
+	}
+	return true
+}
+
 func setTokenAutoGroups(c *gin.Context, ownerId int, token *model.Token, groups []string) bool {
 	if len(groups) == 0 {
 		if err := token.SetAutoGroups(nil); err != nil {
@@ -638,6 +682,9 @@ func AddToken(c *gin.Context) {
 		})
 		return
 	}
+	if !validateTokenGroup(c, ownerId, token.Group) {
+		return
+	}
 	if token.Group == "auto" {
 		if !setTokenAutoGroups(c, ownerId, &token, request.AutoGroups.Groups) {
 			return
@@ -772,6 +819,15 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
 		cleanToken.ModelLimits = token.ModelLimits
 		cleanToken.AllowIps = token.AllowIps
+		// A group that has since stopped being selectable stays on the key it
+		// is already on, for the same reason as the staff number above:
+		// checking it on every edit would refuse the name or the quota, not the
+		// group, and leave the key unmaintainable. Only a group actually being
+		// changed has to be one the owner could pick today — which still closes
+		// the door on moving a key into a group it was never entitled to.
+		if token.Group != cleanToken.Group && !validateTokenGroup(c, cleanToken.UserId, token.Group) {
+			return
+		}
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
 		if token.Group != "auto" {
