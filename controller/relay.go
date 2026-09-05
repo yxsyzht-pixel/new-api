@@ -499,6 +499,16 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		other.SetPublic("error_type", err.GetErrorType())
 		other.SetPublic("error_code", err.GetErrorCode())
 		other.SetPublic("status_code", err.StatusCode)
+		// A refused request never reports usage, so this row's token columns
+		// stay zero and nothing afterwards can say how large the refused request
+		// was — which is the one question a context_length rejection raises. The
+		// byte count is the size we do know without the upstream telling us, and
+		// reading it is a field lookup on the stored body, not a re-read.
+		if storage, storageErr := common.GetBodyStorage(c); storageErr == nil && storage != nil {
+			if size := storage.Size(); size > 0 {
+				other.SetPublic("request_bytes", size)
+			}
+		}
 		service.AppendRelayLogAdminInfo(c, relayInfo, other)
 		service.AppendTaskPluginContextAuditInfo(c, other)
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
