@@ -44,7 +44,7 @@ func BenchmarkCountSelectableChannels(b *testing.B) {
 	b.ResetTimer()
 	total := 0
 	for i := 0; i < b.N; i++ {
-		total += CountSelectableChannels("default", "bench-model")
+		total += CountSelectableChannels("default", "bench-model", nil)
 	}
 	if total == 0 {
 		b.Fatal("the fixture counted nothing, so this measured the empty path")

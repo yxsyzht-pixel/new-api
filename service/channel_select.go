@@ -295,11 +295,15 @@ func (p *RetryParam) candidateGroups() []string {
 
 // GroupCandidateCount is how many channels could serve this request in one
 // group. The auto-group walk uses it to know when a group is spent.
+//
+// The channel constraints are passed through because selection applies them:
+// counting without them would promise attempts on channels this request cannot
+// use, and the budget would outlive the candidates it was meant to bound.
 func (p *RetryParam) GroupCandidateCount(group string) int {
 	if p == nil {
 		return 0
 	}
-	return model.CountSelectableChannels(group, p.ModelName)
+	return model.CountSelectableChannels(group, p.ModelName, GetChannelConstraints(p.Ctx).Filters)
 }
 
 // RetryBudget is how many further attempts this request may make: one per

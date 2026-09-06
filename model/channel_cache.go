@@ -131,14 +131,7 @@ func GetRandomSatisfiedChannel(
 	channelSyncLock.RLock()
 	defer channelSyncLock.RUnlock()
 
-	// First, try to find channels with the exact model name.
-	channels, _ := filterCandidateIDs(group2model2channels[group][model], model, filters)
-
-	// If no channels found, try to find channels with the normalized model name.
-	if len(channels) == 0 {
-		normalizedModel := ratio_setting.RoutingMatchModelName(model)
-		channels, _ = filterCandidateIDs(group2model2channels[group][normalizedModel], model, filters)
-	}
+	channels := candidateChannelIDsLocked(group, model, filters)
 
 	if len(channels) == 0 {
 		return nil, nil
@@ -309,4 +302,27 @@ func CacheUpdateChannel(channel *Channel) {
 	// updatePricingLock while holding channelSyncLock would be an AB-BA deadlock.
 	channelSyncLock.Unlock()
 	InvalidatePricingCache()
+}
+
+// candidateChannelIDsLocked resolves the channels that could serve model in
+// group, applying the same name fallback and constraint filters selection uses.
+// The caller holds channelSyncLock.
+//
+// It exists so that counting the candidates and choosing among them cannot
+// disagree. They did: the count matched the model name exactly while selection
+// fell back to the routing-normalized name, so a request naming a model that
+// only matches after normalization — an @ modifier, a wildcard alias — counted
+// zero candidates and was given no retries at all, while selection went on to
+// find channels for it.
+func candidateChannelIDsLocked(group string, model string, filters []dto.ChannelFilter) []int {
+	// First, try to find channels with the exact model name.
+	channels, _ := filterCandidateIDs(group2model2channels[group][model], model, filters)
+	if len(channels) > 0 {
+		return channels
+	}
+
+	// If no channels found, try to find channels with the normalized model name.
+	normalizedModel := ratio_setting.RoutingMatchModelName(model)
+	channels, _ = filterCandidateIDs(group2model2channels[group][normalizedModel], model, filters)
+	return channels
 }
