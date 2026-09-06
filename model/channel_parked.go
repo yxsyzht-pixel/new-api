@@ -3,16 +3,17 @@ package model
 import "github.com/QuantumNous/new-api/common"
 
 // A channel parked for a spent upstream quota keeps its abilities and stays in
-// the channel cache. It is filtered out at selection instead, which is what lets
-// the filter answer the case that matters: when every candidate is parked, they
-// all come back.
+// the channel cache; selection filters it out. Keeping it visible to selection
+// rather than deleting it from the tables is what makes the park reversible
+// without a cache rebuild.
 //
-// That fallback is load-bearing, not a nicety. Eight Codex accounts take turns
-// running dry — 5536 upstream refusals in thirty hours — so "everything is
-// parked" is a routine minute, not a rare one. Removing the channels outright
-// would answer those minutes with "no available channel" and take the gateway
-// dark until a quota reset, where trying a parked account costs one request and
-// occasionally succeeds because the reset already happened.
+// When every candidate is parked the caller is told so, rather than being sent
+// to an account known to have nothing left. An attempt there costs about eighty
+// five seconds before the upstream refuses — long enough that the client gives
+// up and retries, five times over, on a request that cannot succeed. Saying "no
+// available channel" at once is the honest answer and the faster one. The cost
+// is that a quota which reset early is not noticed until the recheck runs, so
+// ChannelQuotaRecheckHours is the length of the worst outage this can cause.
 
 // IsChannelParked reports whether channelID is out of rotation for a spent quota.
 func IsChannelParked(status int) bool {
@@ -31,9 +32,6 @@ func dropParkedAbilities(abilities []Ability, parked map[int]bool) []Ability {
 			surviving = append(surviving, ability)
 		}
 	}
-	if len(surviving) == 0 {
-		return abilities
-	}
 	return surviving
 }
 
@@ -48,9 +46,6 @@ func dropParkedChannels(channels []int, parked map[int]bool) []int {
 		if !parked[channelID] {
 			surviving = append(surviving, channelID)
 		}
-	}
-	if len(surviving) == 0 {
-		return channels
 	}
 	return surviving
 }

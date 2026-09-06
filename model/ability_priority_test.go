@@ -44,12 +44,13 @@ func TestPriorityTiersComeFromSurvivingCandidates(t *testing.T) {
 	}
 }
 
-// Nothing left anywhere is different from nothing left in one tier: the caller
-// is better served by trying a parked account than by being told no channel
-// exists, so the whole set comes back.
-func TestEveryCandidateParkedStillOffersThem(t *testing.T) {
+// Nothing left anywhere ends the search rather than sending the caller to an
+// account with nothing to give. The retry loop reads an empty candidate set as
+// "no available channel" and stops, which is the whole point: the alternative
+// is an eighty-five-second wait for a refusal the gateway could already predict.
+func TestEveryCandidateParkedEndsTheSearch(t *testing.T) {
 	all := []Ability{ability(22, 8, 100), ability(23, 8, 100)}
-	assert.Equal(t, all, dropParkedAbilities(all, map[int]bool{22: true, 23: true}))
+	assert.Empty(t, dropParkedAbilities(all, map[int]bool{22: true, 23: true}))
 }
 
 // Tier order and the retry walk down it must not change for a healthy pool.

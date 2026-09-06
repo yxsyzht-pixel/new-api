@@ -98,15 +98,15 @@ func TestAMisconfiguredIntervalIsFloored(t *testing.T) {
 	assert.Equal(t, 5*time.Hour, QuotaRecheckInterval(5))
 }
 
-// The fallback that keeps the gateway alive. Eight Codex accounts take turns
-// running dry, so "everything is parked" is a routine minute: answering it with
-// no channel at all would take the gateway dark until a quota reset, where
-// trying a parked account costs one request and sometimes succeeds.
-func TestEveryChannelParkedStillOffersThem(t *testing.T) {
+// Every candidate parked means the caller is told so, rather than being sent to
+// an account known to have nothing left: that attempt costs about eighty five
+// seconds before the upstream refuses, and the client then retries it five
+// times. Leaving even one parked channel in the list would reintroduce exactly
+// that wait.
+func TestEveryChannelParkedLeavesNothing(t *testing.T) {
 	parked := map[int]bool{2: true, 3: true}
-	abilities := []Ability{{ChannelId: 2}, {ChannelId: 3}}
-	assert.Equal(t, abilities, dropParkedAbilities(abilities, parked))
-	assert.Equal(t, []int{2, 3}, dropParkedChannels([]int{2, 3}, parked))
+	assert.Empty(t, dropParkedAbilities([]Ability{{ChannelId: 2}, {ChannelId: 3}}, parked))
+	assert.Empty(t, dropParkedChannels([]int{2, 3}, parked))
 }
 
 func TestParkedChannelsLeaveWhileOthersRemain(t *testing.T) {
@@ -149,4 +149,67 @@ func TestTheCacheKnowsWhichChannelsAreParked(t *testing.T) {
 	parked := parkedFromCache([]int{2, 3, 4})
 	assert.Equal(t, map[int]bool{2: true}, parked,
 		"only the spent-quota channel is parked; a disabled one is gone, not waiting")
+}
+
+// The end-to-end shape of the strict exit: with every account for a model
+// parked, the selector returns nothing and the retry loop reads that as "no
+// available channel" and stops. RetryTimes does not enter into it — there is
+// nothing to retry to — which is what turns a five-times-retried 85-second wait
+// into an immediate answer.
+func TestSelectionReturnsNothingWhenEveryChannelIsParked(t *testing.T) {
+	priority := int64(7)
+	newSelectionDB(t,
+		[]Ability{
+			{Group: "default", Model: "kimi-k3", ChannelId: 2, Enabled: true, Priority: &priority, Weight: 100},
+			{Group: "default", Model: "kimi-k3", ChannelId: 3, Enabled: true, Priority: &priority, Weight: 100},
+		},
+		[]Channel{{Id: 2, Status: common.ChannelStatusEnabled}, {Id: 3, Status: common.ChannelStatusEnabled}})
+
+	require.True(t, MarkChannelQuotaExhausted(2, "", "spent"))
+	require.True(t, MarkChannelQuotaExhausted(3, "", "spent"))
+
+	got, err := GetChannel("default", "kimi-k3", 0, nil, nil)
+	require.NoError(t, err)
+	assert.Nil(t, got, "a parked account must not be offered once every account is parked")
+}
+
+// The other half of the same rule: one account still holding quota is found even
+// though its siblings are parked, so a partial outage is not a full one.
+func TestOneSurvivingChannelIsStillFound(t *testing.T) {
+	priority := int64(7)
+	newSelectionDB(t,
+		[]Ability{
+			{Group: "default", Model: "kimi-k3", ChannelId: 2, Enabled: true, Priority: &priority, Weight: 100},
+			{Group: "default", Model: "kimi-k3", ChannelId: 3, Enabled: true, Priority: &priority, Weight: 100},
+		},
+		[]Channel{{Id: 2, Status: common.ChannelStatusEnabled}, {Id: 3, Status: common.ChannelStatusEnabled}})
+
+	require.True(t, MarkChannelQuotaExhausted(2, "", "spent"))
+
+	for i := 0; i < 8; i++ {
+		got, err := GetChannel("default", "kimi-k3", 0, nil, nil)
+		require.NoError(t, err)
+		require.NotNil(t, got, "the account that still has quota was not offered")
+		assert.Equal(t, 3, got.Id)
+	}
+}
+
+// Returning an account to rotation has to make it selectable again, or the
+// recheck job would clear the status while the gateway stayed dark.
+func TestAReturnedChannelIsSelectableAgain(t *testing.T) {
+	priority := int64(7)
+	newSelectionDB(t,
+		[]Ability{{Group: "default", Model: "kimi-k3", ChannelId: 2, Enabled: true, Priority: &priority, Weight: 100}},
+		[]Channel{{Id: 2, Status: common.ChannelStatusEnabled}})
+
+	require.True(t, MarkChannelQuotaExhausted(2, "", "spent"))
+	got, err := GetChannel("default", "kimi-k3", 0, nil, nil)
+	require.NoError(t, err)
+	require.Nil(t, got)
+
+	require.True(t, ReturnChannelToRotation(2, ""))
+	got, err = GetChannel("default", "kimi-k3", 0, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, got, "the recheck cleared the status but selection never saw it")
+	assert.Equal(t, 2, got.Id)
 }
