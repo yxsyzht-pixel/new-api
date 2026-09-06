@@ -264,6 +264,11 @@ const (
 	ChannelStatusEnabled          = 1 // don't use 0, 0 is the default value!
 	ChannelStatusManuallyDisabled = 2 // also don't use 0
 	ChannelStatusAutoDisabled     = 3
+	// ChannelStatusQuotaExhausted marks an account whose upstream plan quota is
+	// spent. It is distinct from AutoDisabled because nothing is wrong with the
+	// channel: it is waiting for a reset window, and a scheduled job puts it back
+	// into rotation rather than an operator.
+	ChannelStatusQuotaExhausted = 4
 )
 
 const (

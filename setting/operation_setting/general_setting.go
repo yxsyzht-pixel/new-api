@@ -22,6 +22,11 @@ type GeneralSetting struct {
 	CustomCurrencyExchangeRate float64 `json:"custom_currency_exchange_rate"`
 	// 上游返回用量超限（429）后，该渠道暂停参与选择的秒数，到期自动恢复
 	ChannelUsageLimitCooldownSeconds int `json:"channel_usage_limit_cooldown_seconds"`
+	// ChannelQuotaRecheckHours is how long an account whose plan quota is spent
+	// stays out of rotation before it is put back. Nothing probes it in the
+	// meantime: returning it to rotation is the probe, and the next real request
+	// either succeeds or marks it spent again for another interval.
+	ChannelQuotaRecheckHours int `json:"channel_quota_recheck_hours"`
 }
 
 // 默认配置
@@ -34,6 +39,7 @@ var generalSetting = GeneralSetting{
 	CustomCurrencyExchangeRate: 1.0,
 	// 3 分钟足够跨过大多数上游滚动窗口的抖动，又不会让恢复后的额度长时间闲置
 	ChannelUsageLimitCooldownSeconds: 180,
+	ChannelQuotaRecheckHours:         5,
 }
 
 func init() {

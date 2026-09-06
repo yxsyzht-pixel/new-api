@@ -21,6 +21,10 @@ const (
 	SystemTaskTypeModelUpdate    = "model_update"
 	SystemTaskTypeMidjourneyPoll = "midjourney_poll"
 	SystemTaskTypeAsyncTaskPoll  = "async_task_poll"
+	// SystemTaskTypeQuotaRecheck returns accounts parked for a spent upstream
+	// quota to rotation once their wait is up. It probes nothing: putting the
+	// account back is the probe, and the next real request settles it.
+	SystemTaskTypeQuotaRecheck = "quota_recheck"
 )
 
 var ErrSystemTaskLockLost = errors.New("system task lock lost")

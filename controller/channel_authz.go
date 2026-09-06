@@ -88,6 +88,10 @@ var channelReadOnlyFields = map[string]struct{}{
 	"balance":              {},
 	"balance_updated_time": {},
 	"used_quota":           {},
+	// Written only when an upstream refuses for a spent quota, and cleared only
+	// when the recheck job returns the channel. An operator editing it by hand
+	// would move the reset deadline without moving the quota.
+	"quota_exhausted_time": {},
 }
 
 func clearChannelReadOnlyFields(channel *PatchChannel, requestData map[string]any) {
@@ -96,6 +100,9 @@ func clearChannelReadOnlyFields(channel *PatchChannel, requestData map[string]an
 	}
 	if _, ok := requestData["test_time"]; ok {
 		channel.TestTime = 0
+	}
+	if _, ok := requestData["quota_exhausted_time"]; ok {
+		channel.QuotaExhaustedTime = 0
 	}
 	if _, ok := requestData["response_time"]; ok {
 		channel.ResponseTime = 0

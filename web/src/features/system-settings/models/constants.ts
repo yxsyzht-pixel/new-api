@@ -74,4 +74,8 @@ export const CHANNEL_STATUS_CONFIG = {
   1: { label: 'Enabled', variant: 'success' as const },
   2: { label: 'Disabled', variant: 'danger' as const },
   3: { label: 'Auto Disabled', variant: 'warning' as const },
+  // Waiting for an upstream quota reset. Not a fault and not an operator's
+  // doing, so it reads as neither disabled nor broken: the recheck job puts it
+  // back on its own.
+  4: { label: 'Quota Exhausted', variant: 'warning' as const },
 } as const

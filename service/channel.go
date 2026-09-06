@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -150,12 +149,30 @@ func IsUpstreamRateLimited(err *types.NewAPIError) bool {
 // limit and reports whether it did so. Selection then skips the channel until the
 // cooldown lapses, and the next request lands on a sibling account instead of
 // failing.
+// SuspendChannelOnUsageLimit parks an account whose upstream plan quota is
+// spent. The park is recorded in the database rather than in memory, so an
+// operator can see which accounts are dry and a restart does not silently put
+// them back. Nothing probes them meanwhile: the scheduled recheck returns them
+// to rotation and the next real request decides whether the quota came back.
+//
+// This replaced an in-memory park with a three-minute cooldown. That park was
+// invisible, forgotten on every restart, and — being a second answer to "is
+// this channel parked" alongside the channel status — free to disagree with it.
+// The status alone now decides: abilities are switched off with it, the channel
+// cache only holds enabled channels, and affinity already checked the status.
 func SuspendChannelOnUsageLimit(channelError types.ChannelError, err *types.NewAPIError) bool {
 	if !IsUpstreamUsageLimitError(err) {
 		return false
 	}
-	cooldown := time.Duration(operation_setting.GetGeneralSetting().ChannelUsageLimitCooldownSeconds) * time.Second
-	model.SuspendChannel(channelError.ChannelId, cooldown, common.LocalLogPreview(err.Error()))
+	if model.MarkChannelQuotaExhausted(channelError.ChannelId, channelError.UsingKey, err.Error()) {
+		NotifyRootUser(
+			formatNotifyType(channelError.ChannelId, common.ChannelStatusQuotaExhausted),
+			fmt.Sprintf("通道「%s」（#%d）额度已用尽", channelError.ChannelName, channelError.ChannelId),
+			fmt.Sprintf("通道「%s」（#%d）上游额度已用尽，已暂停使用，将在 %d 小时后自动放回轮询。",
+				channelError.ChannelName, channelError.ChannelId,
+				operation_setting.GetGeneralSetting().ChannelQuotaRecheckHours),
+		)
+	}
 	return true
 }
 

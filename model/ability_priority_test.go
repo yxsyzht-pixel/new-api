@@ -2,7 +2,6 @@ package model
 
 import (
 	"testing"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 
@@ -24,15 +23,7 @@ func TestPriorityTiersComeFromSurvivingCandidates(t *testing.T) {
 	assert.Equal(t, []int{9, 8}, priorityTiers(all))
 
 	// Both lower-tier accounts are out of quota.
-	for _, id := range []int{22, 23} {
-		SuspendChannel(id, time.Hour, "usage limit")
-	}
-	t.Cleanup(func() {
-		ClearChannelSuspension(22)
-		ClearChannelSuspension(23)
-	})
-
-	surviving := dropSuspendedAbilities(all)
+	surviving := dropParkedAbilities(all, map[int]bool{22: true, 23: true})
 	assert.Equal(t, []int{9}, priorityTiers(surviving),
 		"a tier with nothing left to give must not get a turn")
 
@@ -58,15 +49,7 @@ func TestPriorityTiersComeFromSurvivingCandidates(t *testing.T) {
 // exists, so the whole set comes back.
 func TestEveryCandidateParkedStillOffersThem(t *testing.T) {
 	all := []Ability{ability(22, 8, 100), ability(23, 8, 100)}
-	for _, id := range []int{22, 23} {
-		SuspendChannel(id, time.Hour, "usage limit")
-	}
-	t.Cleanup(func() {
-		ClearChannelSuspension(22)
-		ClearChannelSuspension(23)
-	})
-
-	assert.Equal(t, all, dropSuspendedAbilities(all))
+	assert.Equal(t, all, dropParkedAbilities(all, map[int]bool{22: true, 23: true}))
 }
 
 // Tier order and the retry walk down it must not change for a healthy pool.

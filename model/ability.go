@@ -187,11 +187,12 @@ func GetChannel(
 		return nil, err
 	}
 	abilities = filterAbilitiesByConstraints(abilities, model, filters)
-	// Parked channels leave before the tiers are worked out, not after: tiers
-	// derived from the survivors cannot name a tier that has nothing left to
-	// give. Channels this request has already been served by leave with them —
-	// a retry exists to reach a different upstream.
-	abilities = dropSuspendedAbilities(abilities)
+	// Channels this request has already been served by leave before the tiers
+	// are worked out, not after: a tier derived from the survivors cannot name
+	// one that has nothing left to give. A retry exists to reach a different
+	// upstream. Channels parked for a spent quota never arrive here at all —
+	// the query above already asks for enabled abilities only.
+	abilities = dropParkedAbilities(abilities, parkedChannelIDs())
 	abilities = dropTriedAbilities(abilities, tried)
 	if len(abilities) == 0 {
 		return nil, nil

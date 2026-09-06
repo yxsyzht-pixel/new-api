@@ -36,6 +36,10 @@ type Channel struct {
 	Other              string  `json:"other"`
 	Balance            float64 `json:"balance"` // in USD
 	BalanceUpdatedTime int64   `json:"balance_updated_time" gorm:"bigint"`
+	// QuotaExhaustedTime is when the upstream last said this account's plan quota
+	// was spent. The recheck job measures its wait from here, so a channel marked
+	// moments before a sweep still gets the full interval rather than a minute.
+	QuotaExhaustedTime int64   `json:"quota_exhausted_time" gorm:"bigint;default:0"`
 	Models             string  `json:"models"`
 	Group              string  `json:"group" gorm:"type:varchar(64);default:'default'"`
 	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
@@ -772,7 +776,10 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	shouldUpdateAbilities := false
 	defer func() {
 		if shouldUpdateAbilities {
-			err := UpdateAbilityStatus(channelId, status == common.ChannelStatusEnabled)
+			// A parked channel keeps its abilities. Selection filters it out with
+			// a fallback for the all-parked minute; switching the abilities off
+			// here would remove it from the query outright and lose that.
+			err := UpdateAbilityStatus(channelId, status == common.ChannelStatusEnabled || IsChannelParked(status))
 			if err != nil {
 				common.SysLog(fmt.Sprintf("failed to update ability status: channel_id=%d, error=%v", channelId, err))
 			}

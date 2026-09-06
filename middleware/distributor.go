@@ -128,11 +128,10 @@ func Distribute() func(c *gin.Context) {
 					affinityUsable := false
 					preferred, err := model.CacheGetChannel(preferredChannelID)
 					affinitySatisfied := false
-					// A channel parked for an upstream usage limit counts as unusable here,
-					// so the binding is released and the session moves to a sibling account
-					// instead of queueing behind a limit that has not lifted yet.
-					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
-						!model.IsChannelSuspended(preferred.Id) {
+					// A channel parked for a spent upstream quota is not enabled, so the
+					// status check below releases the binding and the session moves to a
+					// sibling account instead of queueing behind a quota that has not reset.
+					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled {
 						affinitySatisfied, _ = model.ChannelSatisfiesFilters(preferred, modelRequest.Model, constraints.Filters)
 					}
 					if affinitySatisfied {

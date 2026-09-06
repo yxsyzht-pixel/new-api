@@ -53,8 +53,10 @@ func InitChannelCache() {
 		newGroup2model2channels[group] = make(map[string][]int)
 	}
 	for _, channel := range channels {
-		if channel.Status != common.ChannelStatusEnabled {
-			continue // skip disabled channels
+		// Parked channels stay candidates so the selection filter can hand them
+		// back when every candidate is parked. Genuinely disabled ones do not.
+		if channel.Status != common.ChannelStatusEnabled && !IsChannelParked(channel.Status) {
+			continue
 		}
 		groups := strings.Split(channel.Group, ",")
 		for _, group := range groups {
@@ -142,7 +144,7 @@ func GetRandomSatisfiedChannel(
 		return nil, nil
 	}
 
-	channels = dropSuspendedChannels(channels)
+	channels = dropParkedChannels(channels, parkedFromCache(channels))
 
 	// Resolve the candidates once. Gathering the priorities and then the tier
 	// used to be two passes over channelsIDM, each carrying its own copy of the

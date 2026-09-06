@@ -20,7 +20,6 @@ package model
 
 import (
 	"testing"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
@@ -94,11 +93,15 @@ func TestCachelessSelectionUsesTheDatabasePath(t *testing.T) {
 	assert.Nil(t, got, "the sole channel had its turn")
 }
 
-// A channel parked for an upstream usage limit must not be offered by either
-// selector. This nearly went missing in an upstream merge: the cached half of
-// the check lived in the file upstream rewrote, and taking their version
+// A channel parked for a spent upstream quota must not be offered by either
+// selector. This nearly went missing in an upstream merge once: the cached half
+// of the check lived in the file upstream rewrote, and taking their version
 // wholesale dropped it without a single test noticing.
-func TestBothSelectorsSkipSuspendedChannels(t *testing.T) {
+//
+// Parking is now a channel status rather than an in-memory flag, so this drives
+// the real entry point and covers the wiring behind it — marking the channel has
+// to switch its abilities off, or the database selector keeps offering it.
+func TestBothSelectorsSkipQuotaExhaustedChannels(t *testing.T) {
 	priority := int64(7)
 	newSelectionDB(t,
 		[]Ability{
@@ -107,8 +110,12 @@ func TestBothSelectorsSkipSuspendedChannels(t *testing.T) {
 		},
 		[]Channel{{Id: 2, Status: common.ChannelStatusEnabled}, {Id: 3, Status: common.ChannelStatusEnabled}})
 
-	SuspendChannel(2, time.Hour, "usage limit")
-	t.Cleanup(func() { ClearChannelSuspension(2) })
+	require.True(t, MarkChannelQuotaExhausted(2, "", "usage limit reached"))
+
+	var parked Channel
+	require.NoError(t, DB.First(&parked, 2).Error)
+	assert.Equal(t, common.ChannelStatusQuotaExhausted, parked.Status)
+	assert.NotZero(t, parked.QuotaExhaustedTime, "the wait has to start from a recorded moment")
 
 	// Database path.
 	for i := 0; i < 8; i++ {
@@ -118,13 +125,13 @@ func TestBothSelectorsSkipSuspendedChannels(t *testing.T) {
 		assert.Equal(t, 3, got.Id, "the parked channel was offered by the database path")
 	}
 
-	// Cached path, same fixture.
+	// Cached path. The cache is rebuilt from enabled channels only, so a parked
+	// channel is absent rather than present-and-filtered.
 	restore := useChannelCache(t,
 		map[int]*Channel{
-			2: {Id: 2, Priority: &priority, Status: common.ChannelStatusEnabled},
 			3: {Id: 3, Priority: &priority, Status: common.ChannelStatusEnabled},
 		},
-		map[string]map[string][]int{"default": {"kimi-k3": {2, 3}}})
+		map[string]map[string][]int{"default": {"kimi-k3": {3}}})
 	defer restore()
 	for i := 0; i < 8; i++ {
 		got, err := GetRandomSatisfiedChannel("default", "kimi-k3", 0, nil, nil)
