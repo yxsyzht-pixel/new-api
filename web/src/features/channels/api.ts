@@ -25,7 +25,6 @@ import type {
   BatchSetTagParams,
   Channel,
   ChannelBalanceResponse,
-  ChannelOpsResponse,
   ChannelTestResponse,
   CopyChannelParams,
   CopyChannelResponse,
@@ -174,11 +173,6 @@ export async function getChannel(id: number): Promise<GetChannelResponse> {
 /**
  * Get channel operations summary for administrators
  */
-export async function getChannelOps(): Promise<ChannelOpsResponse> {
-  const res = await api.get('/api/channel/ops', channelActionConfig())
-  return res.data
-}
-
 /**
  * Create new channel(s)
  * Supports single, batch, and multi-key modes

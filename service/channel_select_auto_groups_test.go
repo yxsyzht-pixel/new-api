@@ -23,7 +23,6 @@ func setupChannelSelectAutoGroupsTest(t *testing.T) *gorm.DB {
 
 	originalDB := model.DB
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled
-	originalRetryTimes := common.RetryTimes
 	originalAutoGroups := setting.AutoGroups2JsonString()
 	originalUsableGroups := setting.UserUsableGroups2JSONString()
 	originalGroupRatios := ratio_setting.GroupRatio2JSONString()
@@ -35,7 +34,6 @@ func setupChannelSelectAutoGroupsTest(t *testing.T) *gorm.DB {
 	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}))
 	model.DB = db
 	common.MemoryCacheEnabled = true
-	common.RetryTimes = 0
 
 	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`[]`))
 	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","vip":"VIP"}`))
@@ -45,7 +43,6 @@ func setupChannelSelectAutoGroupsTest(t *testing.T) *gorm.DB {
 	t.Cleanup(func() {
 		model.DB = originalDB
 		common.MemoryCacheEnabled = originalMemoryCacheEnabled
-		common.RetryTimes = originalRetryTimes
 		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
 		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
 		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalGroupRatios))

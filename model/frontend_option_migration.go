@@ -237,3 +237,16 @@ func migrateLegacyUptimeOptions() error {
 		return tx.Delete(&slugOption).Error
 	})
 }
+
+// retiredRetryTimesOptionKey held a fixed retry count. Retries are now bounded
+// by how many channels can serve the model, so the row every existing
+// deployment still carries has nothing to configure.
+const retiredRetryTimesOptionKey = "RetryTimes"
+
+// isRetiredOptionKey reports whether a stored option no longer configures
+// anything. Such a row is read on every options sync, so it is dropped from the
+// map rather than merely ignored: leaving it there would keep serving a number
+// to the settings page that nothing reads.
+func isRetiredOptionKey(key string) bool {
+	return key == retiredThemeOptionKey || key == retiredRetryTimesOptionKey
+}

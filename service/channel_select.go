@@ -112,8 +112,8 @@ func (p *RetryParam) ResetRetryNextTry() {
 //   - When GetRandomSatisfiedChannel returns nil (priorities exhausted), moves to next group.
 //     当 GetRandomSatisfiedChannel 返回 nil（优先级用完）时，切换到下一个分组。
 //
-// Example flow (2 groups, each with 2 priorities, RetryTimes=3):
-// 示例流程（2个分组，每个有2个优先级，RetryTimes=3）：
+// Example flow (2 groups, each with 2 priorities, 4 candidate channels):
+// 示例流程（2个分组，每个有2个优先级，4个候选渠道）：
 //
 //	Retry=0: GroupA, priority0 (startRetryIndex=0, priorityRetry=0)
 //	         分组A, 优先级0
@@ -187,12 +187,16 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 
 			// Prepare state for next retry
 			// 为下一次重试准备状态
-			if crossGroupRetry && priorityRetry >= common.RetryTimes {
+			// priorityRetry counts the attempts already made in this group, and
+			// this one is still to come, so the group is spent when the attempt
+			// about to happen is its last. Comparing without the +1 leaves the
+			// final account of every group untried.
+			if crossGroupRetry && priorityRetry+1 >= param.GroupCandidateCount(autoGroup) {
 				// Current group has exhausted all retries, prepare to switch to next group
 				// This request still uses current group, but next retry will use next group
 				// 当前分组已用完所有重试次数，准备切换到下一个分组
 				// 本次请求仍使用当前分组，但下次重试将使用下一个分组
-				logger.LogDebug(param.Ctx, "Current group %s retries exhausted (priorityRetry=%d >= RetryTimes=%d), preparing switch to next group for next retry", autoGroup, priorityRetry, common.RetryTimes)
+				logger.LogDebug(param.Ctx, "Current group %s is spent (attempt %d of %d candidates), preparing switch to next group for next retry", autoGroup, priorityRetry+1, param.GroupCandidateCount(autoGroup))
 				common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i+1)
 				// Reset retry counter so outer loop can continue for next group
 				// 重置重试计数器，以便外层循环可以为下一个分组继续
@@ -271,4 +275,44 @@ func pinnedTaskPluginChannelTypes(c *gin.Context, expected string) []int {
 		return nil
 	}
 	return channelTypes
+}
+
+// candidateGroups is the set of groups this request may draw channels from.
+func (p *RetryParam) candidateGroups() []string {
+	if p == nil {
+		return nil
+	}
+	if p.TokenGroup == "auto" {
+		return GetRequestAutoGroups(p.Ctx, common.GetContextKeyString(p.Ctx, constant.ContextKeyUserGroup))
+	}
+	return []string{p.TokenGroup}
+}
+
+// GroupCandidateCount is how many channels could serve this request in one
+// group. The auto-group walk uses it to know when a group is spent.
+func (p *RetryParam) GroupCandidateCount(group string) int {
+	if p == nil {
+		return 0
+	}
+	return model.CountSelectableChannels(group, p.ModelName)
+}
+
+// RetryBudget is how many further attempts this request may make: one per
+// channel that could serve it, less the attempt already under way.
+//
+// This replaced a fixed RetryTimes, which was wrong in both directions at once.
+// Ten was four short of the thirteen accounts behind the busy models here, so
+// three healthy accounts were never reached; and it was nine too many for a
+// model served by one, where every retry after the first had nothing new to
+// try. Retries already exclude the channels a request has been served by, so
+// the useful ceiling is simply how many remain.
+func (p *RetryParam) RetryBudget() int {
+	total := 0
+	for _, group := range p.candidateGroups() {
+		total += p.GroupCandidateCount(group)
+	}
+	if total <= 1 {
+		return 0
+	}
+	return total - 1
 }
