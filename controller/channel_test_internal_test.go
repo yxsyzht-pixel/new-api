@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -480,4 +481,33 @@ func TestTestAllChannelsRejectsExistingActiveTask(t *testing.T) {
 	require.Equal(t, http.StatusConflict, recorder.Code)
 	require.Contains(t, recorder.Body.String(), existing.TaskID)
 	require.Contains(t, recorder.Body.String(), "已有通道测试任务正在运行或等待中")
+}
+
+// The scheduled health check sends a real upstream call. Running it against a
+// channel parked for a spent quota would spend the quota the account is waiting
+// to get back, fail because there is none, and — with auto-disable on — move
+// the channel to auto-disabled, a state the quota recheck job does not look at.
+// Parking would quietly become permanent disabling.
+func TestHealthCheckSkipsChannelsParkedForQuota(t *testing.T) {
+	channels := []*model.Channel{
+		{Id: 1, Status: common.ChannelStatusEnabled},
+		{Id: 2, Status: common.ChannelStatusQuotaExhausted},
+		{Id: 3, Status: common.ChannelStatusManuallyDisabled},
+		{Id: 4, Status: common.ChannelStatusAutoDisabled},
+	}
+
+	var mu sync.Mutex
+	tested := map[int]bool{}
+	runChannelTestWorkers(context.Background(), channels, 1,
+		func(_ context.Context, ch *model.Channel) channelTestSummary {
+			mu.Lock()
+			tested[ch.Id] = true
+			mu.Unlock()
+			return channelTestSummary{}
+		}, nil)
+
+	assert.True(t, tested[1], "an enabled channel is the point of the check")
+	assert.False(t, tested[2], "a channel waiting for a quota reset must not be probed")
+	assert.False(t, tested[3], "a manually disabled channel was already skipped")
+	assert.True(t, tested[4], "an auto-disabled channel is still worth retesting")
 }

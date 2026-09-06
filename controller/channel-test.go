@@ -1005,8 +1005,15 @@ func runChannelTestWorkers(
 						return
 					}
 
+					// A channel parked for a spent quota is skipped, not tested.
+					// The test is a real upstream call, so it would spend the
+					// quota the account is waiting to get back, fail because
+					// there is none, and — with auto-disable on — move the
+					// channel to a state the recheck job does not look at. The
+					// recheck returns it to rotation and real traffic settles it.
 					result := channelTestSummary{}
-					if channel != nil && channel.Status != common.ChannelStatusManuallyDisabled {
+					if channel != nil && channel.Status != common.ChannelStatusManuallyDisabled &&
+						!model.IsChannelParked(channel.Status) {
 						result = run(ctx, channel)
 					}
 
