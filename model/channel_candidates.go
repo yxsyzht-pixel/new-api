@@ -17,14 +17,21 @@ func CountSelectableChannels(group string, modelName string) int {
 	return countSelectableFromDB(group, modelName)
 }
 
+// countSelectableFromCache counts under a single read lock. Reusing the
+// selection helpers here would take the lock twice — once to copy the candidate
+// slice and again to look their statuses up — and build a map and a filtered
+// slice to arrive at a number, on a path every request runs.
 func countSelectableFromCache(group string, modelName string) int {
 	channelSyncLock.RLock()
-	candidates := append([]int(nil), group2model2channels[group][modelName]...)
-	channelSyncLock.RUnlock()
-	if len(candidates) == 0 {
-		return 0
+	defer channelSyncLock.RUnlock()
+
+	selectable := 0
+	for _, id := range group2model2channels[group][modelName] {
+		if channel, ok := channelsIDM[id]; ok && channel != nil && !IsChannelParked(channel.Status) {
+			selectable++
+		}
 	}
-	return len(dropParkedChannels(candidates, parkedFromCache(candidates)))
+	return selectable
 }
 
 func countSelectableFromDB(group string, modelName string) int {

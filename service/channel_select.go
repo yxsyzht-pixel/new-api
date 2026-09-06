@@ -191,12 +191,17 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			// this one is still to come, so the group is spent when the attempt
 			// about to happen is its last. Comparing without the +1 leaves the
 			// final account of every group untried.
-			if crossGroupRetry && priorityRetry+1 >= param.GroupCandidateCount(autoGroup) {
+			//
+			// Counted once and reused: LogDebug evaluates its arguments whatever
+			// the level, so passing the call twice would count again on every
+			// selection to build a line that is usually discarded.
+			groupCandidates := param.GroupCandidateCount(autoGroup)
+			if crossGroupRetry && priorityRetry+1 >= groupCandidates {
 				// Current group has exhausted all retries, prepare to switch to next group
 				// This request still uses current group, but next retry will use next group
 				// 当前分组已用完所有重试次数，准备切换到下一个分组
 				// 本次请求仍使用当前分组，但下次重试将使用下一个分组
-				logger.LogDebug(param.Ctx, "Current group %s is spent (attempt %d of %d candidates), preparing switch to next group for next retry", autoGroup, priorityRetry+1, param.GroupCandidateCount(autoGroup))
+				logger.LogDebug(param.Ctx, "Current group %s is spent (attempt %d of %d candidates), preparing switch to next group for next retry", autoGroup, priorityRetry+1, groupCandidates)
 				common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i+1)
 				// Reset retry counter so outer loop can continue for next group
 				// 重置重试计数器，以便外层循环可以为下一个分组继续
