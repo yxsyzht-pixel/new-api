@@ -213,3 +213,75 @@ func TestAReturnedChannelIsSelectableAgain(t *testing.T) {
 	require.NotNil(t, got, "the recheck cleared the status but selection never saw it")
 	assert.Equal(t, 2, got.Id)
 }
+
+// everyMultiKeyParked decides whether a multi-key account belongs in the parked
+// state or the disabled one, and only the parked state is something the recheck
+// job knows how to undo.
+func TestOnlyAnAccountWhoseKeysAllRanOutIsParked(t *testing.T) {
+	keys := []string{"k1", "k2", "k3"}
+
+	assert.True(t, everyMultiKeyParked(keys, map[int]int{
+		0: common.ChannelStatusQuotaExhausted,
+		1: common.ChannelStatusQuotaExhausted,
+		2: common.ChannelStatusQuotaExhausted,
+	}))
+
+	// One key disabled for a fault means the account is not merely waiting: it
+	// needs looking at, so it must not be parked and silently returned later.
+	assert.False(t, everyMultiKeyParked(keys, map[int]int{
+		0: common.ChannelStatusQuotaExhausted,
+		1: common.ChannelStatusAutoDisabled,
+		2: common.ChannelStatusQuotaExhausted,
+	}), "a key disabled for a fault is not a key waiting for a reset")
+
+	// Nothing recorded is not "all parked".
+	assert.False(t, everyMultiKeyParked(keys, nil))
+	assert.False(t, everyMultiKeyParked(keys, map[int]int{}))
+	assert.False(t, everyMultiKeyParked(nil, map[int]int{0: common.ChannelStatusQuotaExhausted}))
+
+	// A key with no entry is still serving, so the account is not spent.
+	assert.False(t, everyMultiKeyParked(keys, map[int]int{
+		0: common.ChannelStatusQuotaExhausted,
+		1: common.ChannelStatusQuotaExhausted,
+	}), "the third key has no entry, so it is still enabled")
+}
+
+// A refusal on one key of a multi-key account parks that key, not the account.
+// Reporting it as parked would start a five-hour wait for a channel that never
+// stopped serving.
+func TestOneSpentKeyDoesNotParkTheWholeAccount(t *testing.T) {
+	newSelectionDB(t, oneAbility(5), []Channel{{Id: 99, Status: common.ChannelStatusEnabled}})
+	multi := &Channel{Id: 5, Status: common.ChannelStatusEnabled, Key: "k1\nk2"}
+	multi.ChannelInfo.IsMultiKey = true
+	multi.ChannelInfo.MultiKeySize = 2
+	require.NoError(t, DB.Create(multi).Error)
+
+	assert.False(t, MarkChannelQuotaExhausted(5, "k1", "one key spent"),
+		"one key of two is spent, so the account is still serving")
+
+	var after Channel
+	require.NoError(t, DB.First(&after, 5).Error)
+	assert.Equal(t, common.ChannelStatusEnabled, after.Status)
+	assert.Zero(t, after.QuotaExhaustedTime, "an account still serving must not carry a wait")
+}
+
+// When the last key runs out the account really is spent, and it has to land in
+// the parked state rather than the auto-disabled one — the recheck job only
+// knows how to undo the former, so a multi-key account would otherwise wait for
+// an operator that a single-key one never needs.
+func TestTheLastSpentKeyParksTheAccount(t *testing.T) {
+	newSelectionDB(t, oneAbility(6), []Channel{{Id: 98, Status: common.ChannelStatusEnabled}})
+	multi := &Channel{Id: 6, Status: common.ChannelStatusEnabled, Key: "k1\nk2"}
+	multi.ChannelInfo.IsMultiKey = true
+	multi.ChannelInfo.MultiKeySize = 2
+	require.NoError(t, DB.Create(multi).Error)
+
+	require.False(t, MarkChannelQuotaExhausted(6, "k1", "first key spent"))
+	assert.True(t, MarkChannelQuotaExhausted(6, "k2", "last key spent"))
+
+	var after Channel
+	require.NoError(t, DB.First(&after, 6).Error)
+	assert.Equal(t, common.ChannelStatusQuotaExhausted, after.Status,
+		"an account whose keys all ran out is waiting, not broken")
+	assert.NotZero(t, after.QuotaExhaustedTime)
+}

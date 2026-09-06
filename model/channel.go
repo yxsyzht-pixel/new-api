@@ -713,9 +713,19 @@ func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason
 			channel.ChannelInfo.MultiKeyDisabledTime[keyIndex] = common.GetTimestamp()
 		}
 		if !hasEnabledMultiKey(keys, channel.ChannelInfo.MultiKeyStatusList) {
+			// Keys that all ran out of quota park the channel rather than
+			// disabling it: nothing is wrong with it, and the recheck job only
+			// looks for parked channels, so auto-disabling here would leave a
+			// multi-key account waiting for an operator that a single-key one
+			// never needs.
 			channel.Status = common.ChannelStatusAutoDisabled
+			statusReason := "All keys are disabled"
+			if everyMultiKeyParked(keys, channel.ChannelInfo.MultiKeyStatusList) {
+				channel.Status = common.ChannelStatusQuotaExhausted
+				statusReason = "All keys are out of quota"
+			}
 			info := channel.GetOtherInfo()
-			info["status_reason"] = "All keys are disabled"
+			info["status_reason"] = statusReason
 			info["status_time"] = common.GetTimestamp()
 			channel.SetOtherInfo(info)
 		} else if status == common.ChannelStatusEnabled {
@@ -776,9 +786,10 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	shouldUpdateAbilities := false
 	defer func() {
 		if shouldUpdateAbilities {
-			// A parked channel keeps its abilities. Selection filters it out with
-			// a fallback for the all-parked minute; switching the abilities off
-			// here would remove it from the query outright and lose that.
+			// A parked channel keeps its abilities so that parking and unparking
+			// are a status change rather than an ability rebuild. Selection
+			// filters it out; switching the abilities off here would make the
+			// recheck job's status change invisible until the next full sync.
 			err := UpdateAbilityStatus(channelId, status == common.ChannelStatusEnabled || IsChannelParked(status))
 			if err != nil {
 				common.SysLog(fmt.Sprintf("failed to update ability status: channel_id=%d, error=%v", channelId, err))

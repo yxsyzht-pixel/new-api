@@ -82,3 +82,22 @@ func parkedChannelIDs() map[int]bool {
 	}
 	return parked
 }
+
+// everyMultiKeyParked reports whether every key of a multi-key channel is out
+// of quota, as opposed to disabled for a fault. Only then does the channel as a
+// whole belong in the parked state the recheck job knows how to undo.
+func everyMultiKeyParked(keys []string, statusList map[int]int) bool {
+	// No keys is not "every key is parked": the loop below would agree
+	// vacuously and park an account that has nothing recorded about it. A key
+	// missing from the list reads as status zero, which is not parked, so an
+	// empty list needs no guard of its own.
+	if len(keys) == 0 {
+		return false
+	}
+	for i := range keys {
+		if !IsChannelParked(statusList[i]) {
+			return false
+		}
+	}
+	return true
+}

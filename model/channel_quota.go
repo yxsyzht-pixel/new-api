@@ -42,9 +42,20 @@ func MarkChannelQuotaExhausted(channelID int, usingKey string, reason string) bo
 	if !UpdateChannelStatus(channelID, usingKey, common.ChannelStatusQuotaExhausted, reason) {
 		return false
 	}
-	now := common.GetTimestamp()
+	// A multi-key channel with keys left over is still serving: the refusal
+	// parked one key, not the account. Stamping and announcing it as parked
+	// would start a wait for a channel that never stopped, so the status is
+	// read back rather than assumed from the write having succeeded.
+	var parked Channel
+	if err := DB.Select("status").Where("id = ?", channelID).First(&parked).Error; err != nil {
+		common.SysLog(fmt.Sprintf("failed to confirm channel #%d parked: %s", channelID, err.Error()))
+		return false
+	}
+	if !IsChannelParked(parked.Status) {
+		return false
+	}
 	if err := DB.Model(&Channel{}).Where("id = ?", channelID).
-		Update("quota_exhausted_time", now).Error; err != nil {
+		Update("quota_exhausted_time", common.GetTimestamp()).Error; err != nil {
 		common.SysLog(fmt.Sprintf("failed to stamp channel #%d as quota exhausted: %s", channelID, err.Error()))
 	}
 	common.SysLog(fmt.Sprintf("channel #%d parked: upstream plan quota is spent (%s)", channelID, common.LocalLogPreview(reason)))
