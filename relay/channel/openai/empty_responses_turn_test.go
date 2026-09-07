@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -16,7 +18,7 @@ import (
 // gpt-6-astra answered 15 of 19 requests this way on 2026-09-07 while the same
 // accounts served other models at a 2% empty rate.
 func TestAnEmptyTurnIsTheOneWithNothingInIt(t *testing.T) {
-	assert.True(t, isEmptyResponsesTurn(false, 0, &dto.Usage{}),
+	assert.True(t, isEmptyResponsesTurn(endedWith(relaycommon.StreamEndReasonEOF), false, 0, &dto.Usage{}),
 		"no content, nothing buffered and no usage is the capacity refusal")
 }
 
@@ -43,7 +45,7 @@ func TestAnythingDeliveredMeansTheTurnHappened(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.False(t, isEmptyResponsesTurn(tt.contentStarted, tt.bufferedText, tt.usage))
+			assert.False(t, isEmptyResponsesTurn(endedWith(relaycommon.StreamEndReasonEOF), tt.contentStarted, tt.bufferedText, tt.usage))
 		})
 	}
 }
@@ -52,7 +54,7 @@ func TestAnythingDeliveredMeansTheTurnHappened(t *testing.T) {
 // truncated path's business, which runs before this and has already decided
 // whether to retry; claiming it here would retry twice over.
 func TestNoUsageObjectIsNotThisFunctionsCall(t *testing.T) {
-	assert.False(t, isEmptyResponsesTurn(false, 0, nil))
+	assert.False(t, isEmptyResponsesTurn(endedWith(relaycommon.StreamEndReasonEOF), false, 0, nil))
 }
 
 // The predicate only matters if the error it produces is one the relay retries.
@@ -69,4 +71,42 @@ func TestTheEmptyTurnErrorIsOneTheRelayWillRetry(t *testing.T) {
 		"shouldRetry refuses anything in the 2xx range outright")
 	assert.True(t, operation_setting.ShouldRetryByStatusCode(err.StatusCode),
 		"the configured retry codes have to include this one, or the fix is inert")
+}
+
+// endedWith builds a finished stream status with the given end reason.
+func endedWith(reason relaycommon.StreamEndReason) *relaycommon.StreamStatus {
+	status := relaycommon.NewStreamStatus()
+	status.SetEndReason(reason, nil)
+	return status
+}
+
+// A caller who hung up leaves exactly the shape an empty turn has: no content,
+// no usage. Retrying it spends three more upstream calls on an answer nobody is
+// waiting for, and charges three channels with an error for something that was
+// never their fault. Deployed without this guard, 23 of 23 firings in the first
+// thirteen minutes were client disconnects and none were upstream faults.
+func TestACallerHangingUpIsNotAnEmptyTurn(t *testing.T) {
+	assert.False(t, isEmptyResponsesTurn(
+		endedWith(relaycommon.StreamEndReasonClientGone), false, 0, &dto.Usage{}),
+		"a hangup is not the upstream failing to answer")
+}
+
+// The reasons that do mean the upstream answered with nothing still retry, or
+// the guard above would have swallowed the case it was written for.
+func TestAStreamThatEndedOnItsOwnStillCountsAsEmpty(t *testing.T) {
+	for _, reason := range []relaycommon.StreamEndReason{
+		relaycommon.StreamEndReasonEOF,
+		relaycommon.StreamEndReasonDone,
+		relaycommon.StreamEndReasonHandlerStop,
+	} {
+		t.Run(string(reason), func(t *testing.T) {
+			assert.True(t, isEmptyResponsesTurn(endedWith(reason), false, 0, &dto.Usage{}))
+		})
+	}
+}
+
+// A nil status is a stream that never recorded how it ended. Treating that as a
+// hangup would disable the check on every path that does not track status.
+func TestNoStatusStillEvaluatesTheTurn(t *testing.T) {
+	assert.True(t, isEmptyResponsesTurn(nil, false, 0, &dto.Usage{}))
 }

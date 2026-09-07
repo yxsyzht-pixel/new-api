@@ -377,7 +377,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	// than a spent account: a sibling account may well have room. Nothing has
 	// been committed to the client, so the retry is free of the splicing problem
 	// the truncated path above has to reason about.
-	if isEmptyResponsesTurn(contentStarted.Load(), responseTextBuilder.Len(), usage) {
+	if isEmptyResponsesTurn(info.StreamStatus, contentStarted.Load(), responseTextBuilder.Len(), usage) {
 		return nil, types.NewError(
 			fmt.Errorf("upstream returned an empty response stream (%s)", info.StreamStatus.Summary()),
 			types.ErrorCodeBadResponse)
@@ -413,7 +413,15 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 // counts as an answer. And usage means the upstream did work it intends to
 // charge for, which is the case where a genuinely empty completion — a model
 // that chose to say nothing — must not be mistaken for a failure.
-func isEmptyResponsesTurn(contentStarted bool, bufferedText int, usage *dto.Usage) bool {
+func isEmptyResponsesTurn(status *relaycommon.StreamStatus, contentStarted bool, bufferedText int, usage *dto.Usage) bool {
+	// A caller who hung up leaves exactly this shape behind — no content, no
+	// usage — and retrying it spends three more upstream calls on an answer
+	// nobody is waiting for. It is also not evidence of anything wrong upstream,
+	// so charging three channels with an error for it is doubly wrong. The
+	// truncated path above declines this case for the same reason.
+	if status != nil && status.EndReason == relaycommon.StreamEndReasonClientGone {
+		return false
+	}
 	if contentStarted || bufferedText > 0 || usage == nil {
 		return false
 	}
