@@ -1,6 +1,10 @@
 package constant
 
 var StreamingTimeout int
+
+// StreamFirstChunkTimeout is how many seconds an upstream may send nothing at
+// all before the turn is retried on another channel. Zero disables it.
+var StreamFirstChunkTimeout int
 var DifyDebug bool
 var MaxFileDownloadMB int
 var StreamScannerMaxBufferMB int

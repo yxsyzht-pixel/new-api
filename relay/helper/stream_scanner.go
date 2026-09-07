@@ -88,10 +88,20 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 	streamingTimeout := time.Duration(constant.StreamingTimeout) * time.Second
 
+	// The first chunk gets a much shorter deadline than the rest of the stream.
+	// StreamingTimeout is sized for an upstream that is generating slowly; an
+	// upstream with no capacity for the model does something else entirely and
+	// sends nothing at all. Waiting out five minutes for that is waiting for
+	// nobody: on 2026-09-07 the caller gave up on gpt-6-astra after 3.5 seconds
+	// with received=0, so the gateway never got to decide anything. Failing fast
+	// hands the turn to the truncated-stream path, which retries it on a sibling
+	// account while the caller is still there to receive the answer.
+	firstChunkTimeout := firstChunkDeadline(streamingTimeout)
+
 	var (
 		stopChan    = make(chan bool, 3) // 增加缓冲区避免阻塞
 		scanner     = NewStreamScanner(resp.Body)
-		ticker      = time.NewTicker(streamingTimeout)
+		ticker      = time.NewTicker(firstChunkTimeout)
 		pingTicker  *time.Ticker
 		writeMutex  sync.Mutex     // Mutex to protect concurrent writes
 		wg          sync.WaitGroup // 用于等待所有 goroutine 退出
@@ -253,6 +263,8 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			default:
 			}
 
+			// Past the first chunk the upstream is answering, so the generous
+			// deadline applies from here on.
 			ticker.Reset(streamingTimeout)
 			data := scanner.Text()
 			logger.LogDebug(c, "stream scanner data: %s", data)
@@ -331,4 +343,21 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	default:
 		logger.LogError(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
 	}
+}
+
+// firstChunkDeadline is how long an upstream may say nothing at all before the
+// turn is given to another account.
+//
+// It is deliberately short: an upstream that has accepted the request and is
+// working sends something almost at once, while one with no capacity for the
+// model sends nothing and would otherwise hold the connection until the full
+// streaming timeout — long after the caller has given up. It never exceeds the
+// streaming timeout, so lowering STREAMING_TIMEOUT below the default keeps its
+// meaning as the outer bound.
+func firstChunkDeadline(streamingTimeout time.Duration) time.Duration {
+	configured := time.Duration(constant.StreamFirstChunkTimeout) * time.Second
+	if configured <= 0 || configured > streamingTimeout {
+		return streamingTimeout
+	}
+	return configured
 }
