@@ -365,6 +365,24 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		return nil, upstreamStreamErr
 	}
 
+	// A stream that ended properly and carried nothing at all is not a turn the
+	// caller can use. The upstream says so this way when a model is at capacity:
+	// it accepts the request, holds the connection — a minute is normal — then
+	// closes with a terminal event, no output and no usage. Counted as success
+	// it costs the caller their turn and tells them nothing; gpt-6-astra
+	// answered 15 of 19 requests this way on 2026-09-07, while the same accounts
+	// served other models at a 2% empty rate.
+	//
+	// Retrying is worth it because the emptiness is per-model capacity rather
+	// than a spent account: a sibling account may well have room. Nothing has
+	// been committed to the client, so the retry is free of the splicing problem
+	// the truncated path above has to reason about.
+	if isEmptyResponsesTurn(contentStarted.Load(), responseTextBuilder.Len(), usage) {
+		return nil, types.NewError(
+			fmt.Errorf("upstream returned an empty response stream (%s)", info.StreamStatus.Summary()),
+			types.ErrorCodeBadResponse)
+	}
+
 	if usage.CompletionTokens == 0 {
 		// 计算输出文本的 token 数量
 		tempStr := responseTextBuilder.String()
@@ -385,4 +403,19 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	}
 
 	return usage, nil
+}
+
+// isEmptyResponsesTurn reports whether a stream that ended cleanly delivered
+// nothing whatsoever.
+//
+// All three signals have to agree. Content already on the wire means the caller
+// has an answer, however short. Text accumulated but not yet flushed still
+// counts as an answer. And usage means the upstream did work it intends to
+// charge for, which is the case where a genuinely empty completion — a model
+// that chose to say nothing — must not be mistaken for a failure.
+func isEmptyResponsesTurn(contentStarted bool, bufferedText int, usage *dto.Usage) bool {
+	if contentStarted || bufferedText > 0 || usage == nil {
+		return false
+	}
+	return usage.PromptTokens == 0 && usage.CompletionTokens == 0 && usage.TotalTokens == 0
 }
