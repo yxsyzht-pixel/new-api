@@ -105,12 +105,18 @@ func NewChannelSortOptions(sortBy string, sortOrder string, idSort bool) Channel
 	}
 }
 
+// Apply orders the query, always ending on id.
+//
+// Without that last key the order is only as determined as the chosen column
+// is: every channel here shares priority 11 and weight 100, so the database was
+// free to return them in any order it liked and the list rearranged itself on
+// every refresh. Sorting by a column full of ties is not sorting.
 func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
 	if columnName, ok := channelSortColumns[options.SortBy]; ok {
-		return query.Order(clause.OrderByColumn{
-			Column: clause.Column{Name: columnName},
-			Desc:   options.SortOrder != "asc",
-		})
+		descending := options.SortOrder != "asc"
+		return query.
+			Order(clause.OrderByColumn{Column: clause.Column{Name: columnName}, Desc: descending}).
+			Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}, Desc: descending})
 	}
 	if options.IDSort {
 		return query.Order(clause.OrderByColumn{
@@ -118,10 +124,9 @@ func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
 			Desc:   true,
 		})
 	}
-	return query.Order(clause.OrderByColumn{
-		Column: clause.Column{Name: "priority"},
-		Desc:   true,
-	})
+	return query.
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "priority"}, Desc: true}).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}, Desc: true})
 }
 
 func resolveChannelSortOptions(idSort bool, sortOptions []ChannelSortOptions) ChannelSortOptions {
@@ -957,7 +962,10 @@ func SearchTags(keyword string, group string, model string, idSort bool) ([]*str
 		baseURLCol = `"base_url"`
 	}
 
-	order := "priority desc"
+	// id is the last key so the order is total. Paging over a column full of
+	// ties lets the database reshuffle between pages, which shows the same
+	// channel twice and hides another entirely.
+	order := "priority desc, id desc"
 	if idSort {
 		order = "id desc"
 	}
@@ -1154,7 +1162,9 @@ func CountChannelTags(query *gorm.DB) (int64, error) {
 // Get channels of specified type with pagination
 func GetChannelsByType(startIdx int, num int, idSort bool, channelType int) ([]*Channel, error) {
 	var channels []*Channel
-	order := "priority desc"
+	// See the note on the paged search above: without id the page boundaries
+	// move under the reader.
+	order := "priority desc, id desc"
 	if idSort {
 		order = "id desc"
 	}
