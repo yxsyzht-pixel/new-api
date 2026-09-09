@@ -43,7 +43,14 @@ const (
 func buildImageGenerationRequest(request dto.ImageRequest, sources []imageSource) (*dto.OpenAIResponsesRequest, error) {
 	prompt := strings.TrimSpace(request.Prompt)
 	if prompt == "" {
-		return nil, fmt.Errorf("codex channel: prompt is required for image generation")
+		// This is the gateway's own reading of the caller's request, so no account
+		// can answer it differently. An untyped error would default to 500, a status
+		// the retry ranges treat as worth another account: on 2026-09-09 one empty
+		// prompt walked all twelve Codex channels inside a second and left an error
+		// recorded against each of them.
+		return nil, types.NewErrorWithStatusCode(
+			errors.New("codex channel: prompt is required for image generation"),
+			types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
 
 	content := []map[string]any{{"type": "input_text", "text": prompt}}

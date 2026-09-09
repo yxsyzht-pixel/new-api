@@ -3,6 +3,7 @@ package codex
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,6 +80,29 @@ func TestBuildImageGenerationRequest(t *testing.T) {
 
 // The channel must advertise the image model, otherwise selection never routes an
 // images request here.
+// An empty prompt is the caller's mistake, and the gateway sees it before any
+// account is asked. Left untyped the error defaulted to 500, which the retry
+// ranges read as "try the next account": on 2026-09-09 a single such request
+// walked all twelve Codex channels inside a second and recorded an error
+// against each. The status and the skip-retry flag are what stop that, so both
+// are asserted here rather than only the message.
+func TestAnEmptyPromptIsRejectedAsTheCallersErrorAndNotRetried(t *testing.T) {
+	for _, prompt := range []string{"", "   ", "\t\n"} {
+		req, err := buildImageGenerationRequest(dto.ImageRequest{
+			Model:  ImageModelName,
+			Prompt: prompt,
+		}, nil)
+		require.Error(t, err)
+		require.Nil(t, req)
+
+		var apiErr *types.NewAPIError
+		require.True(t, errors.As(err, &apiErr), "错误必须是类型化的,否则会落到 500 默认值")
+		assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+		assert.Equal(t, types.ErrorCodeInvalidRequest, apiErr.GetErrorCode())
+		assert.True(t, types.IsSkipRetryError(apiErr), "空 prompt 换个账号也答不出来,不该重试")
+	}
+}
+
 func TestImageModelIsAdvertised(t *testing.T) {
 	assert.Contains(t, ModelList, ImageModelName)
 }

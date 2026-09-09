@@ -239,7 +239,12 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 			}
 		}
 		if prompt == "" {
-			return nil, errors.New("prompt is required for image generation")
+			// Typed for the same reason as the Codex channel's copy of this check:
+			// an untyped error defaults to 500 and is retried on every sibling
+			// account, none of which can supply a prompt the caller left out.
+			return nil, types.NewErrorWithStatusCode(
+				errors.New("prompt is required for image generation"),
+				types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
 
 		imgReq := dto.ImageRequest{
