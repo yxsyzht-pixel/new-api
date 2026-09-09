@@ -41,6 +41,7 @@ import type {
   UserAnalyticsMetric,
   UserChartsFilters,
 } from '@/features/dashboard/types'
+import { requireServerSuccess } from '@/lib/server-error-message'
 import { getRollingDateRange } from '@/lib/time'
 import { VCHART_OPTION } from '@/lib/vchart'
 
@@ -189,11 +190,14 @@ export function UserCharts(props: UserChartsProps) {
       dimension,
       timeRange,
     ],
-    queryFn: () => {
-      if (isSelfScope) return getSelfQuotaDataByTokens(timeRange)
-      return dimension === 'token'
-        ? getQuotaDataByTokens(timeRange)
-        : getUserQuotaDataByUsers(timeRange)
+    queryFn: async () => {
+      if (isSelfScope)
+        return requireServerSuccess(await getSelfQuotaDataByTokens(timeRange))
+      return requireServerSuccess(
+        dimension === 'token'
+          ? await getQuotaDataByTokens(timeRange)
+          : await getUserQuotaDataByUsers(timeRange)
+      )
     },
     select: (res) => (res.success ? res.data : []),
     staleTime: 60_000,

@@ -16,27 +16,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { SystemBehaviorSection } from "../general/system-behavior-section";
-import { EmailSettingsSection } from "../integrations/email-settings-section";
-import { MonitoringSettingsSection } from "../integrations/monitoring-settings-section";
-import { WorkerSettingsSection } from "../integrations/worker-settings-section";
-import { LogSettingsSection } from "../maintenance/log-settings-section";
-import { PerformanceSection } from "../maintenance/performance-section";
-import { UpdateCheckerSection } from "../maintenance/update-checker-section";
-import type { OperationsSettings } from "../types";
-import { ChatRecordSection } from "./chat-record-section";
-import { StaffDirectorySection } from "./staff-directory-section";
-
-import { createSectionRegistry } from "../utils/section-registry";
+import { SystemBehaviorSection } from '../general/system-behavior-section'
+import { EmailSettingsSection } from '../integrations/email-settings-section'
+import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
+import { WorkerSettingsSection } from '../integrations/worker-settings-section'
+import { LogSettingsSection } from '../maintenance/log-settings-section'
+import { PerformanceSection } from '../maintenance/performance-section'
+import { UpdateCheckerSection } from '../maintenance/update-checker-section'
+import type { OperationsSettings } from '../types'
+import { createSectionRegistry } from '../utils/section-registry'
+import { ChatRecordSection } from './chat-record-section'
+import { StaffDirectorySection } from './staff-directory-section'
 
 // Byte-valued settings are shown in megabytes; the option itself stays in bytes.
 const toMb = (value: number | undefined, fallback: number) =>
-  Math.max(1, Math.round((value ?? fallback) / (1024 * 1024)));
+  Math.max(1, Math.round((value ?? fallback) / (1024 * 1024)))
 
 const OPERATIONS_SECTIONS = [
   {
-    id: "behavior",
-    titleKey: "System Behavior",
+    id: 'behavior',
+    titleKey: 'System Behavior',
     build: (settings: OperationsSettings) => (
       <SystemBehaviorSection
         defaultValues={{
@@ -48,27 +47,27 @@ const OPERATIONS_SECTIONS = [
     ),
   },
   {
-    id: "alerts",
-    titleKey: "Monitoring & Alerts",
+    id: 'alerts',
+    titleKey: 'Monitoring & Alerts',
     build: (settings: OperationsSettings) => (
       <MonitoringSettingsSection
         defaultValues={{
           QuotaRemindThreshold: settings.QuotaRemindThreshold,
-          "perf_metrics_setting.enabled":
-            settings["perf_metrics_setting.enabled"] ?? true,
-          "perf_metrics_setting.flush_interval":
-            settings["perf_metrics_setting.flush_interval"] ?? 5,
-          "perf_metrics_setting.bucket_time":
-            settings["perf_metrics_setting.bucket_time"] ?? "hour",
-          "perf_metrics_setting.retention_days":
-            settings["perf_metrics_setting.retention_days"] ?? 0,
+          'perf_metrics_setting.enabled':
+            settings['perf_metrics_setting.enabled'] ?? true,
+          'perf_metrics_setting.flush_interval':
+            settings['perf_metrics_setting.flush_interval'] ?? 5,
+          'perf_metrics_setting.bucket_time':
+            settings['perf_metrics_setting.bucket_time'] ?? 'hour',
+          'perf_metrics_setting.retention_days':
+            settings['perf_metrics_setting.retention_days'] ?? 0,
         }}
       />
     ),
   },
   {
-    id: "email",
-    titleKey: "SMTP Email",
+    id: 'email',
+    titleKey: 'SMTP Email',
     build: (settings: OperationsSettings) => (
       <EmailSettingsSection
         defaultValues={{
@@ -86,8 +85,8 @@ const OPERATIONS_SECTIONS = [
     ),
   },
   {
-    id: "worker",
-    titleKey: "Worker Proxy",
+    id: 'worker',
+    titleKey: 'Worker Proxy',
     build: (settings: OperationsSettings) => (
       <WorkerSettingsSection
         defaultValues={{
@@ -100,8 +99,8 @@ const OPERATIONS_SECTIONS = [
     ),
   },
   {
-    id: "logs",
-    titleKey: "Log Maintenance",
+    id: 'logs',
+    titleKey: 'Log Maintenance',
     build: (settings: OperationsSettings) => (
       <LogSettingsSection
         defaultEnabled={Boolean(settings.LogConsumeEnabled)}
@@ -109,129 +108,129 @@ const OPERATIONS_SECTIONS = [
     ),
   },
   {
-    id: "performance",
-    titleKey: "Performance",
+    id: 'performance',
+    titleKey: 'Performance',
     build: (settings: OperationsSettings) => (
       <PerformanceSection
         defaultValues={{
-          "performance_setting.disk_cache_enabled":
-            settings["performance_setting.disk_cache_enabled"] ?? false,
-          "performance_setting.disk_cache_threshold_mb":
-            settings["performance_setting.disk_cache_threshold_mb"] ?? 10,
-          "performance_setting.disk_cache_max_size_mb":
-            settings["performance_setting.disk_cache_max_size_mb"] ?? 1024,
-          "performance_setting.disk_cache_path":
-            settings["performance_setting.disk_cache_path"] ?? "",
-          "performance_setting.monitor_enabled":
-            settings["performance_setting.monitor_enabled"] ?? false,
-          "performance_setting.monitor_cpu_threshold":
-            settings["performance_setting.monitor_cpu_threshold"] ?? 90,
-          "performance_setting.monitor_memory_threshold":
-            settings["performance_setting.monitor_memory_threshold"] ?? 90,
-          "performance_setting.monitor_disk_threshold":
-            settings["performance_setting.monitor_disk_threshold"] ?? 95,
+          'performance_setting.disk_cache_enabled':
+            settings['performance_setting.disk_cache_enabled'] ?? false,
+          'performance_setting.disk_cache_threshold_mb':
+            settings['performance_setting.disk_cache_threshold_mb'] ?? 10,
+          'performance_setting.disk_cache_max_size_mb':
+            settings['performance_setting.disk_cache_max_size_mb'] ?? 1024,
+          'performance_setting.disk_cache_path':
+            settings['performance_setting.disk_cache_path'] ?? '',
+          'performance_setting.monitor_enabled':
+            settings['performance_setting.monitor_enabled'] ?? false,
+          'performance_setting.monitor_cpu_threshold':
+            settings['performance_setting.monitor_cpu_threshold'] ?? 90,
+          'performance_setting.monitor_memory_threshold':
+            settings['performance_setting.monitor_memory_threshold'] ?? 90,
+          'performance_setting.monitor_disk_threshold':
+            settings['performance_setting.monitor_disk_threshold'] ?? 95,
         }}
       />
     ),
   },
   {
-    id: "chat-record",
-    titleKey: "Chat transcript recording",
+    id: 'chat-record',
+    titleKey: 'Chat transcript recording',
     build: (settings: OperationsSettings) => (
       <ChatRecordSection
         defaultValues={{
-          enabled: settings["chat_record_setting.enabled"] ?? false,
-          host: settings["chat_record_setting.host"] ?? "",
-          port: settings["chat_record_setting.port"] || "5432",
-          database: settings["chat_record_setting.database"] ?? "",
-          user: settings["chat_record_setting.user"] ?? "",
+          enabled: settings['chat_record_setting.enabled'] ?? false,
+          host: settings['chat_record_setting.host'] ?? '',
+          port: settings['chat_record_setting.port'] || '5432',
+          database: settings['chat_record_setting.database'] ?? '',
+          user: settings['chat_record_setting.user'] ?? '',
           // Never sent to the page; an empty box means "keep the saved one".
-          password: "",
-          sslMode: settings["chat_record_setting.ssl_mode"] || "disable",
-          storeFiles: settings["chat_record_setting.store_files"] ?? true,
+          password: '',
+          sslMode: settings['chat_record_setting.ssl_mode'] || 'disable',
+          storeFiles: settings['chat_record_setting.store_files'] ?? true,
           fileRoot:
-            settings["chat_record_setting.file_root"] ||
-            "data/chat-record-files",
+            settings['chat_record_setting.file_root'] ||
+            'data/chat-record-files',
           maxFileMb: toMb(
-            settings["chat_record_setting.max_file_bytes"],
-            20 * 1024 * 1024,
+            settings['chat_record_setting.max_file_bytes'],
+            20 * 1024 * 1024
           ),
           autoMessagePatterns:
-            settings["chat_record_setting.auto_message_patterns"] ?? "",
+            settings['chat_record_setting.auto_message_patterns'] ?? '',
           automationModels:
-            settings["chat_record_setting.automation_models"] ?? "",
+            settings['chat_record_setting.automation_models'] ?? '',
           memoryEnabled:
-            settings["chat_record_setting.memory_enabled"] ?? false,
-          memoryBaseUrl: settings["chat_record_setting.memory_base_url"] ?? "",
-          memoryApiKey: "",
+            settings['chat_record_setting.memory_enabled'] ?? false,
+          memoryBaseUrl: settings['chat_record_setting.memory_base_url'] ?? '',
+          memoryApiKey: '',
           memoryWorkspace:
-            settings["chat_record_setting.memory_workspace"] ?? "yxsy",
+            settings['chat_record_setting.memory_workspace'] ?? 'yxsy',
           memoryPeerTemplate:
-            settings["chat_record_setting.memory_peer_template"] ??
-            "{staff_id}",
+            settings['chat_record_setting.memory_peer_template'] ??
+            '{staff_id}',
           memoryAssistantPeer:
-            settings["chat_record_setting.memory_assistant_peer"] ??
-            "{agent}-{staff_id}",
+            settings['chat_record_setting.memory_assistant_peer'] ??
+            '{agent}-{staff_id}',
           memorySessionMode:
-            settings["chat_record_setting.memory_session_mode"] ?? "person",
+            settings['chat_record_setting.memory_session_mode'] ?? 'person',
           // Only the person is observed: the gateway writes to the store and
           // never reads back, so an assistant-side picture here has no reader.
           memoryUserObserveMe:
-            settings["chat_record_setting.memory_user_observe_me"] ?? true,
+            settings['chat_record_setting.memory_user_observe_me'] ?? true,
           memoryUserObserveOthers:
-            settings["chat_record_setting.memory_user_observe_others"] ?? false,
+            settings['chat_record_setting.memory_user_observe_others'] ?? false,
           memoryAiObserveMe:
-            settings["chat_record_setting.memory_ai_observe_me"] ?? false,
+            settings['chat_record_setting.memory_ai_observe_me'] ?? false,
           memoryAiObserveOthers:
-            settings["chat_record_setting.memory_ai_observe_others"] ?? false,
-          memoryMinChars: settings["chat_record_setting.memory_min_chars"] ?? 4,
+            settings['chat_record_setting.memory_ai_observe_others'] ?? false,
+          memoryMinChars: settings['chat_record_setting.memory_min_chars'] ?? 4,
           memoryMaxChars:
-            settings["chat_record_setting.memory_max_chars"] ?? 20000,
-          queueSize: settings["chat_record_setting.queue_size"] ?? 4096,
-          workers: settings["chat_record_setting.workers"] ?? 4,
+            settings['chat_record_setting.memory_max_chars'] ?? 20000,
+          queueSize: settings['chat_record_setting.queue_size'] ?? 4096,
+          workers: settings['chat_record_setting.workers'] ?? 4,
           maxContentChars:
-            settings["chat_record_setting.max_content_chars"] ?? 32000,
+            settings['chat_record_setting.max_content_chars'] ?? 32000,
           maxQueuedMb: toMb(
-            settings["chat_record_setting.max_queued_bytes"],
-            64 * 1024 * 1024,
+            settings['chat_record_setting.max_queued_bytes'],
+            64 * 1024 * 1024
           ),
           memoryMaxQueuedMb: toMb(
-            settings["chat_record_setting.memory_max_queued_bytes"],
-            16 * 1024 * 1024,
+            settings['chat_record_setting.memory_max_queued_bytes'],
+            16 * 1024 * 1024
           ),
           fileRetentionDays:
-            settings["chat_record_setting.file_retention_days"] ?? 0,
+            settings['chat_record_setting.file_retention_days'] ?? 0,
           recordRetentionDays:
-            settings["chat_record_setting.record_retention_days"] ?? 0,
+            settings['chat_record_setting.record_retention_days'] ?? 0,
         }}
       />
     ),
   },
   {
-    id: "staff-directory",
-    titleKey: "Staff directory",
+    id: 'staff-directory',
+    titleKey: 'Staff directory',
     build: (settings: OperationsSettings) => (
       <StaffDirectorySection
         defaultValues={{
-          enabled: settings["staff_directory_setting.enabled"] ?? false,
+          enabled: settings['staff_directory_setting.enabled'] ?? false,
           baseUrl:
-            settings["staff_directory_setting.base_url"] ??
-            "https://datas.vyxsy.com",
-          appId: settings["staff_directory_setting.app_id"] ?? "",
-          appSecret: "",
+            settings['staff_directory_setting.base_url'] ??
+            'https://datas.vyxsy.com',
+          appId: settings['staff_directory_setting.app_id'] ?? '',
+          appSecret: '',
           requireDirectory:
-            settings["staff_directory_setting.require_directory"] ?? true,
+            settings['staff_directory_setting.require_directory'] ?? true,
         }}
       />
     ),
   },
   {
-    id: "update-checker",
-    titleKey: "System maintenance",
+    id: 'update-checker',
+    titleKey: 'System maintenance',
     build: (
       _settings: OperationsSettings,
       currentVersion?: string | null,
-      startTime?: number | null,
+      startTime?: number | null
     ) => (
       <UpdateCheckerSection
         currentVersion={currentVersion}
@@ -239,9 +238,9 @@ const OPERATIONS_SECTIONS = [
       />
     ),
   },
-] as const;
+] as const
 
-export type OperationsSectionId = (typeof OPERATIONS_SECTIONS)[number]["id"];
+export type OperationsSectionId = (typeof OPERATIONS_SECTIONS)[number]['id']
 
 const operationsRegistry = createSectionRegistry<
   OperationsSectionId,
@@ -249,14 +248,14 @@ const operationsRegistry = createSectionRegistry<
   [string | null | undefined, number | null | undefined]
 >({
   sections: OPERATIONS_SECTIONS,
-  defaultSection: "behavior",
-  basePath: "/system-settings/operations",
-  urlStyle: "path",
-});
+  defaultSection: 'behavior',
+  basePath: '/system-settings/operations',
+  urlStyle: 'path',
+})
 
-export const OPERATIONS_SECTION_IDS = operationsRegistry.sectionIds;
-export const OPERATIONS_DEFAULT_SECTION = operationsRegistry.defaultSection;
+export const OPERATIONS_SECTION_IDS = operationsRegistry.sectionIds
+export const OPERATIONS_DEFAULT_SECTION = operationsRegistry.defaultSection
 export const getOperationsSectionNavItems =
-  operationsRegistry.getSectionNavItems;
-export const getOperationsSectionContent = operationsRegistry.getSectionContent;
-export const getOperationsSectionMeta = operationsRegistry.getSectionMeta;
+  operationsRegistry.getSectionNavItems
+export const getOperationsSectionContent = operationsRegistry.getSectionContent
+export const getOperationsSectionMeta = operationsRegistry.getSectionMeta

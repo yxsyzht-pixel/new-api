@@ -1,3 +1,4 @@
+import { ExternalLink, Loader2 } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -18,8 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { type ReactNode, useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-
-import { ExternalLink, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'

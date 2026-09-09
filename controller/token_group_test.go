@@ -94,10 +94,14 @@ func TestAddTokenRejectsGroupOutsideUsableGroups(t *testing.T) {
 
 	response := decodeAPIResponse(t, recorder)
 	assert.False(t, response.Success)
-	// The suite does not call i18n.Init, so Translate hands back the key
-	// itself; that the rejection is this one and not some other refusal is
-	// what matters here. The rendered wording is covered in the i18n package.
-	assert.Equal(t, i18n.MsgTokenGroupInvalid, response.Message)
+	// What matters here is that the refusal is this one and not some other.
+	// The message is rendered the same way the handler renders it rather than
+	// compared against the bare key: whether Translate hands back the key or a
+	// localized sentence depends on i18n.Init, and other tests in this package
+	// now run it, so the key form only held while nothing else did.
+	assert.Equal(t,
+		common.TranslateMessage(ctx, i18n.MsgTokenGroupInvalid, map[string]any{"Group": "svip"}),
+		response.Message)
 	assert.Zero(t, countTokensNamed(t, "escalate"), "a refused request must not leave a key behind")
 }
 

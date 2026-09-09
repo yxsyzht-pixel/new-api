@@ -43,7 +43,7 @@ type ChatToResponsesStreamState struct {
 	hostedByID         map[string]*chatToResponsesHostedTool
 	outputOrder        []chatToResponsesOutputRef
 	text               strings.Builder
-	annotations        []interface{}
+	annotations        []any
 	reasoning          strings.Builder
 }
 
@@ -735,7 +735,7 @@ func (s *ChatToResponsesStreamState) reasoningID() string {
 func (s *ChatToResponsesStreamState) messageOutput(status string) *dto.ResponsesOutput {
 	annotations := s.annotations
 	if annotations == nil {
-		annotations = []interface{}{}
+		annotations = []any{}
 	}
 	return &dto.ResponsesOutput{
 		Type:   responsesOutputTypeMessage,
@@ -818,7 +818,7 @@ func hostedJSONString(value []byte) (json.RawMessage, error) {
 	if len(value) == 0 {
 		return json.RawMessage(`""`), nil
 	}
-	if !json.Valid(value) {
+	if !kitutil.Valid(value) {
 		return nil, fmt.Errorf("invalid JSON payload")
 	}
 	encoded, err := kitutil.Marshal(string(value))
@@ -832,7 +832,7 @@ func hostedResultString(value []byte) (json.RawMessage, error) {
 	if len(value) == 0 {
 		return json.RawMessage(`""`), nil
 	}
-	if !json.Valid(value) {
+	if !kitutil.Valid(value) {
 		return nil, fmt.Errorf("invalid JSON payload")
 	}
 	if kitutil.GetJsonType(value) == "string" {

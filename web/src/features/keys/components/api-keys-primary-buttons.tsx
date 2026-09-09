@@ -16,24 +16,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Plus } from "lucide-react";
-import { useTranslation } from "react-i18next";
+import { Plus } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button'
 
-import { useApiKeys } from "./api-keys-provider";
-import { ApiKeysSheetButtons } from "./api-keys-sheet-buttons";
+import { useApiKeys } from './api-keys-provider'
+import { ApiKeysSheetButtons } from './api-keys-sheet-buttons'
 
 export function ApiKeysPrimaryButtons() {
-  const { t } = useTranslation();
-  const { setOpen } = useApiKeys();
+  const { t } = useTranslation()
+  const { setOpen } = useApiKeys()
   return (
-    <div className="flex gap-2">
+    <div className='flex gap-2'>
       <ApiKeysSheetButtons />
-      <Button size="sm" onClick={() => setOpen("create")}>
-        <Plus className="h-4 w-4" />
-        {t("Create API Key")}
+      <Button size='sm' onClick={() => setOpen('create')}>
+        <Plus className='h-4 w-4' />
+        {t('Create API Key')}
       </Button>
     </div>
-  );
+  )
 }

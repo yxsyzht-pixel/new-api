@@ -16,98 +16,88 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from "@tanstack/react-query";
-import type { ColumnDef } from "@tanstack/react-table";
-import { useTranslation } from "react-i18next";
+import { useQuery } from '@tanstack/react-query'
+import type { ColumnDef } from '@tanstack/react-table'
+import { useTranslation } from 'react-i18next'
 
-import { StatusBadge } from "@/components/status-badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Progress } from "@/components/ui/progress";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { useMediaQuery } from "@/hooks";
-import { toIntlLocale } from "@/i18n/languages";
-import { getUserGroups } from "@/lib/api";
-import dayjs from "@/lib/dayjs";
-import { formatQuota } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { StatusBadge } from '@/components/status-badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import { useMediaQuery } from '@/hooks'
+import { toIntlLocale } from '@/i18n/languages'
+import { getUserGroups } from '@/lib/api'
+import { getCurrencyDisplay } from '@/lib/currency'
+import dayjs from '@/lib/dayjs'
+import { requireServerSuccess } from '@/lib/server-error-message'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
-import { API_KEY_STATUSES } from "../constants";
-import type { ApiKey } from "../types";
-import { ApiKeyGroupCell } from "./api-key-group-cell";
-import { ApiKeyTimestampCell } from "./api-key-timestamp-cell";
+import { API_KEY_STATUSES } from '../constants'
+import type { ApiKey } from '../types'
+import { ApiKeyGroupCell } from './api-key-group-cell'
+import { ApiKeyQuotaCell } from './api-key-quota-cell'
+import { ApiKeyTimestampCell } from './api-key-timestamp-cell'
 import {
   ApiKeyCell,
   IpRestrictionsCell,
   ModelLimitsCell,
-  UnlimitedQuotaBadge,
-} from "./api-keys-cells";
-import { DataTableRowActions } from "./data-table-row-actions";
+} from './api-keys-cells'
+import { DataTableRowActions } from './data-table-row-actions'
 
 function renderApiKeyActor(id?: number | null, name?: string | null) {
   if (!id || id <= 0) {
-    return <span className="text-muted-foreground">—</span>;
+    return <span className='text-muted-foreground'>—</span>
   }
 
-  return <span className="text-sm">{name || `#${id}`}</span>;
-}
-
-function getQuotaProgressColor(percentage: number): string {
-  if (percentage <= 10) return "[&_[data-slot=progress-indicator]]:bg-rose-500";
-  if (percentage <= 30) {
-    return "[&_[data-slot=progress-indicator]]:bg-amber-500";
-  }
-  return "[&_[data-slot=progress-indicator]]:bg-emerald-500";
+  return <span className='text-sm'>{name || `#${id}`}</span>
 }
 
 function useGroupRatios(): Record<string, number | string> {
   const { data } = useQuery({
-    queryKey: ["user-groups"],
-    queryFn: getUserGroups,
+    queryKey: ['user-groups'],
+    queryFn: async () => requireServerSuccess(await getUserGroups()),
     staleTime: 0,
     select: (res) => {
-      if (!res.success || !res.data) return {};
-      const ratios: Record<string, number | string> = {};
+      if (!res.success || !res.data) return {}
+      const ratios: Record<string, number | string> = {}
       for (const [group, info] of Object.entries(res.data)) {
-        if (typeof info.ratio === "number" || typeof info.ratio === "string") {
-          ratios[group] = info.ratio;
+        if (typeof info.ratio === 'number' || typeof info.ratio === 'string') {
+          ratios[group] = info.ratio
         }
       }
-      return ratios;
+      return ratios
     },
-  });
+  })
 
-  return data ?? {};
+  return data ?? {}
 }
 
 export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
-  const { t, i18n } = useTranslation();
-  const groupRatios = useGroupRatios();
-  const shouldReduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language);
-  const justNowLabel = t("Just now");
-  const staleAccessThreshold = dayjs(now).subtract(3, "month").valueOf();
+  const { t, i18n } = useTranslation()
+  useSystemConfigStore((state) => state.config.currency)
+  const { meta: currency } = getCurrencyDisplay()
+  const quotaUnit = currency.kind === 'tokens' ? t('Tokens') : currency.symbol
+  const groupRatios = useGroupRatios()
+  const shouldReduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
+  const justNowLabel = t('Just now')
+  const staleAccessThreshold = dayjs(now).subtract(3, 'month').valueOf()
   return [
     {
-      id: "select",
+      id: 'select',
       header: ({ table }) => (
         <Checkbox
           checked={table.getIsAllPageRowsSelected()}
           indeterminate={table.getIsSomePageRowsSelected()}
           onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="Select all"
-          className="translate-y-[2px]"
+          aria-label={t('Select all')}
+          className='translate-y-[2px]'
         />
       ),
       cell: ({ row }) => (
         <Checkbox
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="Select row"
-          className="translate-y-[2px]"
+          aria-label={t('Select row')}
+          className='translate-y-[2px]'
         />
       ),
       enableSorting: false,
@@ -115,111 +105,69 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       size: 40,
     },
     {
-      accessorKey: "staff_id",
-      header: t("Staff ID"),
+      accessorKey: 'staff_id',
+      header: t('Staff ID'),
       cell: ({ row }) => {
-        const staffId = row.original.staff_id;
+        const staffId = row.original.staff_id
         return staffId ? (
-          <span className="font-mono text-sm">{staffId}</span>
+          <span className='font-mono text-sm'>{staffId}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
-        );
+          <span className='text-muted-foreground'>—</span>
+        )
       },
       size: 110,
     },
 
     {
-      accessorKey: "name",
-      header: t("Name"),
+      accessorKey: 'name',
+      header: t('Name'),
       cell: ({ row }) => (
-        <span className="font-medium">{row.getValue("name")}</span>
+        <span className='font-medium'>{row.getValue('name')}</span>
       ),
       size: 180,
       meta: { mobileTitle: true },
     },
     {
-      id: "key",
-      accessorKey: "key",
-      header: t("API Key"),
+      id: 'key',
+      accessorKey: 'key',
+      header: t('API Key'),
       cell: ({ row }) => <ApiKeyCell apiKey={row.original} />,
       enableSorting: false,
       size: 260,
     },
     {
-      accessorKey: "status",
-      header: t("Status"),
+      accessorKey: 'status',
+      header: t('Status'),
       cell: ({ row }) => {
-        const statusConfig = API_KEY_STATUSES[row.getValue("status") as number];
-        if (!statusConfig) return null;
+        const statusConfig = API_KEY_STATUSES[row.getValue('status') as number]
+        if (!statusConfig) return null
         return (
           <StatusBadge
             label={t(statusConfig.label)}
             variant={statusConfig.variant}
             copyable={false}
-            className="-ml-1.5"
+            className='-ml-1.5'
           />
-        );
+        )
       },
       filterFn: (row, id, value) => value.includes(String(row.getValue(id))),
       size: 120,
       meta: { mobileBadge: true },
     },
     {
-      id: "quota",
-      accessorKey: "remain_quota",
-      header: t("Quota"),
-      cell: ({ row }) => {
-        const apiKey = row.original;
-        if (apiKey.unlimited_quota) {
-          return <UnlimitedQuotaBadge used={apiKey.used_quota} />;
-        }
-
-        const used = apiKey.used_quota;
-        const remaining = apiKey.remain_quota;
-        const total = used + remaining;
-        const percentage = total > 0 ? (remaining / total) * 100 : 0;
-
-        return (
-          <Tooltip>
-            <TooltipTrigger render={<div className="w-[150px] space-y-1" />}>
-              <div className="flex justify-between text-xs">
-                <span className="font-medium tabular-nums">
-                  {formatQuota(remaining)}
-                </span>
-                <span className="text-muted-foreground tabular-nums">
-                  {formatQuota(total)}
-                </span>
-              </div>
-              <Progress
-                value={percentage}
-                className={cn("h-1.5", getQuotaProgressColor(percentage))}
-              />
-            </TooltipTrigger>
-            <TooltipContent>
-              <div className="space-y-1 text-xs">
-                <div>
-                  {t("Used:")} {formatQuota(used)}
-                </div>
-                <div>
-                  {t("Remaining:")} {formatQuota(remaining)} (
-                  {percentage.toFixed(1)}%)
-                </div>
-                <div>
-                  {t("Total:")} {formatQuota(total)}
-                </div>
-              </div>
-            </TooltipContent>
-          </Tooltip>
-        );
-      },
-      size: 170,
+      id: 'quota',
+      accessorKey: 'remain_quota',
+      header: `${t('Quota')} (${quotaUnit})`,
+      cell: ({ row }) => <ApiKeyQuotaCell apiKey={row.original} now={now} />,
+      size: 260,
+      minSize: 260,
     },
     {
-      accessorKey: "group",
-      header: t("Group"),
+      accessorKey: 'group',
+      header: t('Group'),
       cell: ({ row }) => {
-        const apiKey = row.original;
-        const group = row.getValue("group") as string;
+        const apiKey = row.original
+        const group = row.getValue('group') as string
         return (
           <ApiKeyGroupCell
             group={group}
@@ -227,61 +175,61 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
             crossGroupRetry={apiKey.cross_group_retry}
             shouldReduceMotion={shouldReduceMotion}
           />
-        );
+        )
       },
       size: 220,
       meta: { mobileHidden: true },
     },
     {
-      id: "model_limits",
-      accessorKey: "model_limits",
-      header: t("Models"),
+      id: 'model_limits',
+      accessorKey: 'model_limits',
+      header: t('Models'),
       cell: ({ row }) => <ModelLimitsCell apiKey={row.original} />,
       enableSorting: false,
       size: 160,
       meta: { mobileHidden: true },
     },
     {
-      id: "allow_ips",
-      accessorKey: "allow_ips",
-      header: t("IP Restriction"),
+      id: 'allow_ips',
+      accessorKey: 'allow_ips',
+      header: t('IP Restriction'),
       cell: ({ row }) => <IpRestrictionsCell apiKey={row.original} />,
       enableSorting: false,
       size: 160,
       meta: { mobileHidden: true },
     },
     {
-      id: "owner",
-      accessorKey: "username",
-      header: t("Owner"),
+      id: 'owner',
+      accessorKey: 'username',
+      header: t('Owner'),
       cell: ({ row }) => {
-        const username = row.original.username;
+        const username = row.original.username
         return username ? (
-          <span className="text-sm">{username}</span>
+          <span className='text-sm'>{username}</span>
         ) : (
-          <span className="text-muted-foreground">#{row.original.user_id}</span>
-        );
+          <span className='text-muted-foreground'>#{row.original.user_id}</span>
+        )
       },
       size: 130,
     },
     {
-      id: "created_by",
-      accessorKey: "created_by_name",
-      header: t("Created by"),
+      id: 'created_by',
+      accessorKey: 'created_by_name',
+      header: t('Created by'),
       cell: ({ row }) =>
         renderApiKeyActor(
           row.original.created_by,
-          row.original.created_by_name,
+          row.original.created_by_name
         ),
       size: 130,
     },
     {
-      accessorKey: "accessed_time",
-      header: t("Last Used"),
+      accessorKey: 'accessed_time',
+      header: t('Last Used'),
       cell: ({ row }) => {
-        const accessedTime = row.getValue("accessed_time") as number;
+        const accessedTime = row.getValue('accessed_time') as number
         const isStale =
-          accessedTime > 0 && accessedTime * 1000 < staleAccessThreshold;
+          accessedTime > 0 && accessedTime * 1000 < staleAccessThreshold
 
         return (
           <ApiKeyTimestampCell
@@ -289,75 +237,76 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
             now={now}
             locale={locale}
             justNowLabel={justNowLabel}
-            className={isStale ? "text-warning" : "text-muted-foreground"}
+            className={isStale ? 'text-warning' : 'text-muted-foreground'}
           />
-        );
+        )
       },
       size: 180,
       meta: { mobileHidden: true },
     },
     {
-      accessorKey: "created_time",
-      header: t("Created"),
+      accessorKey: 'created_time',
+      header: t('Created'),
       cell: ({ row }) => (
         <ApiKeyTimestampCell
-          timestamp={row.getValue("created_time")}
+          timestamp={row.getValue('created_time')}
           now={now}
           locale={locale}
           justNowLabel={justNowLabel}
-          className="text-muted-foreground"
+          className='text-muted-foreground'
         />
       ),
       size: 180,
       meta: { mobileHidden: true },
     },
     {
-      id: "updated_by",
-      accessorKey: "updated_by_name",
-      header: t("Updated by"),
+      id: 'updated_by',
+      accessorKey: 'updated_by_name',
+      header: t('Updated by'),
       cell: ({ row }) =>
         renderApiKeyActor(
           row.original.updated_by,
-          row.original.updated_by_name,
+          row.original.updated_by_name
         ),
       size: 130,
     },
     {
-      accessorKey: "expired_time",
-      header: t("Expires"),
+      accessorKey: 'expired_time',
+      header: t('Expires'),
       cell: ({ row }) => {
-        const expiredTime = row.getValue("expired_time") as number;
+        const expiredTime = row.getValue('expired_time') as number
         if (expiredTime === -1) {
           return (
             <StatusBadge
-              label={t("Never")}
-              variant="neutral"
+              label={t('Never')}
+              variant='neutral'
               copyable={false}
-              className="-ml-1.5"
+              className='-ml-1.5'
             />
-          );
+          )
         }
-        const isExpired = expiredTime * 1000 < now;
         return (
           <ApiKeyTimestampCell
             timestamp={expiredTime}
             now={now}
             locale={locale}
             justNowLabel={justNowLabel}
-            className={cn(
-              isExpired ? "text-destructive" : "text-muted-foreground",
-            )}
+            className={
+              expiredTime * 1000 <= now
+                ? 'text-destructive'
+                : 'text-muted-foreground'
+            }
           />
-        );
+        )
       },
       size: 180,
       meta: { mobileHidden: true },
     },
     {
-      id: "actions",
-      header: () => t("Actions"),
+      id: 'actions',
+      header: () => t('Actions'),
       cell: ({ row }) => <DataTableRowActions row={row} />,
-      meta: { pinned: "right" as const },
+      meta: { pinned: 'right' as const },
     },
-  ];
+  ]
 }

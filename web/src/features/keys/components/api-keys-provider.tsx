@@ -16,63 +16,63 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import React, { useState, useCallback, useRef, useEffect } from "react";
-import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
+import React, { useState, useCallback, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 
-import useDialogState from "@/hooks/use-dialog";
-import { useAuthStore } from "@/stores/auth-store";
+import useDialogState from '@/hooks/use-dialog'
 import {
   ADMIN_PERMISSION_ACTIONS,
   ADMIN_PERMISSION_RESOURCES,
   hasPermission,
-} from "@/lib/admin-permissions";
+} from '@/lib/admin-permissions'
+import { handleServerError } from '@/lib/handle-server-error'
+import { useAuthStore } from '@/stores/auth-store'
 
-import { fetchTokenKey, fetchTokenKeysBatch } from "../api";
-import { ERROR_MESSAGES } from "../constants";
-import { type ApiKey, type ApiKeysDialogType } from "../types";
+import { fetchTokenKey, fetchTokenKeysBatch } from '../api'
+import { ERROR_MESSAGES } from '../constants'
+import type { ApiKey, ApiKeysDialogType } from '../types'
 
 type ApiKeysContextType = {
-  open: ApiKeysDialogType | null;
-  setOpen: (str: ApiKeysDialogType | null) => void;
-  currentRow: ApiKey | null;
-  setCurrentRow: React.Dispatch<React.SetStateAction<ApiKey | null>>;
-  refreshTrigger: number;
-  triggerRefresh: () => void;
-  resolvedKey: string;
-  setResolvedKey: React.Dispatch<React.SetStateAction<string>>;
-  resolveRealKey: (id: number) => Promise<string | null>;
-  resolveRealKeysBatch: (ids: number[]) => Promise<Record<number, string>>;
-  resolvedKeys: Record<number, string>;
-  loadingKeys: Record<number, boolean>;
-  copiedKeyId: number | null;
-  markKeyCopied: (id: number) => void;
+  open: ApiKeysDialogType | null
+  setOpen: (str: ApiKeysDialogType | null) => void
+  currentRow: ApiKey | null
+  setCurrentRow: React.Dispatch<React.SetStateAction<ApiKey | null>>
+  refreshTrigger: number
+  triggerRefresh: () => void
+  resolvedKey: string
+  setResolvedKey: React.Dispatch<React.SetStateAction<string>>
+  resolveRealKey: (id: number) => Promise<string | null>
+  resolveRealKeysBatch: (ids: number[]) => Promise<Record<number, string>>
+  resolvedKeys: Record<number, string>
+  loadingKeys: Record<number, boolean>
+  copiedKeyId: number | null
+  markKeyCopied: (id: number) => void
   // Whether this user may reach into other people's keys at all, and whether
   // the page is currently doing so.
-  canManageAllKeys: boolean;
-  allUsersScope: boolean;
-  setAllUsersScope: React.Dispatch<React.SetStateAction<boolean>>;
-};
+  canManageAllKeys: boolean
+  allUsersScope: boolean
+  setAllUsersScope: React.Dispatch<React.SetStateAction<boolean>>
+}
 
-const ApiKeysContext = React.createContext<ApiKeysContextType | null>(null);
+const ApiKeysContext = React.createContext<ApiKeysContextType | null>(null)
 
 export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useDialogState<ApiKeysDialogType>(null);
-  const [currentRow, setCurrentRow] = useState<ApiKey | null>(null);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [resolvedKey, setResolvedKey] = useState("");
+  const { t } = useTranslation()
+  const [open, setOpen] = useDialogState<ApiKeysDialogType>(null)
+  const [currentRow, setCurrentRow] = useState<ApiKey | null>(null)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [resolvedKey, setResolvedKey] = useState('')
 
-  const [resolvedKeys, setResolvedKeys] = useState<Record<number, string>>({});
-  const [loadingKeys, setLoadingKeys] = useState<Record<number, boolean>>({});
-  const pendingRequests = useRef<Record<number, Promise<string | null>>>({});
+  const [resolvedKeys, setResolvedKeys] = useState<Record<number, string>>({})
+  const [loadingKeys, setLoadingKeys] = useState<Record<number, boolean>>({})
+  const pendingRequests = useRef<Record<number, Promise<string | null>>>({})
 
-  const user = useAuthStore((s) => s.auth.user);
+  const user = useAuthStore((s) => s.auth.user)
   const canManageAllKeys = hasPermission(
     user,
     ADMIN_PERMISSION_RESOURCES.TOKEN,
-    ADMIN_PERMISSION_ACTIONS.MANAGE_ALL,
-  );
+    ADMIN_PERMISSION_ACTIONS.MANAGE_ALL
+  )
   // Someone who maintains everyone's keys should land on everyone's keys. Their
   // own are usually not where the traffic is, and a listing that quietly shows
   // only those reads as "the feature is missing".
@@ -81,114 +81,114 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
   // first render, so this cannot be a useState initial value — it would settle
   // on "own keys only" for exactly the people who need the other setting. null
   // means "not chosen yet" and follows the permission once it is known.
-  const [scopeChoice, setScopeChoice] = useState<boolean | null>(null);
-  const allUsersScope = scopeChoice ?? canManageAllKeys;
+  const [scopeChoice, setScopeChoice] = useState<boolean | null>(null)
+  const allUsersScope = scopeChoice ?? canManageAllKeys
   const setAllUsersScope = useCallback(
     (next: React.SetStateAction<boolean>) => {
       setScopeChoice((previous) =>
-        typeof next === "function" ? next(previous ?? canManageAllKeys) : next,
-      );
+        typeof next === 'function' ? next(previous ?? canManageAllKeys) : next
+      )
     },
-    [canManageAllKeys],
-  );
+    [canManageAllKeys]
+  )
 
-  const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null);
-  const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null)
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
-    return () => clearTimeout(copiedTimerRef.current);
-  }, []);
+    return () => clearTimeout(copiedTimerRef.current)
+  }, [])
 
   const markKeyCopied = useCallback((id: number) => {
-    setCopiedKeyId(id);
-    clearTimeout(copiedTimerRef.current);
-    copiedTimerRef.current = setTimeout(() => setCopiedKeyId(null), 2000);
-  }, []);
+    setCopiedKeyId(id)
+    clearTimeout(copiedTimerRef.current)
+    copiedTimerRef.current = setTimeout(() => setCopiedKeyId(null), 2000)
+  }, [])
 
   const triggerRefresh = useCallback(() => {
-    setRefreshTrigger((prev) => prev + 1);
-  }, []);
+    setRefreshTrigger((prev) => prev + 1)
+  }, [])
 
   const resolveRealKey = useCallback(
     async (id: number): Promise<string | null> => {
-      if (resolvedKeys[id]) return resolvedKeys[id];
-      if (id in pendingRequests.current) return pendingRequests.current[id];
+      if (resolvedKeys[id]) return resolvedKeys[id]
+      if (id in pendingRequests.current) return pendingRequests.current[id]
 
       const request = (async () => {
-        setLoadingKeys((prev) => ({ ...prev, [id]: true }));
+        setLoadingKeys((prev) => ({ ...prev, [id]: true }))
         try {
-          const res = await fetchTokenKey(id);
+          const res = await fetchTokenKey(id)
           if (res.success && res.data?.key) {
-            const fullKey = `sk-${res.data.key}`;
-            setResolvedKeys((prev) => ({ ...prev, [id]: fullKey }));
-            return fullKey;
+            const fullKey = `sk-${res.data.key}`
+            setResolvedKeys((prev) => ({ ...prev, [id]: fullKey }))
+            return fullKey
           }
-          toast.error(res.message || t(ERROR_MESSAGES.UNEXPECTED));
-          return null;
-        } catch {
-          toast.error(t(ERROR_MESSAGES.UNEXPECTED));
-          return null;
+          handleServerError(res, t(ERROR_MESSAGES.UNEXPECTED))
+          return null
+        } catch (error) {
+          handleServerError(error, t(ERROR_MESSAGES.UNEXPECTED))
+          return null
         } finally {
-          delete pendingRequests.current[id];
+          delete pendingRequests.current[id]
           setLoadingKeys((prev) => {
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          });
+            const next = { ...prev }
+            delete next[id]
+            return next
+          })
         }
-      })();
+      })()
 
-      pendingRequests.current[id] = request;
-      return request;
+      pendingRequests.current[id] = request
+      return request
     },
-    [resolvedKeys, t],
-  );
+    [resolvedKeys, t]
+  )
 
   const resolveRealKeysBatch = useCallback(
     async (ids: number[]): Promise<Record<number, string>> => {
-      const uncachedIds = ids.filter((id) => !resolvedKeys[id]);
+      const uncachedIds = ids.filter((id) => !resolvedKeys[id])
       if (uncachedIds.length === 0) {
-        const result: Record<number, string> = {};
-        for (const id of ids) result[id] = resolvedKeys[id];
-        return result;
+        const result: Record<number, string> = {}
+        for (const id of ids) result[id] = resolvedKeys[id]
+        return result
       }
 
       for (const id of uncachedIds) {
-        setLoadingKeys((prev) => ({ ...prev, [id]: true }));
+        setLoadingKeys((prev) => ({ ...prev, [id]: true }))
       }
 
       try {
-        const res = await fetchTokenKeysBatch(uncachedIds);
+        const res = await fetchTokenKeysBatch(uncachedIds)
         if (res.success && res.data?.keys) {
-          const newKeys: Record<number, string> = {};
+          const newKeys: Record<number, string> = {}
           for (const [idStr, key] of Object.entries(res.data.keys)) {
-            newKeys[Number(idStr)] = `sk-${key}`;
+            newKeys[Number(idStr)] = `sk-${key}`
           }
-          setResolvedKeys((prev) => ({ ...prev, ...newKeys }));
+          setResolvedKeys((prev) => ({ ...prev, ...newKeys }))
 
-          const result: Record<number, string> = { ...newKeys };
+          const result: Record<number, string> = { ...newKeys }
           for (const id of ids) {
-            if (resolvedKeys[id]) result[id] = resolvedKeys[id];
+            if (resolvedKeys[id]) result[id] = resolvedKeys[id]
           }
-          return result;
+          return result
         }
-        toast.error(res.message || t(ERROR_MESSAGES.UNEXPECTED));
-        return {};
-      } catch {
-        toast.error(t(ERROR_MESSAGES.UNEXPECTED));
-        return {};
+        handleServerError(res, t(ERROR_MESSAGES.UNEXPECTED))
+        return {}
+      } catch (error) {
+        handleServerError(error, t(ERROR_MESSAGES.UNEXPECTED))
+        return {}
       } finally {
         for (const id of uncachedIds) {
           setLoadingKeys((prev) => {
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          });
+            const next = { ...prev }
+            delete next[id]
+            return next
+          })
         }
       }
     },
-    [resolvedKeys, t],
-  );
+    [resolvedKeys, t]
+  )
 
   return (
     <ApiKeysContext
@@ -214,16 +214,16 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
     </ApiKeysContext>
-  );
+  )
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const useApiKeys = () => {
-  const apiKeysContext = React.useContext(ApiKeysContext);
+  const apiKeysContext = React.useContext(ApiKeysContext)
 
   if (!apiKeysContext) {
-    throw new Error("useApiKeys has to be used within <ApiKeysContext>");
+    throw new Error('useApiKeys has to be used within <ApiKeysContext>')
   }
 
-  return apiKeysContext;
-};
+  return apiKeysContext
+}

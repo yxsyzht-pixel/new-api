@@ -17,9 +17,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { afterAll, describe, test } from 'vitest'
 
 import { Window } from 'happy-dom'
+import { afterAll, describe, test } from 'vitest'
 
 import type { UserAnalyticsMetric } from '@/features/dashboard/types'
 
