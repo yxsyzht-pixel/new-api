@@ -72,7 +72,7 @@ func TestAnAnsweredFailureKeepsItsFullBudget(t *testing.T) {
 // long time before the cut comes — a median 17 seconds over 27–28 August, 136
 // at the ninetieth percentile — so walking the whole list would keep the caller
 // waiting minutes only to fail anyway.
-func TestACutStreamIsWorthOneMoreAccount(t *testing.T) {
+func TestACutStreamIsWorthTwoMoreAccounts(t *testing.T) {
 	c := newTestContext()
 	truncated := types.NewOpenAIError(errors.New("upstream ended the response stream before it completed"),
 		types.ErrorCodeStreamTruncated, http.StatusInternalServerError)
@@ -80,8 +80,11 @@ func TestACutStreamIsWorthOneMoreAccount(t *testing.T) {
 	if !shouldRetry(c, truncated, 5) {
 		t.Fatal("第一次断流应该换一个账号重试")
 	}
-	if shouldRetry(c, truncated, 4) {
-		t.Fatal("断流只给一次重试机会,再试下去调用方要等太久")
+	if !shouldRetry(c, truncated, 4) {
+		t.Fatal("第二次断流仍应换账号:首块超时后断流几秒就结束,第三个账号还等得起")
+	}
+	if shouldRetry(c, truncated, 3) {
+		t.Fatal("断流最多给两次重试机会,再试下去调用方要等太久")
 	}
 }
 
@@ -102,8 +105,11 @@ func TestEachFailureClassCountsSeparately(t *testing.T) {
 	if shouldRetry(c, transportFailure(), 3) {
 		t.Fatal("传输失败的第二次应该拦下")
 	}
-	if shouldRetry(c, truncated, 2) {
-		t.Fatal("断流的第二次应该拦下")
+	if !shouldRetry(c, truncated, 2) {
+		t.Fatal("断流的预算比传输失败宽一次,不该跟着一起被拦下")
+	}
+	if shouldRetry(c, truncated, 1) {
+		t.Fatal("断流的第三次应该拦下")
 	}
 }
 

@@ -412,7 +412,15 @@ var budgetedFailures = map[types.ErrorCode]attemptBudget{
 	// seconds in, and 136 at the ninetieth percentile. Walking the whole channel
 	// list would have the caller waiting minutes to be told no, which is a worse
 	// answer than the one they could have had at once.
-	types.ErrorCodeStreamTruncated: {limit: 2, counterKey: "truncated_stream_count"},
+	//
+	// The first-chunk deadline changed that arithmetic for the commonest case. A
+	// stream that says nothing at all now ends after STREAM_FIRST_CHUNK_TIMEOUT —
+	// five seconds by default — so a third attempt costs the caller seconds, not
+	// the minutes this budget was sized against. On 2026-09-09 twenty-eight
+	// requests took this path: twenty-three were served by the second account and
+	// five spent the budget and returned 500. A sibling account answers these four
+	// times out of five, which is worth one more try.
+	types.ErrorCodeStreamTruncated: {limit: 3, counterKey: "truncated_stream_count"},
 }
 
 // withinAttemptBudget records this failure against its class and reports whether
