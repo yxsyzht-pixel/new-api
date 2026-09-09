@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,48 @@ func newTestContext() *gin.Context {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	return c
+}
+
+// A caller who hung up is the one failure no sibling account can fix. It arrives
+// as a channel error, which is otherwise the signal to try the next account, so
+// the check has to come first: on 2026-09-09 an abandoned request walked all
+// twelve Codex accounts, twenty seconds of upstream calls answering nobody.
+func TestAnAbandonedRequestIsNotRetried(t *testing.T) {
+	c := newTestContext()
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	c.Request = c.Request.WithContext(ctx)
+
+	channelErr := types.NewOpenAIError(errors.New("request context done: context canceled"),
+		types.ErrorCodeChannelNoAvailableKey, http.StatusInternalServerError)
+
+	if !shouldRetry(c, channelErr, 5) {
+		t.Fatal("调用方还在时,这类错误本就该换个账号重试")
+	}
+
+	cancel()
+	if shouldRetry(c, channelErr, 5) {
+		t.Fatal("调用方已挂断,不该再走完整个账号池")
+	}
+}
+
+// The budget counts what it is shown, so the abandoned check has to run before
+// it — otherwise a dead caller still spends another class's chances.
+func TestAnAbandonedRequestSpendsNoBudget(t *testing.T) {
+	c := newTestContext()
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	c.Request = c.Request.WithContext(ctx)
+	cancel()
+
+	truncated := types.NewOpenAIError(errors.New("cut short"),
+		types.ErrorCodeStreamTruncated, http.StatusInternalServerError)
+	for i := 0; i < 5; i++ {
+		if shouldRetry(c, truncated, 5) {
+			t.Fatal("挂断后不该重试")
+		}
+	}
+	if got := c.GetInt("truncated_stream_count"); got != 0 {
+		t.Fatalf("挂断的请求不应消耗断流预算,实际计数 %d", got)
+	}
 }
 
 func transportFailure() *types.NewAPIError {

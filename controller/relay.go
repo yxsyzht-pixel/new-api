@@ -435,8 +435,30 @@ func withinAttemptBudget(c *gin.Context, code types.ErrorCode) bool {
 	return seen < budget.limit
 }
 
+// requestAbandoned reports whether the caller's request context is already done
+// — they hung up, or the deadline passed. Either way no account can answer.
+func requestAbandoned(c *gin.Context) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
+	ctx := c.Request.Context()
+	if ctx == nil {
+		return false
+	}
+	return ctx.Err() != nil
+}
+
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
 	if openaiErr == nil {
+		return false
+	}
+	// A caller who has gone cannot be served by anyone. The failure arrives
+	// wrapped as a channel error, so without this it is read as "this account is
+	// bad, try the next" and the whole pool is walked for nobody: on 2026-09-09 a
+	// single abandoned request spent all twelve Codex accounts over twenty
+	// seconds, and every attempt failed the moment it was made. Checked before
+	// the attempt budget, which counts the failures it is shown.
+	if requestAbandoned(c) {
 		return false
 	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
