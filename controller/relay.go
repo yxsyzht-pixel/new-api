@@ -461,6 +461,15 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if requestAbandoned(c) {
 		return false
 	}
+	// Reasoning bound to another account is the one refusal a retry can actually
+	// repair, because the next attempt sends the conversation without it. The
+	// check sits ahead of the affinity and status-code gates deliberately: the
+	// codex affinity rule skips retries, and the encrypted-content form arrives
+	// as a 400, so both would otherwise turn a fixable turn into a dead one. Once
+	// only — a second refusal after the references are gone is not about them.
+	if service.IsStaleReasoningReference(openaiErr) && service.MarkReasoningStripped(c) {
+		return true
+	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}

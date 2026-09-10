@@ -14,6 +14,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -61,6 +62,18 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
 	isCompact := info != nil && info.RelayMode == relayconstant.RelayModeResponsesCompact
+
+	// A previous attempt was refused for replaying reasoning this account cannot
+	// read. The upstream's own advice is to take the offending items out, so the
+	// retry sends the same conversation without the parts bound to whichever
+	// account produced them.
+	if service.ShouldStripReasoningReferences(c) {
+		if stripped, ok := stripBoundReasoning(request.Input); ok {
+			request.Input = stripped
+		}
+		// previous_response_id names a response only its own account holds.
+		request.PreviousResponseID = ""
+	}
 
 	if info != nil && info.ChannelSetting.SystemPrompt != "" {
 		systemPrompt := info.ChannelSetting.SystemPrompt
