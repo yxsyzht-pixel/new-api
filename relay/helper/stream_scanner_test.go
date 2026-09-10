@@ -23,7 +23,6 @@ import (
 )
 
 func init() {
-	gin.SetMode(gin.TestMode)
 	if constant.StreamingTimeout == 0 {
 		constant.StreamingTimeout = 30
 	}

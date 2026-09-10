@@ -88,7 +88,6 @@ func TestRelayInfoMetaTypedNilReceiver(t *testing.T) {
 }
 
 func TestGenRelayInfoCapturesRequestReasoningEffort(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	tests := []struct {
 		name        string
 		path        string
@@ -162,7 +161,6 @@ func TestGenRelayInfoCapturesRequestReasoningEffort(t *testing.T) {
 }
 
 func TestGenRelayInfoKeepsOriginAndLeavesBillingUnset(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
 	const model = "qwen3.8-max@thinking:on@temperature:0.2"
@@ -176,7 +174,6 @@ func TestGenRelayInfoKeepsOriginAndLeavesBillingUnset(t *testing.T) {
 }
 
 func TestInitChannelMetaRestoresRequestReasoningEffortForRetry(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
 	request := &dto.OpenAIResponsesRequest{
@@ -196,7 +193,6 @@ func TestInitChannelMetaRestoresRequestReasoningEffortForRetry(t *testing.T) {
 }
 
 func TestInitChannelMetaResetsPerAttemptStreamStateAndPreservesRequestState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
 

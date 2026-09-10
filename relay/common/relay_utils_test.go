@@ -57,7 +57,6 @@ func TestSanitizeURLForLogKeepsURLWithoutSensitiveQuery(t *testing.T) {
 }
 
 func TestValidateMultipartDirectNormalizesImageField(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	body := strings.NewReader(`{"model":"wan2.7-i2v","prompt":"animate","image":" https://example.com/first.png "}`)
 	request := httptest.NewRequest(http.MethodPost, "/v1/video/generations", body)
 	request.Header.Set("Content-Type", "application/json")
@@ -81,8 +80,6 @@ func TestValidateMultipartDirectNormalizesImageField(t *testing.T) {
 // video duration (a quota multiplier via OtherRatio "seconds") is bounded, so
 // it can never overflow quota calculation into a negative charge.
 func TestTaskDurationBounds(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	newContext := func(t *testing.T, body string) (*gin.Context, *RelayInfo) {
 		request := httptest.NewRequest(http.MethodPost, "/v1/video/generations", strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")

@@ -21,8 +21,6 @@ import (
 )
 
 func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	saved := map[string]string{}
 	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
 		saved[key] = value
@@ -110,8 +108,6 @@ func TestFixedPricePreConsumeAndRealtimeRejection(t *testing.T) {
 }
 
 func TestModelPriceHelperTieredPreConsumeMaxTokensFallback(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	saved := map[string]string{}
 	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
 		saved[key] = value
@@ -188,8 +184,6 @@ func TestModelPriceHelperTieredPreConsumeMaxTokensFallback(t *testing.T) {
 }
 
 func TestModelPriceHelperTieredRejectsPreConsumeOverflow(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	saved := map[string]string{}
 	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
 		saved[key] = value
@@ -227,7 +221,6 @@ func TestModelPriceHelperTieredRejectsPreConsumeOverflow(t *testing.T) {
 }
 
 func TestModelPriceHelperRequestBillingRatiosOnlyApplyToFixedPrice(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	savedModelPrices := ratio_setting.ModelPrice2JSONString()
 	savedModelRatios := ratio_setting.ModelRatio2JSONString()
 	t.Cleanup(func() {
@@ -325,8 +318,6 @@ func TestModelPriceHelperRequestBillingRatiosOnlyApplyToFixedPrice(t *testing.T)
 // gemini-2.5-flash-thinking-* wildcard must keep the client origin as the
 // consume-log name.
 func TestModelPriceHelperUsesSuffixedOriginLikeMain(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	savedRatios := ratio_setting.ModelRatio2JSONString()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
@@ -385,8 +376,6 @@ func TestModelPriceHelperUsesSuffixedOriginLikeMain(t *testing.T) {
 }
 
 func TestModelPriceHelperHonorsCustomClaudeThinkingAlias(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	savedRatios := ratio_setting.ModelRatio2JSONString()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
@@ -422,8 +411,6 @@ func TestModelPriceHelperHonorsCustomClaudeThinkingAlias(t *testing.T) {
 }
 
 func TestModelPriceHelperCanonicalBillingLadder(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	savedRatios := ratio_setting.ModelRatio2JSONString()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
@@ -515,8 +502,6 @@ func TestModelPriceHelperCanonicalBillingLadder(t *testing.T) {
 }
 
 func TestModelPriceHelperMigratesLegacyGeminiWildcardToCanonical(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	savedRatios := ratio_setting.ModelRatio2JSONString()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
@@ -552,8 +537,6 @@ func TestModelPriceHelperMigratesLegacyGeminiWildcardToCanonical(t *testing.T) {
 }
 
 func TestModelPriceHelperModifierNameFallsBackToBase(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	savedRatios := ratio_setting.ModelRatio2JSONString()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
@@ -582,8 +565,6 @@ func TestModelPriceHelperModifierNameFallsBackToBase(t *testing.T) {
 }
 
 func TestModelPriceHelperExemptAtNameBillsVerbatim(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	settings := model_setting.GetGlobalSettings()
 	originalBlacklist := append([]string(nil), settings.ThinkingModelBlacklist...)
 	t.Cleanup(func() { settings.ThinkingModelBlacklist = originalBlacklist })
@@ -619,8 +600,6 @@ func TestModelPriceHelperExemptAtNameBillsVerbatim(t *testing.T) {
 }
 
 func TestModelPriceHelperPreservesGpt51CodexMaxIdentity(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	savedRatios := ratio_setting.ModelRatio2JSONString()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
@@ -651,8 +630,6 @@ func TestModelPriceHelperPreservesGpt51CodexMaxIdentity(t *testing.T) {
 }
 
 func TestModelPriceHelperNativeGeminiNoThinkingDoesNotAliasBillingModel(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	savedRatios := ratio_setting.ModelRatio2JSONString()
 	t.Cleanup(func() {
 		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))

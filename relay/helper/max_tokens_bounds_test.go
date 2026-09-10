@@ -17,8 +17,6 @@ import (
 // wrapped-negative value (e.g. 18446744073686646784 parsed into *uint) must
 // be rejected at validation instead of corrupting the pre-charge.
 func TestMaxTokensBounds(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	newJSONContext := func(t *testing.T, body string) *gin.Context {
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 		c.Request = httptest.NewRequest(http.MethodPost, "/relay", bytes.NewBufferString(body))

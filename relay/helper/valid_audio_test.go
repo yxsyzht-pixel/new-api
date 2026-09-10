@@ -14,8 +14,6 @@ import (
 )
 
 func TestGetAndValidAudioRequestParsesMultipartSpeechFields(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	require.NoError(t, writer.WriteField("model", "Qwen3-TTS-12Hz-1.7B-Base"))

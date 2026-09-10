@@ -14,7 +14,6 @@ import (
 // contradicted any later write that did set a length, which the standard
 // library reported 8699 times in five days.
 func TestEventStreamHeadersLeaveFramingToTheServer(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
@@ -30,7 +29,6 @@ func TestEventStreamHeadersLeaveFramingToTheServer(t *testing.T) {
 
 // The headers are set once; a second call must not undo or duplicate them.
 func TestEventStreamHeadersAreSetOnce(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)

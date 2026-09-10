@@ -60,7 +60,6 @@ func TestApplyReasoningModelSuffixRetryKeepsEquivalentState(t *testing.T) {
 }
 
 func TestApplyReasoningModelSuffixRetryClearsStateWhenNewChannelHasNoSuffix(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	req := &dto.ClaudeRequest{Model: "claude-3-7-sonnet"}
 	info := &relaycommon.RelayInfo{
 		OriginModelName: "claude-3-7-sonnet",
@@ -459,7 +458,6 @@ func TestApplyReasoningModelSuffixPassThroughKeepsModifierBodyVerbatim(t *testin
 	t.Cleanup(func() { settings.PassThroughRequestEnabled = original })
 	settings.PassThroughRequestEnabled = true
 
-	gin.SetMode(gin.TestMode)
 	const model = "qwen3.8-max@thinking:on@effort:high@temperature:0.2@topp:0.8"
 	body := `{"model":"` + model + `","messages":[],"vendor_extension":{"keep":true}}`
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -488,7 +486,6 @@ func TestApplyReasoningModelSuffixPassThroughKeepsModifierBodyVerbatim(t *testin
 }
 
 func TestApplyReasoningModelSuffixChannelPassThroughKeepsModifierBodyVerbatim(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	const model = "qwen3.8-max@thinking:on"
 	body := `{"model":"` + model + `","messages":[]}`
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

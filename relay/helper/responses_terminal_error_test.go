@@ -17,7 +17,6 @@ import (
 // failure as a JSON body would drop an unreadable line into the SSE stream and
 // leave it with no ending; the client would sit there until its own idle timeout.
 func TestResponsesStreamTerminalErrorSpeaksSSE(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
@@ -38,7 +37,6 @@ func TestResponsesStreamTerminalErrorSpeaksSSE(t *testing.T) {
 }
 
 func TestResponsesStreamTerminalErrorIgnoresNothingToSay(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
