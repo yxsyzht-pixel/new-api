@@ -492,16 +492,6 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	return operation_setting.ShouldRetryByStatusCode(code)
 }
 
-// shouldReleaseAffinity applies the rule described above processChannelError's
-// call to it: a parked account always releases, a transient failure releases
-// unless the session would be corrupted by moving, and nothing else releases.
-func shouldReleaseAffinity(parked, transient, boundReasoning bool) bool {
-	if parked {
-		return true
-	}
-	return transient && !boundReasoning
-}
-
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, relayInfo *relaycommon.RelayInfo) {
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
 
@@ -519,18 +509,9 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	// told us to slow down: a sibling account can serve the turn this second, and
 	// without releasing the binding the caller gets the 429 with no retry attempted
 	// at all. Losing one turn's prompt cache beats losing the turn.
-	//
-	// A session replaying account-bound reasoning is the exception. Moving one of
-	// those does not cost a prompt cache, it corrupts the conversation: the Codex
-	// Responses API encrypts reasoning under the account that produced it, so a
-	// history mixing two accounts can be read by neither and every later turn
-	// fails for good. Failing this turn is recoverable; the session is not. A
-	// parked account still releases the binding — being pinned to an account that
-	// cannot serve for hours is worse than losing the thread.
-	parked := service.SuspendChannelOnUsageLimit(channelError, err)
-	transient := service.IsUpstreamTransientFailure(err) || service.IsUpstreamRateLimited(err)
-	boundReasoning := relayInfo != nil && service.SessionCarriesBoundReasoning(relayInfo.Request)
-	if shouldReleaseAffinity(parked, transient, boundReasoning) {
+	if service.SuspendChannelOnUsageLimit(channelError, err) ||
+		service.IsUpstreamTransientFailure(err) ||
+		service.IsUpstreamRateLimited(err) {
 		service.ClearCurrentChannelAffinityCache(c)
 	}
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况

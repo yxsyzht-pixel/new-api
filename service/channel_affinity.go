@@ -1,8 +1,6 @@
 package service
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"maps"
@@ -1002,40 +1000,4 @@ func channelAffinityUsageCacheStatsLock(key string) *sync.Mutex {
 	_, _ = h.Write([]byte(key))
 	idx := h.Sum32() % uint32(len(channelAffinityUsageCacheStatsLocks))
 	return &channelAffinityUsageCacheStatsLocks[idx]
-}
-
-// SessionCarriesBoundReasoning reports whether this turn replays reasoning that
-// only the account which produced it can read. The Codex Responses API encrypts
-// a reasoning item's content under the account that generated it, and the client
-// sends the whole history back every turn, so an item made by one account is
-// unreadable to every other one.
-//
-// That makes moving such a session between accounts destructive rather than
-// merely wasteful: once a history mixes items from two accounts, no account can
-// read all of it and every later turn fails, permanently. On 2026-09-08 an
-// overload episode released affinity often enough to spread one session across
-// ten accounts; it was still failing forty hours later, 478 times in a single
-// hour, long after the overload itself had passed.
-//
-// The check is a substring scan rather than a parse: input is carried as raw
-// JSON and never decoded on this path, and a false positive only means keeping
-// an affinity binding that would otherwise have been released.
-func SessionCarriesBoundReasoning(req dto.Request) bool {
-	var (
-		input      json.RawMessage
-		previousID string
-	)
-	switch r := req.(type) {
-	case *dto.OpenAIResponsesRequest:
-		input, previousID = r.Input, r.PreviousResponseID
-	case *dto.OpenAIResponsesCompactionRequest:
-		input, previousID = r.Input, r.PreviousResponseID
-	default:
-		return false
-	}
-	if strings.TrimSpace(previousID) != "" {
-		return true
-	}
-	return bytes.Contains(input, []byte("encrypted_content")) ||
-		bytes.Contains(input, []byte(`"rs_`))
 }
