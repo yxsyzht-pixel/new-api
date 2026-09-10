@@ -25,6 +25,14 @@ var staleReasoningMarkers = []string{
 	"items are not persisted when",
 }
 
+// The markers are matched loosely on purpose: the upstream owns this wording and
+// a reworded refusal that no longer matched would go back to failing for good,
+// which is the failure this exists to prevent. A false match costs one retry and
+// nothing else — a request with no bound reasoning is stripped of nothing, goes
+// out unchanged, and the marker is spent, so the second refusal answers to the
+// ordinary rules. Checked against seven days of this deployment's errors, the
+// two markers matched their own two classes and nothing else.
+
 // IsStaleReasoningReference reports whether err is the upstream refusing a
 // request because it replays reasoning bound to another account.
 func IsStaleReasoningReference(err *types.NewAPIError) bool {
