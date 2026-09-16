@@ -63,6 +63,12 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
 	isCompact := info != nil && info.RelayMode == relayconstant.RelayModeResponsesCompact
 
+	// The backend answers 400 "Input must be a list" to the string form the
+	// public API allows; see normalizeStringInput.
+	if wrapped, ok := normalizeStringInput(request.Input); ok {
+		request.Input = wrapped
+	}
+
 	// A previous attempt was refused for replaying reasoning this account cannot
 	// read. The upstream's own advice is to take the offending items out, so the
 	// retry sends the same conversation without the parts bound to whichever

@@ -43,14 +43,7 @@ const (
 func buildImageGenerationRequest(request dto.ImageRequest, sources []imageSource) (*dto.OpenAIResponsesRequest, error) {
 	prompt := strings.TrimSpace(request.Prompt)
 	if prompt == "" {
-		// This is the gateway's own reading of the caller's request, so no account
-		// can answer it differently. An untyped error would default to 500, a status
-		// the retry ranges treat as worth another account: on 2026-09-09 one empty
-		// prompt walked all twelve Codex channels inside a second and left an error
-		// recorded against each of them.
-		return nil, types.NewErrorWithStatusCode(
-			errors.New("codex channel: prompt is required for image generation"),
-			types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+		return nil, callerImageError("codex channel: prompt is required for image generation")
 	}
 
 	content := []map[string]any{{"type": "input_text", "text": prompt}}
@@ -112,6 +105,18 @@ func buildImageGenerationRequest(request dto.ImageRequest, sources []imageSource
 	}, nil
 }
 
+// callerImageError is the gateway's own verdict on what the caller sent, so no
+// account can answer it differently: a typed 400 the retry loop leaves alone.
+// Untyped, such an error defaults to 500, a status the retry ranges read as
+// "try the next account": on 2026-09-09 one empty prompt walked all twelve
+// Codex channels inside a second, and on 2026-09-14 four uploads that were not
+// multipart at all each walked eleven, leaving an error recorded against every
+// one of them.
+func callerImageError(msg string) error {
+	return types.NewErrorWithStatusCode(errors.New(msg),
+		types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+}
+
 // imageSource is one uploaded picture an edit request wants changed.
 type imageSource struct {
 	mimeType string
@@ -136,7 +141,7 @@ const maxImageEditSources = 16
 // these", so all of them are forwarded in order.
 func collectImageEditSources(c *gin.Context) ([]imageSource, error) {
 	if c == nil || c.Request == nil || c.Request.MultipartForm == nil {
-		return nil, fmt.Errorf("codex channel: /v1/images/edits requires multipart/form-data")
+		return nil, callerImageError("codex channel: /v1/images/edits requires multipart/form-data")
 	}
 
 	var headers []*multipart.FileHeader
@@ -144,28 +149,30 @@ func collectImageEditSources(c *gin.Context) ([]imageSource, error) {
 		headers = append(headers, c.Request.MultipartForm.File[field]...)
 	}
 	if len(headers) == 0 {
-		return nil, fmt.Errorf("codex channel: /v1/images/edits requires an `image` file")
+		return nil, callerImageError("codex channel: /v1/images/edits requires an `image` file")
 	}
 	if len(headers) > maxImageEditSources {
-		return nil, fmt.Errorf("codex channel: at most %d source images are supported", maxImageEditSources)
+		return nil, callerImageError(fmt.Sprintf("codex channel: at most %d source images are supported", maxImageEditSources))
 	}
 
 	sources := make([]imageSource, 0, len(headers))
 	for _, header := range headers {
+		// A read failure is local to this request too: the bytes live in this
+		// process, so another account cannot see them any better.
 		file, err := header.Open()
 		if err != nil {
-			return nil, fmt.Errorf("codex channel: cannot read uploaded image: %w", err)
+			return nil, unreadableUpload(err)
 		}
 		data, err := io.ReadAll(file)
 		closeErr := file.Close()
 		if err != nil {
-			return nil, fmt.Errorf("codex channel: cannot read uploaded image: %w", err)
+			return nil, unreadableUpload(err)
 		}
 		if closeErr != nil {
-			return nil, fmt.Errorf("codex channel: cannot read uploaded image: %w", closeErr)
+			return nil, unreadableUpload(closeErr)
 		}
 		if len(data) == 0 {
-			return nil, fmt.Errorf("codex channel: uploaded image %q is empty", header.Filename)
+			return nil, callerImageError(fmt.Sprintf("codex channel: uploaded image %q is empty", header.Filename))
 		}
 		sources = append(sources, imageSource{
 			mimeType: imageMimeType(header, data),
@@ -173,6 +180,14 @@ func collectImageEditSources(c *gin.Context) ([]imageSource, error) {
 		})
 	}
 	return sources, nil
+}
+
+// unreadableUpload is a failure reading the caller's upload out of this
+// process's own buffers: not the caller's fault, but not repairable by another
+// account either, so it is reported once rather than retried.
+func unreadableUpload(err error) error {
+	return types.NewError(fmt.Errorf("codex channel: cannot read uploaded image: %w", err),
+		types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
 }
 
 // imageMimeType decides how to label an upload. The declared header is trusted
@@ -188,6 +203,12 @@ func imageMimeType(header *multipart.FileHeader, data []byte) string {
 	return "image/png"
 }
 
+// The tool carries no model choice of its own here: probed on 2026-09-16 with
+// `model: gpt-image-2.5-flare` in the tool call, the backend echoed
+// `gpt-image-2-codex` back in response.created and drew with that. The 2.5
+// family is only reachable through an API-key channel, so it is not advertised
+// on this one.
+//
 // imageRequestUpstreamModel resolves the model the Responses call is issued
 // against. Callers naming an image model are asking for a capability rather than
 // a model the backend knows, so those requests run on the tool's host model;

@@ -459,6 +459,12 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	// seconds, and every attempt failed the moment it was made. Checked before
 	// the attempt budget, which counts the failures it is shown.
 	if requestAbandoned(c) {
+		// Logged, because without a trace the short retry chains this produces
+		// are indistinguishable from the gateway giving up: on 2026-09-15 sixteen
+		// image and chat failures stopped after two to nine accounts and only
+		// the caller's broken pipes elsewhere in the log suggested why.
+		logger.LogWarn(c, fmt.Sprintf("request abandoned by caller (%v), not retrying; last upstream error: %s",
+			c.Request.Context().Err(), common.LocalLogPreview(openaiErr.Error())))
 		return false
 	}
 	// Reasoning bound to another account is the one refusal a retry can actually
