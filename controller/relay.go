@@ -226,9 +226,15 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
 
+		// The failure is processed before the decision is taken, because processing
+		// is what releases an affinity binding whose account has just told us it is
+		// busy. Deciding first reads a binding that is about to be dropped and
+		// answers "strict session, do not retry" for a turn a sibling account could
+		// serve: with the order reversed on 2026-09-20, every overload failure came
+		// back after one account instead of walking the pool.
+		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
 		decision := service.DecideRelayRetry(c, newAPIError, retryBudget-retryParam.GetRetry())
 		service.RecordPolicyFailure(c, channel.Id, newAPIError, decision)
-		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
 
 		if decision.Action != "retry" {
 			break
@@ -578,8 +584,8 @@ func executeTaskSubmissionWith(
 
 		taskAPIError := taskSubmissionAPIError(taskErr)
 		relayInfo.LastError = taskAPIError
-		decision := decideTaskRetry(c, taskErr, taskRetryBudget-retryParam.GetRetry())
-		service.RecordPolicyFailure(c, channel.Id, taskAPIError, decision)
+		// Same ordering as the relay loop above: releasing the binding first is what
+		// lets a sibling account be tried.
 		if !taskErr.LocalError {
 			processChannelError(c,
 				*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
@@ -587,6 +593,8 @@ func executeTaskSubmissionWith(
 				taskAPIError,
 				relayInfo)
 		}
+		decision := decideTaskRetry(c, taskErr, taskRetryBudget-retryParam.GetRetry())
+		service.RecordPolicyFailure(c, channel.Id, taskAPIError, decision)
 
 		willRetry := decision.Action == "retry"
 		diagnostics.attemptFailed(retryParam.GetRetry()+1, channel, taskErr, willRetry)
