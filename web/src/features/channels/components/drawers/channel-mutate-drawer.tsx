@@ -1164,6 +1164,8 @@ export function ChannelMutateDrawer({
     }
   }
 
+  // On an existing channel the credential is written straight to it; on a new
+  // one it comes back so it can fill the key field before saving.
   const signInChannelId = isEditing && channelId ? channelId : undefined
 
   const handleStartCodexAuth = useCallback(async () => {

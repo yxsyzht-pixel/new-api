@@ -346,6 +346,9 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 			affinityUsable := false
 			preferred, err := model.CacheGetChannel(preferredChannelID)
 			affinitySatisfied := false
+			// A channel parked for a spent upstream quota is not enabled, so this
+			// status check releases the binding and the session moves to a sibling
+			// account instead of queueing behind a quota that has not reset.
 			if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled {
 				affinitySatisfied, _ = model.ChannelSatisfiesFilters(preferred, modelName, constraints.Filters)
 			}
