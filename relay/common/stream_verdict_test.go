@@ -19,15 +19,15 @@ func TestOutcomeAsksAboutErrorsBeforeTheHangup(t *testing.T) {
 		reason     StreamEndReason
 		endErr     error
 		softErrors int
-		want       StreamOutcome
+		want       StreamVerdict
 	}{
-		{name: "clean eof", reason: StreamEndReasonEOF, want: StreamOutcomeOK},
-		{name: "clean done", reason: StreamEndReasonDone, want: StreamOutcomeOK},
+		{name: "clean eof", reason: StreamEndReasonEOF, want: StreamVerdictOK},
+		{name: "clean done", reason: StreamEndReasonDone, want: StreamVerdictOK},
 		{
 			name:   "caller hung up",
 			reason: StreamEndReasonClientGone,
 			endErr: errors.New("context canceled"),
-			want:   StreamOutcomeAborted,
+			want:   StreamVerdictAborted,
 		},
 		{
 			// The case the two copies disagreed on.
@@ -35,22 +35,22 @@ func TestOutcomeAsksAboutErrorsBeforeTheHangup(t *testing.T) {
 			reason:     StreamEndReasonClientGone,
 			endErr:     errors.New("context canceled"),
 			softErrors: 1,
-			want:       StreamOutcomeError,
+			want:       StreamVerdictError,
 		},
 		{
 			name:   "upstream broke",
 			reason: StreamEndReasonScannerErr,
 			endErr: errors.New("upstream broke"),
-			want:   StreamOutcomeError,
+			want:   StreamVerdictError,
 		},
-		{name: "timed out", reason: StreamEndReasonTimeout, want: StreamOutcomeError},
-		{name: "stopped without saying why", reason: StreamEndReasonNone, want: StreamOutcomeError},
+		{name: "timed out", reason: StreamEndReasonTimeout, want: StreamVerdictError},
+		{name: "stopped without saying why", reason: StreamEndReasonNone, want: StreamVerdictError},
 		{
 			// An otherwise normal end that collected errors along the way is not ok.
 			name:       "normal end that collected errors",
 			reason:     StreamEndReasonEOF,
 			softErrors: 1,
-			want:       StreamOutcomeError,
+			want:       StreamVerdictError,
 		},
 	}
 
@@ -61,7 +61,7 @@ func TestOutcomeAsksAboutErrorsBeforeTheHangup(t *testing.T) {
 			for i := 0; i < tt.softErrors; i++ {
 				s.RecordError("soft")
 			}
-			assert.Equal(t, tt.want, s.Outcome())
+			assert.Equal(t, tt.want, s.Verdict())
 		})
 	}
 }
@@ -70,5 +70,5 @@ func TestOutcomeAsksAboutErrorsBeforeTheHangup(t *testing.T) {
 // outcome must not be a crash on the logging path.
 func TestOutcomeOfNothingIsNotAFailure(t *testing.T) {
 	var s *StreamStatus
-	assert.Equal(t, StreamOutcomeOK, s.Outcome())
+	assert.Equal(t, StreamVerdictOK, s.Verdict())
 }

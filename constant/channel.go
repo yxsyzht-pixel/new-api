@@ -59,13 +59,20 @@ const (
 	ChannelTypeSub2API        = 59
 	ChannelTypeNewAPI         = 60
 	ChannelTypeTaskPlugin     = 61
-	// Antigravity moved off 61 when upstream took that slot for task plugins.
-	// No channel row had been created on the old number, so nothing to migrate.
-	ChannelTypeAntigravity = 62
+	ChannelTypeVLLM           = 62
+	ChannelTypeSGLang         = 63
+	// Antigravity has moved twice now, each time because upstream claimed the
+	// number it was sitting on (61 for task plugins, then 62/63 for vLLM and
+	// SGLang). Moving it is safe only while no channel row carries the old
+	// number — checked against the database each time, and the Antigravity
+	// channel itself was deleted on 2026-09-08.
+	ChannelTypeAntigravity = 64
 	ChannelTypeDummy       // this one is only for count, do not add any channel after this
 
 )
 
+// ChannelBaseURLs 保存各渠道类型的内置默认 Base URL。
+// 非空值会通过 /api/channel/default_base_urls 下发到前端，作为渠道表单的 API 地址占位提示。
 var ChannelBaseURLs = []string{
 	"",                                    // 0
 	"https://api.openai.com",              // 1
@@ -129,7 +136,9 @@ var ChannelBaseURLs = []string{
 	"",                                          //59
 	"",                                          //60
 	"",                                          //61
-	AntigravityEndpoint,                         //62
+	"",                                          //62
+	"",                                          //63
+	AntigravityEndpoint,                         //64
 }
 
 func GetChannelBaseURL(channelType int) string {
@@ -199,6 +208,8 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeSub2API:        "Sub2API",
 	ChannelTypeNewAPI:         "New API",
 	ChannelTypeTaskPlugin:     "Task Plugin",
+	ChannelTypeVLLM:           "vLLM",
+	ChannelTypeSGLang:         "SGLang",
 }
 
 func GetChannelTypeName(channelType int) string {
@@ -238,4 +249,14 @@ var ChannelSpecialBases = map[string]ChannelSpecialBase{
 		ClaudeBaseURL: "https://ark.cn-beijing.volces.com/api/plan",
 		OpenAIBaseURL: "https://ark.cn-beijing.volces.com/api/plan/v3",
 	},
+}
+
+// IsAdvancedCustomChannel includes named channels backed by route presets.
+func IsAdvancedCustomChannel(channelType int) bool {
+	switch channelType {
+	case ChannelTypeAdvancedCustom, ChannelTypeVLLM, ChannelTypeSGLang:
+		return true
+	default:
+		return false
+	}
 }

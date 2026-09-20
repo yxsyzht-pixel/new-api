@@ -1,4 +1,4 @@
-package controller
+package service
 
 import (
 	"context"
@@ -31,12 +31,12 @@ func TestAnAbandonedRequestIsNotRetried(t *testing.T) {
 	channelErr := types.NewOpenAIError(errors.New("request context done: context canceled"),
 		types.ErrorCodeChannelNoAvailableKey, http.StatusInternalServerError)
 
-	if !shouldRetry(c, channelErr, 5) {
+	if !retryAllowed(c, channelErr, 5) {
 		t.Fatal("调用方还在时,这类错误本就该换个账号重试")
 	}
 
 	cancel()
-	if shouldRetry(c, channelErr, 5) {
+	if retryAllowed(c, channelErr, 5) {
 		t.Fatal("调用方已挂断,不该再走完整个账号池")
 	}
 }
@@ -52,7 +52,7 @@ func TestAnAbandonedRequestSpendsNoBudget(t *testing.T) {
 	truncated := types.NewOpenAIError(errors.New("cut short"),
 		types.ErrorCodeStreamTruncated, http.StatusInternalServerError)
 	for i := 0; i < 5; i++ {
-		if shouldRetry(c, truncated, 5) {
+		if retryAllowed(c, truncated, 5) {
 			t.Fatal("挂断后不该重试")
 		}
 	}
@@ -73,13 +73,13 @@ func transportFailure() *types.NewAPIError {
 func TestASharedOutageStopsAfterOneSibling(t *testing.T) {
 	c := newTestContext()
 
-	if !shouldRetry(c, transportFailure(), 5) {
+	if !retryAllowed(c, transportFailure(), 5) {
 		t.Fatal("第一次传输失败应该允许换一个渠道重试")
 	}
-	if shouldRetry(c, transportFailure(), 4) {
+	if retryAllowed(c, transportFailure(), 4) {
 		t.Fatal("第二次传输失败说明是共用依赖出问题,不应该继续重试")
 	}
-	if shouldRetry(c, transportFailure(), 3) {
+	if retryAllowed(c, transportFailure(), 3) {
 		t.Fatal("超出预算后仍然不应该重试")
 	}
 }
@@ -88,11 +88,11 @@ func TestASharedOutageStopsAfterOneSibling(t *testing.T) {
 // into the next caller, who may be routed somewhere else entirely.
 func TestTheBudgetDoesNotLeakBetweenRequests(t *testing.T) {
 	first := newTestContext()
-	shouldRetry(first, transportFailure(), 5)
-	shouldRetry(first, transportFailure(), 4)
+	retryAllowed(first, transportFailure(), 5)
+	retryAllowed(first, transportFailure(), 4)
 
 	second := newTestContext()
-	if !shouldRetry(second, transportFailure(), 5) {
+	if !retryAllowed(second, transportFailure(), 5) {
 		t.Fatal("另一个请求应该有自己的预算")
 	}
 }
@@ -105,7 +105,7 @@ func TestAnAnsweredFailureKeepsItsFullBudget(t *testing.T) {
 		types.ErrorCodeBadResponseStatusCode, http.StatusInternalServerError)
 
 	for i := 0; i < 4; i++ {
-		if !shouldRetry(c, upstream500, 5-i) {
+		if !retryAllowed(c, upstream500, 5-i) {
 			t.Fatalf("第 %d 次上游 500 仍应重试", i+1)
 		}
 	}
@@ -120,13 +120,13 @@ func TestACutStreamIsWorthTwoMoreAccounts(t *testing.T) {
 	truncated := types.NewOpenAIError(errors.New("upstream ended the response stream before it completed"),
 		types.ErrorCodeStreamTruncated, http.StatusInternalServerError)
 
-	if !shouldRetry(c, truncated, 5) {
+	if !retryAllowed(c, truncated, 5) {
 		t.Fatal("第一次断流应该换一个账号重试")
 	}
-	if !shouldRetry(c, truncated, 4) {
+	if !retryAllowed(c, truncated, 4) {
 		t.Fatal("第二次断流仍应换账号:首块超时后断流几秒就结束,第三个账号还等得起")
 	}
-	if shouldRetry(c, truncated, 3) {
+	if retryAllowed(c, truncated, 3) {
 		t.Fatal("断流最多给两次重试机会,再试下去调用方要等太久")
 	}
 }
@@ -139,19 +139,19 @@ func TestEachFailureClassCountsSeparately(t *testing.T) {
 	c := newTestContext()
 	truncated := types.NewOpenAIError(errors.New("cut short"), types.ErrorCodeStreamTruncated, http.StatusInternalServerError)
 
-	if !shouldRetry(c, transportFailure(), 5) {
+	if !retryAllowed(c, transportFailure(), 5) {
 		t.Fatal("传输失败的第一次应该放行")
 	}
-	if !shouldRetry(c, truncated, 4) {
+	if !retryAllowed(c, truncated, 4) {
 		t.Fatal("断流有自己的预算,不该被传输失败花掉")
 	}
-	if shouldRetry(c, transportFailure(), 3) {
+	if retryAllowed(c, transportFailure(), 3) {
 		t.Fatal("传输失败的第二次应该拦下")
 	}
-	if !shouldRetry(c, truncated, 2) {
+	if !retryAllowed(c, truncated, 2) {
 		t.Fatal("断流的预算比传输失败宽一次,不该跟着一起被拦下")
 	}
-	if shouldRetry(c, truncated, 1) {
+	if retryAllowed(c, truncated, 1) {
 		t.Fatal("断流的第三次应该拦下")
 	}
 }

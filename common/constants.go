@@ -89,6 +89,14 @@ var EmailLoginAuthServerList = []string{
 }
 
 var DebugEnabled bool
+
+// RetryTimes is the operator's optional ceiling on retries per request. Zero —
+// the default — leaves the bound to the pool: one attempt per channel that
+// could serve the model (see RetryParam.RetryBudget), which is what a fixed
+// number got wrong in both directions here. A positive value only lowers that
+// bound, because selection hands out each channel once; the request-policy
+// settings page reads and writes it.
+var RetryTimes = 0
 var MemoryCacheEnabled bool
 
 var LogConsumeEnabled = true

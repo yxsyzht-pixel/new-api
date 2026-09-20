@@ -613,3 +613,15 @@ func TestStreamScannerHandler_UpstreamBreakStillReported(t *testing.T) {
 		"a genuine upstream break must not be mistaken for our own shutdown")
 	assert.ErrorContains(t, info.StreamStatus.EndError, "upstream exploded")
 }
+
+func TestNewStreamScannerCallerLimit(t *testing.T) {
+	// The smaller buffer must actually constrain a line; a preallocated 64 KiB
+	// buffer would otherwise bypass this caller's 1 KiB limit in bufio.Scanner.
+	scanner := NewStreamScanner(strings.NewReader(strings.Repeat("x", 2048)+"\n"), 1024)
+	assert.False(t, scanner.Scan())
+	require.Error(t, scanner.Err())
+	scanner = NewStreamScanner(strings.NewReader("data: ok\n"), 1024)
+	require.True(t, scanner.Scan())
+	assert.Equal(t, "data: ok", scanner.Text())
+	require.NoError(t, scanner.Err())
+}

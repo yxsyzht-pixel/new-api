@@ -41,9 +41,15 @@ func getScannerBufferSize() int {
 	return DefaultMaxScannerBufferSize
 }
 
-func NewStreamScanner(reader io.Reader) *bufio.Scanner {
+// NewStreamScanner shares relay scanner configuration. Callers buffering bounded
+// task state may additionally cap a line without increasing the configured limit.
+func NewStreamScanner(reader io.Reader, maxBytes ...int) *bufio.Scanner {
+	limit := getScannerBufferSize()
+	if len(maxBytes) > 0 && maxBytes[0] > 0 {
+		limit = min(limit, maxBytes[0])
+	}
 	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, InitialScannerBufferSize), getScannerBufferSize())
+	scanner.Buffer(make([]byte, min(InitialScannerBufferSize, limit)), limit)
 	return scanner
 }
 
@@ -335,10 +341,10 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	// of every warning there — with the remainder being nothing at all — the
 	// level was saying less than no level would. The reason and the received
 	// count stay in the line for whoever goes looking.
-	switch info.StreamStatus.Outcome() {
-	case relaycommon.StreamOutcomeOK:
+	switch info.StreamStatus.Verdict() {
+	case relaycommon.StreamVerdictOK:
 		logger.LogInfo(c, fmt.Sprintf("stream ended: %s", info.StreamStatus.Summary()))
-	case relaycommon.StreamOutcomeAborted:
+	case relaycommon.StreamVerdictAborted:
 		logger.LogInfo(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
 	default:
 		logger.LogError(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))

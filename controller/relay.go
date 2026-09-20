@@ -22,14 +22,9 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
-	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-
-	"github.com/bytedance/gopkg/util/gopool"
-	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -93,6 +88,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	defer func() {
 		if newAPIError != nil {
+			service.RecordRequestPolicyTermination(c, newAPIError)
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			switch relayFormat {
@@ -138,59 +134,25 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 
-	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
-	needCountToken := constant.CountToken
-	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
-	var meta *types.TokenCountMeta
-	if needSensitiveCheck || needCountToken {
-		meta = request.GetTokenCountMeta()
-	} else {
-		meta = fastTokenCountMetaForPricing(request)
-	}
-
-	if needSensitiveCheck && meta != nil {
-		contains, words := service.CheckSensitiveText(meta.CombineText)
-		if contains {
-			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", strings.Join(words, ", ")))
-			newAPIError = types.NewError(err, types.ErrorCodeSensitiveWordsDetected)
-			return
-		}
-	}
-
-	tokens, err := service.EstimateRequestToken(c, meta, relayInfo)
-	if err != nil {
-		newAPIError = types.NewError(err, types.ErrorCodeCountTokenFailed)
-		return
-	}
-
-	relayInfo.SetEstimatePromptTokens(tokens)
-
-	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
-	if err != nil {
-		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
-		return
-	}
-
-	// common.SetContextKey(c, constant.ContextKeyTokenCountMeta, meta)
-
-	if priceData.FreeModel {
-		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
-	} else {
-		newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
-		if newAPIError != nil {
-			return
-		}
-	}
-
 	defer func() {
-		// Only return quota if downstream failed and quota was actually pre-consumed
-		if newAPIError != nil {
-			newAPIError = service.NormalizeViolationFeeError(newAPIError)
-			if relayInfo.Billing != nil {
-				relayInfo.Billing.Refund(c)
-			}
-			service.ChargeViolationFeeIfNeeded(c, relayInfo, newAPIError)
+		recovered := recover()
+		resultErr := newAPIError
+		if recovered != nil {
+			resultErr = types.NewError(fmt.Errorf("relay panic: %v", recovered), types.ErrorCodeBadResponse)
 		}
+		if relayFormat != types.RelayFormatOpenAIRealtime {
+			perfmetrics.RecordRelayResult(c.Request.Context(), relayInfo, resultErr)
+		}
+		if recovered != nil {
+			panic(recovered)
+		}
+	}()
+
+	if newAPIError = relay.PrepareRequestBilling(c, relayInfo); newAPIError != nil {
+		return
+	}
+	defer func() {
+		newAPIError = relay.RefundFailedRequestBilling(c, relayInfo, newAPIError)
 	}()
 
 	retryParam := &service.RetryParam{
@@ -211,6 +173,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	retryBudget := retryParam.RetryBudget()
 
 	for ; retryParam.GetRetry() <= retryBudget; retryParam.IncreaseRetry() {
+		relayInfo.StreamStatus = nil
+		relayInfo.PerformanceBusinessRejection = false
+		relayInfo.PerformanceOutputTokens = 0
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
@@ -223,7 +188,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			}
 			break
 		}
-		addUsedChannel(c, channel.Id)
+		service.AppendUsedChannel(c, channel.Id)
 		if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
 			newAPIError = billingErr
 			break
@@ -253,6 +218,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		if newAPIError == nil {
+			service.MarkRequestPolicySuccess(c, relayInfo.StreamStatus)
 			relayInfo.LastError = nil
 			return
 		}
@@ -260,9 +226,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
 
+		decision := service.DecideRelayRetry(c, newAPIError, retryBudget-retryParam.GetRetry())
+		service.RecordPolicyFailure(c, channel.Id, newAPIError, decision)
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
 
-		if !shouldRetry(c, newAPIError, retryBudget-retryParam.GetRetry()) {
+		if decision.Action != "retry" {
 			break
 		}
 	}
@@ -271,11 +239,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	if len(useChannel) > 1 {
 		retryLogStr := fmt.Sprintf("重试：%s", strings.Trim(strings.Join(strings.Fields(fmt.Sprint(useChannel)), "->"), "[]"))
 		logger.LogInfo(c, retryLogStr)
-	}
-	if newAPIError != nil {
-		gopool.Go(func() {
-			perfmetrics.RecordRelaySample(relayInfo, false, 0)
-		})
 	}
 }
 
@@ -312,45 +275,10 @@ func CountClaudeTokens(c *gin.Context) {
 }
 
 var upgrader = websocket.Upgrader{
-	Subprotocols: []string{"realtime"}, // WS 握手支持的协议，如果有使用 Sec-WebSocket-Protocol，则必须在此声明对应的 Protocol TODO add other protocol
+	Subprotocols: []string{"realtime", "responses"}, // WS 握手支持的协议，如果有使用 Sec-WebSocket-Protocol，则必须在此声明对应的 Protocol
 	CheckOrigin: func(r *http.Request) bool {
 		return true // 允许跨域
 	},
-}
-
-func addUsedChannel(c *gin.Context, channelId int) {
-	useChannel := c.GetStringSlice("use_channel")
-	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
-	c.Set("use_channel", useChannel)
-}
-
-func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
-	if request == nil {
-		return &types.TokenCountMeta{}
-	}
-	meta := &types.TokenCountMeta{
-		TokenType: types.TokenTypeTokenizer,
-	}
-	switch r := request.(type) {
-	case *dto.GeneralOpenAIRequest:
-		maxCompletionTokens := lo.FromPtrOr(r.MaxCompletionTokens, uint(0))
-		maxTokens := lo.FromPtrOr(r.MaxTokens, uint(0))
-		if maxCompletionTokens > maxTokens {
-			meta.MaxTokens = int(maxCompletionTokens)
-		} else {
-			meta.MaxTokens = int(maxTokens)
-		}
-	case *dto.OpenAIResponsesRequest:
-		meta.MaxTokens = int(lo.FromPtrOr(r.MaxOutputTokens, uint(0)))
-	case *dto.ClaudeRequest:
-		meta.MaxTokens = int(lo.FromPtr(r.MaxTokens))
-	case *dto.ImageRequest:
-		// Pricing for image requests depends on ImagePriceRatio; safe to compute even when CountToken is disabled.
-		return r.GetTokenCountMeta()
-	default:
-		// Best-effort: leave CombineText empty to avoid large allocations.
-	}
-	return meta
 }
 
 func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *types.NewAPIError) {
@@ -360,12 +288,14 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		if !autoBan {
 			autoBanInt = 0
 		}
-		return &model.Channel{
+		channel := &model.Channel{
 			Id:      c.GetInt("channel_id"),
 			Type:    c.GetInt("channel_type"),
 			Name:    c.GetString("channel_name"),
 			AutoBan: &autoBanInt,
-		}, nil
+		}
+		service.RequestPolicy(c).BeginAttempt(channel, info.UsingGroup)
+		return channel, nil
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 	if err != nil {
@@ -377,6 +307,7 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 
 	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
 
+	service.RequestPolicy(c).BeginAttempt(channel, selectGroup)
 	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName)
 	if newAPIError != nil {
 		return nil, newAPIError
@@ -384,196 +315,17 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	return channel, nil
 }
 
-// attemptBudget caps how many attempts one request spends on a class of failure
-// whose repetition says more about a shared cause than about the channel that
-// happened to report it. Counting is per request: a shared outage should cut one
-// caller's losses without leaving state behind to go stale for the next.
-type attemptBudget struct {
-	limit      int
-	counterKey string
-}
-
-// budgetedFailures are the classes that get a budget of their own. Anything not
-// listed keeps the general retry allowance.
-var budgetedFailures = map[types.ErrorCode]attemptBudget{
-	// A do_request_failed carries no status and no body: the call did not get far
-	// enough to be answered, so nothing about it says whose fault it was. One is
-	// worth a retry — a single account can have its own network trouble. Two, on
-	// two different channels, is not a channel problem any more; it is whatever
-	// those channels share.
-	//
-	// On 27 August that shared thing was the proxy. Its password had been rotated
-	// without the gateway being told, every CONNECT came back 403, and because the
-	// failure looked channel-shaped, 150 requests each spent their whole retry
-	// budget rediscovering it: 1,768 log lines, six upstream attempts apiece, all
-	// of them certain to fail before they were made.
-	types.ErrorCodeDoRequestFailed: {limit: 2, counterKey: "transport_failure_count"},
-	// Cut streams do not fail fast: over 27–28 August the cut came a median 17
-	// seconds in, and 136 at the ninetieth percentile. Walking the whole channel
-	// list would have the caller waiting minutes to be told no, which is a worse
-	// answer than the one they could have had at once.
-	//
-	// The first-chunk deadline changed that arithmetic for the commonest case. A
-	// stream that says nothing at all now ends after STREAM_FIRST_CHUNK_TIMEOUT —
-	// five seconds by default — so a third attempt costs the caller seconds, not
-	// the minutes this budget was sized against. On 2026-09-09 twenty-eight
-	// requests took this path: twenty-three were served by the second account and
-	// five spent the budget and returned 500. A sibling account answers these four
-	// times out of five, which is worth one more try.
-	types.ErrorCodeStreamTruncated: {limit: 3, counterKey: "truncated_stream_count"},
-}
-
-// withinAttemptBudget records this failure against its class and reports whether
-// the request may try again. Classes without a budget are always allowed on.
-func withinAttemptBudget(c *gin.Context, code types.ErrorCode) bool {
-	budget, capped := budgetedFailures[code]
-	if !capped {
-		return true
-	}
-	seen := c.GetInt(budget.counterKey) + 1
-	c.Set(budget.counterKey, seen)
-	return seen < budget.limit
-}
-
-// requestAbandoned reports whether the caller's request context is already done
-// — they hung up, or the deadline passed. Either way no account can answer.
-func requestAbandoned(c *gin.Context) bool {
-	if c == nil || c.Request == nil {
-		return false
-	}
-	ctx := c.Request.Context()
-	if ctx == nil {
-		return false
-	}
-	return ctx.Err() != nil
-}
-
-func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
-	if openaiErr == nil {
-		return false
-	}
-	// A caller who has gone cannot be served by anyone. The failure arrives
-	// wrapped as a channel error, so without this it is read as "this account is
-	// bad, try the next" and the whole pool is walked for nobody: on 2026-09-09 a
-	// single abandoned request spent all twelve Codex accounts over twenty
-	// seconds, and every attempt failed the moment it was made. Checked before
-	// the attempt budget, which counts the failures it is shown.
-	if requestAbandoned(c) {
-		// Logged, because without a trace the short retry chains this produces
-		// are indistinguishable from the gateway giving up: on 2026-09-15 sixteen
-		// image and chat failures stopped after two to nine accounts and only
-		// the caller's broken pipes elsewhere in the log suggested why.
-		logger.LogWarn(c, fmt.Sprintf("request abandoned by caller (%v), not retrying; last upstream error: %s",
-			c.Request.Context().Err(), common.LocalLogPreview(openaiErr.Error())))
-		return false
-	}
-	// Reasoning bound to another account is the one refusal a retry can actually
-	// repair, because the next attempt sends the conversation without it. The
-	// check sits ahead of the affinity and status-code gates deliberately: the
-	// codex affinity rule skips retries, and the encrypted-content form arrives
-	// as a 400, so both would otherwise turn a fixable turn into a dead one. Once
-	// only — a second refusal after the references are gone is not about them.
-	if service.IsStaleReasoningReference(openaiErr) && service.MarkReasoningStripped(c) {
-		return true
-	}
-	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
-		return false
-	}
-	if !withinAttemptBudget(c, openaiErr.GetErrorCode()) {
-		return false
-	}
-	if types.IsChannelError(openaiErr) {
-		return true
-	}
-	if types.IsSkipRetryError(openaiErr) {
-		return false
-	}
-	if retryTimes <= 0 {
-		return false
-	}
-	if service.GetChannelConstraints(c).SuppressesRetry() {
-		return false
-	}
-	code := openaiErr.StatusCode
-	if code >= 200 && code < 300 {
-		return false
-	}
-	if code < 100 || code > 599 {
-		return true
-	}
-	if operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
-		return false
-	}
-	return operation_setting.ShouldRetryByStatusCode(code)
-}
-
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, relayInfo *relaycommon.RelayInfo) {
-	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
-
-	// An upstream usage limit is temporary, so the channel is parked rather than
-	// disabled. Releasing the affinity binding lets this request — and the session
-	// behind it — move to a sibling account instead of failing until the limit lifts.
-	//
-	// A provider-side failure is not the channel's fault, so the channel keeps
-	// serving; only the affinity binding is released, otherwise the rule's
-	// skip-retry setting would hand the caller a failure that another account
-	// could have served.
-	// A burst rate limit belongs here too. The affinity rule keeps a session on one
-	// account so it keeps its prompt cache, and refuses to retry elsewhere when that
-	// account fails — sound while the account is merely busy, wrong when it has just
-	// told us to slow down: a sibling account can serve the turn this second, and
-	// without releasing the binding the caller gets the 429 with no retry attempted
-	// at all. Losing one turn's prompt cache beats losing the turn.
-	if service.SuspendChannelOnUsageLimit(channelError, err) ||
-		service.IsUpstreamTransientFailure(err) ||
-		service.IsUpstreamRateLimited(err) {
-		service.ClearCurrentChannelAffinityCache(c)
-	}
-	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
-	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
-	if service.ShouldDisableChannel(err) && channelError.AutoBan {
-		gopool.Go(func() {
-			service.DisableChannel(channelError, err.ErrorWithStatusCode())
-		})
-	}
-
-	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) {
-		// 保存错误日志到mysql中
-		userId := c.GetInt("id")
-		tokenName := c.GetString("token_name")
-		modelName := c.GetString("original_model")
-		tokenId := c.GetInt("token_id")
-		userGroup := c.GetString("group")
-		other := model.NewLogOther()
-		if c.Request != nil && c.Request.URL != nil {
-			other.SetPublic("request_path", c.Request.URL.Path)
-		}
-		other.SetPublic("error_type", err.GetErrorType())
-		other.SetPublic("error_code", err.GetErrorCode())
-		other.SetPublic("status_code", err.StatusCode)
-		// A refused request never reports usage, so this row's token columns
-		// stay zero and nothing afterwards can say how large the refused request
-		// was — which is the one question a context_length rejection raises. The
-		// byte count is the size we do know without the upstream telling us, and
-		// reading it is a field lookup on the stored body, not a re-read.
-		if storage, storageErr := common.GetBodyStorage(c); storageErr == nil && storage != nil {
-			if size := storage.Size(); size > 0 {
-				other.SetPublic("request_bytes", size)
-			}
-		}
-		service.AppendRelayLogAdminInfo(c, relayInfo, other)
-		service.AppendTaskPluginContextAuditInfo(c, other)
-		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
-		if startTime.IsZero() {
-			startTime = time.Now()
-		}
-		useTimeSeconds := int(time.Since(startTime).Seconds())
-		model.RecordErrorLog(c, userId, channelError.ChannelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
-	}
-
+	service.ProcessChannelError(c, channelError, err, relayInfo)
 }
 
 func RelayMidjourney(c *gin.Context) {
+	policy := service.RequestPolicy(c)
+	defer func() {
+		if policy.Attempts > 0 && !policy.Successful {
+			service.RecordRequestPolicyTermination(c, types.NewErrorWithStatusCode(errors.New("Midjourney submission failed"), types.ErrorCodeBadResponseStatusCode, http.StatusBadGateway, types.ErrOptionWithSkipRetry()))
+		}
+	}()
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatMjProxy, nil, nil)
 
 	if err != nil {
@@ -601,6 +353,7 @@ func RelayMidjourney(c *gin.Context) {
 	//err = relayMidjourneySubmit(c, relayMode)
 	log.Println(mjErr)
 	if mjErr != nil {
+		policy.Successful = false
 		statusCode := http.StatusBadRequest
 		if mjErr.Code == 30 {
 			mjErr.Result = "当前分组负载已饱和，请稍后再试，或升级账户以提升服务质量。"
@@ -740,6 +493,7 @@ func executeTaskSubmissionWith(
 	relayInfo *relaycommon.RelayInfo,
 	submit taskSubmitAttempt,
 ) (*taskSubmissionOutcome, *taskdto.TaskError) {
+	policy := service.RequestPolicy(c)
 	diagnostics := newTaskPluginSubmitDiagnostics(c)
 	diagnostics.start(relayInfo)
 	var result *relay.TaskSubmitResult
@@ -779,6 +533,7 @@ func executeTaskSubmissionWith(
 
 		if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
 			channel = lockedCh
+			policy.BeginAttempt(channel, relayInfo.UsingGroup)
 			if retryParam.GetRetry() > 0 {
 				if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.OriginModelName); setupErr != nil {
 					taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
@@ -790,13 +545,13 @@ func executeTaskSubmissionWith(
 			channel, channelErr = getChannel(c, relayInfo, retryParam)
 			if channelErr != nil {
 				logger.LogError(c, channelErr.Error())
-				taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", http.StatusInternalServerError)
+				taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", channelErr.StatusCode)
 				break
 			}
 		}
 		diagnostics.attempt(retryParam.GetRetry()+1, channel, relayInfo.LockedChannel != nil)
 
-		addUsedChannel(c, channel.Id)
+		service.AppendUsedChannel(c, channel.Id)
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
 		if bodyErr != nil {
 			stage = "read_body"
@@ -821,15 +576,19 @@ func executeTaskSubmissionWith(
 			break
 		}
 
+		taskAPIError := taskSubmissionAPIError(taskErr)
+		relayInfo.LastError = taskAPIError
+		decision := decideTaskRetry(c, taskErr, taskRetryBudget-retryParam.GetRetry())
+		service.RecordPolicyFailure(c, channel.Id, taskAPIError, decision)
 		if !taskErr.LocalError {
 			processChannelError(c,
 				*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
 					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),
-				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode),
+				taskAPIError,
 				relayInfo)
 		}
 
-		willRetry := shouldRetryTaskRelay(c, channel.Id, taskErr, taskRetryBudget-retryParam.GetRetry())
+		willRetry := decision.Action == "retry"
 		diagnostics.attemptFailed(retryParam.GetRetry()+1, channel, taskErr, willRetry)
 		if !willRetry {
 			break
@@ -931,6 +690,11 @@ func executeTaskSubmissionWith(
 		diagnostics.failed("settle", "billing_error", taskErr, true)
 		return nil, taskErr
 	}
+	if task.Status != model.TaskStatusFailure {
+		service.MarkRequestPolicySuccess(c, nil)
+	} else {
+		policy.AddEvent(service.PolicyEvent{Decision: service.PolicyDecision{Action: "stop", Reason: "task_failed", Source: "upstream"}})
+	}
 	service.LogTaskConsumption(c, relayInfo, task)
 	diagnostics.complete(task, result.Quota)
 
@@ -991,6 +755,7 @@ func presentTaskSubmission(c *gin.Context, outcome *taskSubmissionOutcome) {
 }
 
 func respondTaskSubmissionError(c *gin.Context, taskErr *taskdto.TaskError) {
+	service.RecordRequestPolicyTermination(c, taskSubmissionAPIError(taskErr))
 	newTaskPluginSubmitDiagnostics(c).presentError(taskErr)
 	if middleware.RespondTaskPluginError(c, taskErr) {
 		return
@@ -1006,44 +771,53 @@ func respondTaskError(c *gin.Context, taskErr *taskdto.TaskError) {
 	c.JSON(taskErr.StatusCode, taskErr)
 }
 
-func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *taskdto.TaskError, retryTimes int) bool {
-	if taskErr == nil {
-		return false
+// taskSubmissionAPIError adapts a task error for the shared relay error paths.
+// TaskError.Error is nil for many local rejections, so fall back to the message.
+func taskSubmissionAPIError(taskErr *taskdto.TaskError) *types.NewAPIError {
+	err := taskErr.Error
+	if err == nil {
+		err = errors.New(taskErr.Message)
 	}
-	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
-		return false
-	}
-	if retryTimes <= 0 {
-		return false
-	}
-	if service.GetChannelConstraints(c).SuppressesRetry() {
-		return false
-	}
-	if taskErr.StatusCode == http.StatusTooManyRequests {
-		return true
-	}
-	if taskErr.StatusCode == 307 {
-		return true
-	}
-	if taskErr.StatusCode/100 == 5 {
+	return types.NewOpenAIError(err, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode)
+}
+
+// decideTaskRetry is the single retry decision for task submissions. The
+// reason is recorded in the request policy decision events of the log details.
+func decideTaskRetry(c *gin.Context, taskErr *taskdto.TaskError, retryTimes int) service.PolicyDecision {
+	stop := service.PolicyDecision{Action: "stop", Source: "system"}
+	retry := service.PolicyDecision{Action: "retry", Reason: "retry_status_matched", Source: "system"}
+	switch {
+	case taskErr == nil:
+		stop.Reason = "request_completed"
+	case taskErr.NoRetry:
+		stop.Reason = "task_accepted"
+	case service.ShouldSkipRetryAfterChannelAffinityFailure(c):
+		stop.Reason, stop.Source = "strict_session", "session_rule"
+		if source := service.RequestPolicy(c).SessionModeSource; source != "" {
+			stop.Source = source
+		}
+	case retryTimes <= 0:
+		stop.Reason, stop.Source = "attempt_budget_exhausted", "global"
+	case service.GetChannelConstraints(c).SuppressesRetry():
+		stop.Reason, stop.Source = "pinned_channel", "channel_constraint"
+	case taskErr.StatusCode == http.StatusTooManyRequests, taskErr.StatusCode == 307:
+		return retry
+	case taskErr.StatusCode/100 == 5:
 		// 超时不重试
 		if operation_setting.IsAlwaysSkipRetryStatusCode(taskErr.StatusCode) {
-			return false
+			stop.Reason = "system_retry_exclusion"
+			break
 		}
-		return true
-	}
-	if taskErr.StatusCode == http.StatusBadRequest {
-		return false
-	}
-	if taskErr.StatusCode == 408 {
+		return retry
+	case taskErr.StatusCode == http.StatusBadRequest, taskErr.StatusCode == 408:
 		// azure处理超时不重试
-		return false
+		stop.Reason = "status_not_retryable"
+	case taskErr.LocalError:
+		stop.Reason = "local_rejection"
+	case taskErr.StatusCode/100 == 2:
+		stop.Reason = "system_retry_exclusion"
+	default:
+		return retry
 	}
-	if taskErr.LocalError {
-		return false
-	}
-	if taskErr.StatusCode/100 == 2 {
-		return false
-	}
-	return true
+	return stop
 }

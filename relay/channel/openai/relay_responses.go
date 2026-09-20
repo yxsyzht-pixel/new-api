@@ -9,16 +9,17 @@ import (
 	"sync/atomic"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
-	"github.com/QuantumNous/new-api/relaykit/relayconvert"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 const (
@@ -176,12 +177,16 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 
+	info.ObserveResponseModel(responsesResponse.Model)
+	responseBody = rewriteSGLangResponsesCreatedAt(info, responseBody, "created_at", responsesResponse.CreatedAt)
+
 	// 写入新的 response body
 	responseBody = relaycommon.FreeformResponseToCustom(responseBody, info)
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	// compute usage
-	usage := relayconvert.NormalizeResponsesUsage(responsesResponse.Usage)
+	usage := &dto.Usage{}
+	service.ApplyResponsesUsage(usage, responsesResponse.Usage)
 	// Count actual tool invocations from Output (not tool declarations).
 	for _, output := range responsesResponse.Output {
 		switch output.Type {
@@ -214,10 +219,11 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	defer service.CloseResponseBodyGracefully(resp)
 
-	var usage = &dto.Usage{}
-	var responseTextBuilder strings.Builder
-	imageCounter := &relaycommon.ImageGenerationCallCounter{}
-	imageCommitted := false
+	// Usage, image counting and the missing-usage estimate all live in the
+	// accumulator; what stays here is the decision of what the caller gets to
+	// see, which the accumulator has no opinion about.
+	accumulator := service.NewResponsesUsageAccumulator(info)
+
 	// An upstream that is out of capacity answers 200 and reports the failure as an
 	// in-stream `error` event. Nothing useful has been produced at that point, so the
 	// failure is withheld from the client and surfaced as a relay error instead,
@@ -273,60 +279,19 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		if !responsesStreamTypeIsPreamble(streamResponse.Type) {
 			contentStarted.Store(true)
 		}
-		streamResponse.Type, data = relaycommon.FreeformEventToCustom(streamResponse.Type, data, info, freeform)
-		sendResponsesStreamData(c, streamResponse, data)
+		// Terminal events are what shouldCloseTruncatedStream below asks about:
+		// a stream that already said it was over does not need us to end it.
 		switch streamResponse.Type {
-		case "response.completed", "response.done":
+		case "response.completed", "response.done", "response.failed", "response.incomplete",
+			"response.cancelled", "response.canceled":
 			terminalSent = true
-			if streamResponse.Response != nil {
-				if streamResponse.Response.Usage != nil {
-					incomingUsage := relayconvert.NormalizeResponsesUsage(streamResponse.Response.Usage)
-					usage = dto.MergeUsageNonZero(usage, incomingUsage)
-				}
-				if !imageCommitted {
-					if relaycommon.IsNonBillableResponsesStatus(streamResponse.Response.Status) {
-						imageCounter.Reset()
-						imageCounter.Commit(info)
-						imageCommitted = true
-					} else {
-						for i := range streamResponse.Response.Output {
-							idx := i
-							imageCounter.Observe(&streamResponse.Response.Output[i], &idx)
-						}
-						imageCounter.Commit(info)
-						imageCommitted = true
-					}
-				}
-			} else if !imageCommitted {
-				imageCounter.Commit(info)
-				imageCommitted = true
-			}
-		case "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
-			terminalSent = true
-			if !imageCommitted {
-				imageCounter.Reset()
-				imageCounter.Commit(info)
-				imageCommitted = true
-			}
-		case "response.output_text.delta":
-			// 处理输出文本
-			responseTextBuilder.WriteString(streamResponse.Delta)
-		case dto.ResponsesOutputTypeItemDone:
-			if streamResponse.Item != nil {
-				switch streamResponse.Item.Type {
-				case dto.BuildInCallWebSearchCall:
-					info.CountBillableToolCall(dto.BuildInCallWebSearchCall, "")
-				case dto.BuildInCallFileSearchCall:
-					info.CountBillableToolCall(dto.BuildInCallFileSearchCall, "")
-				case dto.BuildInCallFunctionCall:
-					info.CountBillableToolCall(dto.BuildInCallFunctionCall, streamResponse.Item.Name)
-				case dto.ResponsesOutputTypeImageGenerationCall:
-					if !imageCommitted {
-						imageCounter.Observe(streamResponse.Item, streamResponse.OutputIndex)
-					}
-				}
-			}
 		}
+		streamResponse.Type, data = relaycommon.FreeformEventToCustom(streamResponse.Type, data, info, freeform)
+		if streamResponse.Response != nil {
+			data = string(rewriteSGLangResponsesCreatedAt(info, []byte(data), "response.created_at", streamResponse.Response.CreatedAt))
+		}
+		sendResponsesStreamData(c, streamResponse, data)
+		accumulator.Observe(&streamResponse)
 	})
 
 	// The upstream can die in the middle of a stream — an h2 INTERNAL_ERROR from the
@@ -377,32 +342,29 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	// than a spent account: a sibling account may well have room. Nothing has
 	// been committed to the client, so the retry is free of the splicing problem
 	// the truncated path above has to reason about.
-	if isEmptyResponsesTurn(info.StreamStatus, contentStarted.Load(), responseTextBuilder.Len(), usage) {
+	if isEmptyResponsesTurn(info.StreamStatus, contentStarted.Load(), accumulator.OutputTextLen(), accumulator.RawUsage()) {
 		return nil, types.NewError(
 			fmt.Errorf("upstream returned an empty response stream (%s)", info.StreamStatus.Summary()),
 			types.ErrorCodeBadResponse)
 	}
 
-	if usage.CompletionTokens == 0 {
-		// 计算输出文本的 token 数量
-		tempStr := responseTextBuilder.String()
-		if len(tempStr) > 0 {
-			// 非正常结束，使用输出文本的 token 数量
-			completionTokens := service.CountTextToken(tempStr, info.UpstreamModelName)
-			usage.CompletionTokens = completionTokens
-		}
-	}
+	common.SetContextKey(c, constant.ContextKeyResponseStreamStatus, info.StreamStatus)
+	info.StreamStatus.RequireTerminal()
+	return accumulator.Finish(), nil
+}
 
-	if usage.PromptTokens == 0 && usage.CompletionTokens != 0 {
-		usage.PromptTokens = info.GetEstimatePromptTokens()
+func rewriteSGLangResponsesCreatedAt(info *relaycommon.RelayInfo, payload []byte, path string, createdAt dto.IntValue) []byte {
+	if info.GetChannelType() != constant.ChannelTypeSGLang {
+		return payload
 	}
-
-	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
-	if usage.BillingUsage != nil {
-		usage.BillingUsage = dto.CloneBillingUsageWithEstimatedCompletion(usage.BillingUsage, usage.CompletionTokens)
+	if !gjson.GetBytes(payload, path).Exists() {
+		return payload
 	}
-
-	return usage, nil
+	patched, err := sjson.SetBytes(payload, path, int(createdAt))
+	if err != nil {
+		return payload
+	}
+	return patched
 }
 
 // isEmptyResponsesTurn reports whether a stream that ended cleanly delivered

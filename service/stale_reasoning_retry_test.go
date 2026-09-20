@@ -1,4 +1,4 @@
-package controller
+package service
 
 import (
 	"errors"
@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/types"
-	"github.com/QuantumNous/new-api/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,15 +39,15 @@ func TestAStaleReasoningReferenceIsRetriedOnce(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := newTestContext()
-			require.False(t, service.ShouldStripReasoningReferences(c))
+			require.False(t, ShouldStripReasoningReferences(c))
 
-			assert.True(t, shouldRetry(c, tc.err, 5), "第一次应该放行,好让重试剥掉引用后再试")
-			assert.True(t, service.ShouldStripReasoningReferences(c), "重试前必须标记要剥离")
+			assert.True(t, retryAllowed(c, tc.err, 5), "第一次应该放行,好让重试剥掉引用后再试")
+			assert.True(t, ShouldStripReasoningReferences(c), "重试前必须标记要剥离")
 
 			// The marker is spent, so a second refusal cannot claim the repair
 			// again — whatever happens next is the ordinary rules' decision.
-			assert.False(t, service.MarkReasoningStripped(c), "修复只该申领一次")
-			assert.Equal(t, tc.retryableWithoutRepair, shouldRetry(c, tc.err, 5),
+			assert.False(t, MarkReasoningStripped(c), "修复只该申领一次")
+			assert.Equal(t, tc.retryableWithoutRepair, retryAllowed(c, tc.err, 5),
 				"剥掉之后应交回常规规则判断,而不是继续靠修复通道放行")
 		})
 	}
@@ -62,7 +61,7 @@ func TestAnUnrelatedFailureDoesNotTriggerTheRepair(t *testing.T) {
 		errors.New("Our servers are currently overloaded. Please try again later."),
 		types.ErrorCodeBadResponseStatusCode, http.StatusServiceUnavailable)
 
-	shouldRetry(c, overloaded, 5)
-	assert.False(t, service.ShouldStripReasoningReferences(c),
+	retryAllowed(c, overloaded, 5)
+	assert.False(t, ShouldStripReasoningReferences(c),
 		"和推理引用无关的失败不该触发剥离")
 }
