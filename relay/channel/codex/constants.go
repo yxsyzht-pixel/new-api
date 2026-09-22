@@ -11,6 +11,8 @@ var ModelList = []string{
 	"gpt-5.6-luna",
 	"gpt-5.5",
 	"gpt-6-astra",
+	"gpt-6-sol",
+	"gpt-6-luna",
 	"codex-auto-review",
 	// Drawing is not a model of its own upstream — it is the image_generation tool
 	// carried by the text models. The name is advertised anyway so ordinary image
