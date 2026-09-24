@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -112,14 +113,31 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	// told us to slow down: a sibling account can serve the turn this second, and
 	// without releasing the binding the caller gets the 429 with no retry attempted
 	// at all. Losing one turn's prompt cache beats losing the turn.
+	// A model the bound account cannot serve belongs here too, for the same
+	// reason as the rest: it is a fact about that account, not about the turn. On
+	// 2026-09-23 one caller's session was bound to an account that had not yet
+	// been given gpt-6-sol; six turns in half a minute each came back 404 without
+	// a sibling ever being tried, and the binding lasts a day.
 	if SuspendChannelOnUsageLimit(channelError, err) ||
 		IsUpstreamTransientFailure(err) ||
-		IsUpstreamRateLimited(err) {
+		IsUpstreamRateLimited(err) ||
+		IsUpstreamModelUnavailable(err) {
 		ClearCurrentChannelAffinityCache(c)
 	}
 	if ShouldDisableChannel(err) && channelError.AutoBan {
 		reason := err.MaskSensitiveErrorWithStatusCode()
 		gopool.Go(func() {
+			// A Codex channel answering 401 is usually holding a credential the
+			// provider has since invalidated, which a refresh repairs in a
+			// second. Disabling first cost one account 22 hours of a twelve
+			// account pool on 2026-09-23, 42 minutes after a refresh that had
+			// succeeded. So: try once, and disable only if that is refused —
+			// with a reason that says so, rather than a bare 401 to guess at.
+			if refreshErr := refreshCodexCredentialBeforeDisable(channelError, err); refreshErr == nil {
+				return
+			} else if !errors.Is(refreshErr, errCredentialRefreshNotApplicable) {
+				reason = fmt.Sprintf("%s; credential refresh refused: %v", reason, refreshErr)
+			}
 			DisableChannel(channelError, reason)
 		})
 	}

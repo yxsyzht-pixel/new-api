@@ -19,6 +19,9 @@ import (
 const (
 	codexCredentialRefreshTickInterval = 10 * time.Minute
 	codexCredentialRefreshThreshold    = 24 * time.Hour
+	// Below this much life left in the access token, a refusal to refresh is an
+	// outage with a clock on it rather than a warning.
+	codexCredentialRefreshUrgentWindow = 4 * time.Hour
 	codexCredentialRefreshBatchSize    = 200
 	codexCredentialRefreshTimeout      = 15 * time.Second
 )
@@ -112,8 +115,9 @@ func runCodexCredentialAutoRefreshOnce() {
 			}
 
 			expiredAtRaw := strings.TrimSpace(oauthKey.Expired)
-			expiredAt, err := time.Parse(time.RFC3339, expiredAtRaw)
-			if err == nil && !expiredAt.IsZero() && expiredAt.Sub(now) > codexCredentialRefreshThreshold {
+			expiredAt, parseErr := time.Parse(time.RFC3339, expiredAtRaw)
+			expiryKnown := parseErr == nil && !expiredAt.IsZero()
+			if expiryKnown && expiredAt.Sub(now) > codexCredentialRefreshThreshold {
 				continue
 			}
 
@@ -121,11 +125,31 @@ func runCodexCredentialAutoRefreshOnce() {
 			newKey, _, err := RefreshCodexChannelCredential(refreshCtx, ch.Id, CodexCredentialRefreshOptions{ResetCaches: false})
 			cancel()
 			if err != nil {
-				logger.LogWarn(ctx, fmt.Sprintf("codex credential auto-refresh: channel_id=%d name=%s refresh failed: %v", ch.Id, ch.Name, err))
+				// Put the reason on the channel row, and say how long the access
+				// token this refresh was meant to replace still has. A refresh
+				// upstream refuses is a dead refresh token: nothing here can fix
+				// it, and the channel will fail the moment the access token runs
+				// out, so the operator needs to see it now rather than read about
+				// it in a warning nobody watches.
+				model.RecordCredentialRefreshOutcome(ch.Id, err.Error(), expiredAtRaw)
+				message := fmt.Sprintf("codex credential auto-refresh: channel_id=%d name=%s refresh failed: %v", ch.Id, ch.Name, err)
+				remaining := time.Duration(0)
+				if expiryKnown {
+					remaining = expiredAt.Sub(now)
+				}
+				switch {
+				case !expiryKnown:
+					logger.LogWarn(ctx, message)
+				case remaining <= codexCredentialRefreshUrgentWindow:
+					logger.LogError(ctx, fmt.Sprintf("%s; sign in again, this channel stops serving in %s", message, remaining.Round(time.Minute)))
+				default:
+					logger.LogWarn(ctx, fmt.Sprintf("%s; access token still valid for %s", message, remaining.Round(time.Minute)))
+				}
 				continue
 			}
 
 			refreshed++
+			model.RecordCredentialRefreshOutcome(ch.Id, "", newKey.Expired)
 			logger.LogInfo(ctx, fmt.Sprintf("codex credential auto-refresh: channel_id=%d name=%s refreshed, expires_at=%s", ch.Id, ch.Name, newKey.Expired))
 		}
 	}

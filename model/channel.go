@@ -1222,3 +1222,36 @@ func CountChannelsGroupByType() (map[int64]int64, error) {
 	}
 	return counts, nil
 }
+
+// RecordCredentialRefreshOutcome keeps the result of the last automatic
+// credential refresh on the channel row, where the console shows it.
+//
+// A refresh that upstream refuses means the stored refresh token is dead and
+// only a fresh sign-in will revive the channel. Before this, that state was
+// invisible: the task logged a warning every ten minutes and changed nothing an
+// operator would see, so the first sign of trouble was the channel being
+// auto-disabled hours later, when the access token finally expired — on
+// 2026-09-23 one channel failed to refresh 105 times over seventeen hours
+// before anyone noticed. A row that says why is what turns that into a
+// five-minute fix.
+func RecordCredentialRefreshOutcome(channelId int, failure string, expiresAt string) {
+	channel, err := GetChannelById(channelId, true)
+	if err != nil || channel == nil {
+		return
+	}
+	info := channel.GetOtherInfo()
+	if failure == "" {
+		delete(info, "credential_refresh_error")
+		delete(info, "credential_refresh_error_time")
+	} else {
+		info["credential_refresh_error"] = failure
+		info["credential_refresh_error_time"] = common.GetTimestamp()
+	}
+	if expiresAt != "" {
+		info["credential_expires_at"] = expiresAt
+	}
+	channel.SetOtherInfo(info)
+	if err := DB.Model(channel).Select("other_info").Updates(channel).Error; err != nil {
+		common.SysLog(fmt.Sprintf("failed to record credential refresh outcome: channel_id=%d, error=%v", channelId, err))
+	}
+}
