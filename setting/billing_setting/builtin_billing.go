@@ -18,4 +18,7 @@ var builtinBillingExpr = map[string]string{
 	// double the input and cache rates and 1.5x the output rate.
 	"gpt-6-sol":  `len <= 272000 ? tier("standard", p * 2 + c * 10 + cr * 0.2 + cc * 2.5) : tier("long_context", p * 4 + c * 15 + cr * 0.4 + cc * 5)`,
 	"gpt-6-luna": `len <= 272000 ? tier("standard", p * 0.1 + c * 0.5 + cr * 0.01 + cc * 0.125) : tier("long_context", p * 0.2 + c * 0.75 + cr * 0.02 + cc * 0.25)`,
+	// https://developers.openai.com/api/docs/models/gpt-6.1-sol (2026-10-08):
+	// cached input is half gpt-6-sol's, and cache writes are listed at $2.5.
+	"gpt-6.1-sol": `len <= 272000 ? tier("standard", p * 2 + c * 10 + cr * 0.1 + cc * 2.5) : tier("long_context", p * 4 + c * 15 + cr * 0.2 + cc * 5)`,
 }
