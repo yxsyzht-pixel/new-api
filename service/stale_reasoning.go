@@ -23,6 +23,25 @@ var staleReasoningMarkers = []string{
 	// set to false. Try again with `store` set to true, or remove this item
 	// from your input."
 	"items are not persisted when",
+	// "response protection is unavailable (internal_error)". First seen on
+	// 2026-10-08 and refused by every account alike — 1000 of 1002 requests
+	// failed on all of them — always on long sessions of about a megabyte.
+	// Neither size nor a single replayed reasoning item reproduces it: a 1 MB
+	// plain-text request and a turn carrying one encrypted item both went
+	// through. What a long session adds is many encrypted reasoning items, so
+	// this is the repair to try; see IsResponseProtectionUnavailable for what
+	// happens when it does not help.
+	"response protection is unavailable",
+}
+
+// IsResponseProtectionUnavailable reports the one refusal that is the
+// request's and not the account's: every account answers it the same way, so
+// once the reasoning repair has been tried there is nothing left to retry for.
+func IsResponseProtectionUnavailable(err *types.NewAPIError) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "response protection is unavailable")
 }
 
 // The markers are matched loosely on purpose: the upstream owns this wording and

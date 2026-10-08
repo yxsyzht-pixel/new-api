@@ -65,3 +65,39 @@ func TestAnUnrelatedFailureDoesNotTriggerTheRepair(t *testing.T) {
 	assert.False(t, ShouldStripReasoningReferences(c),
 		"和推理引用无关的失败不该触发剥离")
 }
+
+func responseProtectionUnavailable() *types.NewAPIError {
+	return types.NewOpenAIError(errors.New("response protection is unavailable (internal_error)"),
+		types.ErrorCodeBadResponseStatusCode, http.StatusServiceUnavailable)
+}
+
+// Every account refuses this one alike, so the pool walk it used to get was
+// pure cost: four accounts and six seconds per request on 2026-10-08, to hear
+// the same refusal four times. It gets the one change that could matter — the
+// session's encrypted reasoning stripped — and then the answer is final.
+func TestResponseProtectionGetsOneRepairAndNoPoolWalk(t *testing.T) {
+	c := newTestContext()
+	err := responseProtectionUnavailable()
+
+	require.True(t, IsStaleReasoningReference(err), "必须走会话修复的路径")
+	require.True(t, IsResponseProtectionUnavailable(err))
+
+	first := DecideRelayRetry(c, err, 11)
+	assert.Equal(t, "retry", first.Action, "第一次:剥掉加密推理再试一次")
+	assert.Equal(t, "stale_reasoning_repair", first.Reason)
+	assert.True(t, ShouldStripReasoningReferences(c), "重试前必须标记要剥离")
+
+	second := DecideRelayRetry(c, err, 10)
+	assert.Equal(t, "stop", second.Action, "修复已用过,换账号也是同样的拒绝,不该再走满账号池")
+	assert.Equal(t, "refused_for_every_account", second.Reason)
+}
+
+// The stop is specific to this refusal; an ordinary overload after a repair
+// must still be free to try the next account.
+func TestAnOverloadAfterTheRepairStillWalksThePool(t *testing.T) {
+	c := newTestContext()
+	require.True(t, MarkReasoningStripped(c))
+	overloaded := types.NewOpenAIError(errors.New("Our servers are currently overloaded. Please try again later."),
+		types.ErrorCodeBadResponseStatusCode, http.StatusServiceUnavailable)
+	assert.Equal(t, "retry", DecideRelayRetry(c, overloaded, 10).Action)
+}

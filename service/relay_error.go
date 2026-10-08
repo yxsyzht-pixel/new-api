@@ -47,6 +47,12 @@ func DecideRelayRetry(c *gin.Context, err *types.NewAPIError, retryTimes int) Po
 	if IsStaleReasoningReference(err) && MarkReasoningStripped(c) {
 		return PolicyDecision{Action: "retry", Reason: "stale_reasoning_repair", Source: "system"}
 	}
+	// Past the repair, a refusal that every account gives alike is not worth
+	// walking the pool for: on 2026-10-08 each such request spent four accounts
+	// and six seconds to be told the same thing four times.
+	if IsResponseProtectionUnavailable(err) {
+		return PolicyDecision{Action: "stop", Reason: "refused_for_every_account", Source: "system"}
+	}
 	if ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		source := RequestPolicy(c).SessionModeSource
 		if source == "" {
