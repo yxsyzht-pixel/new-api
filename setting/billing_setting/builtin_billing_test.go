@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/relay/channel/cursor"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
@@ -147,4 +148,44 @@ func TestImageModelBuiltinPricesAndOverrides(t *testing.T) {
 			assert.Equal(t, settings.BillingExpr[name], actual)
 		})
 	}
+}
+
+func TestCursorModelsArePricedFromTheBridgeUsage(t *testing.T) {
+	settings := config.GlobalConfig.Get("billing_setting").(*billing_setting.BillingSetting)
+	saved := *settings
+	savedRatios, savedPrices := ratio_setting.ModelRatio2JSONString(), ratio_setting.ModelPrice2JSONString()
+	t.Cleanup(func() {
+		*settings = saved
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedRatios))
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(savedPrices))
+	})
+	*settings = billing_setting.BillingSetting{BillingMode: map[string]string{}, BillingExpr: map[string]string{}}
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{}`))
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{}`))
+
+	// A suggested model without a price would bill at the legacy fallback ratio.
+	for _, name := range cursor.ModelList {
+		assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(name), name)
+	}
+
+	// The bridge reports prompt_tokens as the whole prompt with the cached part
+	// in prompt_tokens_details, so only the uncached rest bills at the input rate.
+	quota := func(name string, prompt, cached, completion int) int {
+		expression, ok := billing_setting.GetBillingExpr(name)
+		require.True(t, ok, name)
+		usage := &dto.Usage{PromptTokens: prompt, CompletionTokens: completion,
+			PromptTokensDetails: dto.InputTokenDetails{CachedTokens: cached}}
+		result, err := billingexpr.ComputeTieredQuota(&billingexpr.BillingSnapshot{ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), GroupRatio: 1, QuotaPerUnit: 500000},
+			service.BuildTieredTokenParams(usage, false, billingexpr.UsedVars(expression)))
+		require.NoError(t, err)
+		return result.ActualQuotaAfterGroup
+	}
+	// 6000 * $0.5 + 4000 * $0.2 + 200 * $2.5 per 1M = $0.0043
+	assert.Equal(t, 2150, quota("composer-2.5", 10000, 4000, 200))
+	// Grok 4.7 doubles the whole request past 256K input tokens.
+	assert.Equal(t, 259000, quota("grok-4.7-medium", 256000, 0, 1000))
+	assert.Equal(t, 518002, quota("grok-4.7-medium", 256001, 0, 1000))
+	// Haiku 5.5 bills 5x past 100K input tokens.
+	assert.Equal(t, 5025, quota("claude-haiku-5-5-thinking-medium", 100000, 0, 100))
+	assert.Equal(t, 25251, quota("claude-haiku-5-5-thinking-medium", 100004, 0, 200))
 }

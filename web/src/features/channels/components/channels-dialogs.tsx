@@ -16,11 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { CHANNEL_TYPE_VLLM, CHANNEL_TYPE_SGLANG } from '../constants'
+import {
+  CHANNEL_TYPE_CURSOR,
+  CHANNEL_TYPE_VLLM,
+  CHANNEL_TYPE_SGLANG,
+} from '../constants'
 import { useChannels } from './channels-provider'
 import { BalanceQueryDialog } from './dialogs/balance-query-dialog'
 import { ChannelTestDialog } from './dialogs/channel-test-dialog'
 import { CopyChannelDialog } from './dialogs/copy-channel-dialog'
+import { CursorAccountDialog } from './dialogs/cursor-account-dialog'
 import { EditTagDialog } from './dialogs/edit-tag-dialog'
 import { FetchModelsDialog } from './dialogs/fetch-models-dialog'
 import { InferenceStatusDialog } from './dialogs/inference-status-dialog'
@@ -48,6 +53,16 @@ export function ChannelsDialogs() {
             onClose={() => setOpen(null)}
             onSyncModels={() => setOpen('fetch-models')}
             onTestChannel={() => setOpen('test-channel')}
+          />
+        )}
+      {open === 'cursor-account' &&
+        currentRow &&
+        currentRow.type === CHANNEL_TYPE_CURSOR && (
+          <CursorAccountDialog
+            key={currentRow.id}
+            channelId={currentRow.id}
+            channelName={currentRow.name}
+            onClose={() => setOpen(null)}
           />
         )}
       {/* Channel Create/Update Drawer */}

@@ -33,6 +33,8 @@ export const CHANNEL_TYPE_VLLM = 62
 
 export const CHANNEL_TYPE_SGLANG = 63
 
+export const CHANNEL_TYPE_CURSOR = 65
+
 export const CHANNEL_TYPES = {
   0: 'Unknown',
   1: 'OpenAI',
@@ -95,6 +97,7 @@ export const CHANNEL_TYPES = {
   62: 'vLLM',
   63: 'SGLang',
   64: 'Google Antigravity Subscription',
+  65: 'Cursor Subscription',
 } as const
 
 export type ChannelProviderPresentation = {
@@ -180,6 +183,10 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
     descriptionKey:
       'Use a Google account’s Antigravity subscription for Gemini and Claude models',
   },
+  65: {
+    descriptionKey:
+      'Use a Cursor subscription through a Cursor-Plan2API bridge',
+  },
 } satisfies Record<
   Exclude<keyof typeof CHANNEL_TYPES, 0 | typeof CHANNEL_TYPE_TASK_PLUGIN>,
   ChannelProviderPresentation
@@ -187,7 +194,7 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
 
 const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [
   1, 14, 24, 33, 43, 3, 41, 17, 45, 25, 26, 23, 48, 60, 58, 59, 61, 42, 34, 20,
-  4, 62, 63, 64, 40, 27, 15, 46, 18, 31, 35, 49, 19, 47, 37, 38, 39, 11, 8, 57, 22, 21,
+  4, 62, 63, 64, 65, 40, 27, 15, 46, 18, 31, 35, 49, 19, 47, 37, 38, 39, 11, 8, 57, 22, 21,
   44, 2, 5, 36, 50, 51, 52, 53, 54, 55, 56,
 ]
 
@@ -533,6 +540,7 @@ export const MODEL_FETCHABLE_TYPES = new Set([
   60,
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
+  CHANNEL_TYPE_CURSOR,
 ])
 
 export const FIELD_PASSTHROUGH_TYPES = new Set([
@@ -579,6 +587,7 @@ export const TYPE_TO_KEY_PROMPT: Record<number, string> = {
   62: 'vLLM API key, or EMPTY if authentication is disabled',
   63: 'SGLang API key, or EMPTY if authentication is disabled',
   64: 'Use the sign-in button above; it fills this in with the Antigravity credential (access_token / refresh_token / project_id)',
+  65: 'The bridge key (CURSOR_PLAN2API_API_KEY); the Cursor account itself signs in below',
 }
 
 export const CHANNEL_TYPE_WARNINGS: Record<number, string> = {

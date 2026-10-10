@@ -67,7 +67,10 @@ const (
 	// number — checked against the database each time, and the Antigravity
 	// channel itself was deleted on 2026-09-08.
 	ChannelTypeAntigravity = 64
-	ChannelTypeDummy       // this one is only for count, do not add any channel after this
+	// A Cursor subscription, served by a Cursor-Plan2API bridge container that
+	// drives the official Cursor CLI behind an OpenAI-compatible API.
+	ChannelTypeCursor = 65
+	ChannelTypeDummy  // this one is only for count, do not add any channel after this
 
 )
 
@@ -139,6 +142,7 @@ var ChannelBaseURLs = []string{
 	"",                                          //62
 	"",                                          //63
 	AntigravityEndpoint,                         //64
+	"http://127.0.0.1:8787",                     //65
 }
 
 func GetChannelBaseURL(channelType int) string {
@@ -204,6 +208,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeReplicate:      "Replicate",
 	ChannelTypeCodex:          "ChatGPT Subscription (Codex)",
 	ChannelTypeAntigravity:    "Google Antigravity Subscription",
+	ChannelTypeCursor:         "Cursor Subscription",
 	ChannelTypeAdvancedCustom: "Advanced Custom",
 	ChannelTypeSub2API:        "Sub2API",
 	ChannelTypeNewAPI:         "New API",

@@ -149,6 +149,7 @@ import {
   CHANNEL_TYPE_TASK_PLUGIN,
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
+  CHANNEL_TYPE_CURSOR,
   CHANNEL_TYPE_WARNINGS,
   ERROR_MESSAGES,
   FIELD_PASSTHROUGH_TYPES,
@@ -240,6 +241,7 @@ import {
 import { ModelRedirectPanel } from '../model-redirect-panel'
 import { ResponsesWebSocketSetting } from '../responses-websocket-setting'
 import { UpstreamModelSelection } from '../upstream-model-selection'
+import { CursorAccountPanel } from '../cursor-account-panel'
 import { LoopbackOAuthSignIn } from '../loopback-oauth-sign-in'
 import {
   ChannelConfiguration,
@@ -4729,6 +4731,13 @@ export function ChannelMutateDrawer({
                       </Button>
                     )
                   }
+                />
+              )}
+
+              {currentType === CHANNEL_TYPE_CURSOR && (
+                <CursorAccountPanel
+                  channelId={signInChannelId}
+                  disabled={sensitiveLocked}
                 />
               )}
 

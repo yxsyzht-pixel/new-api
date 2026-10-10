@@ -516,6 +516,60 @@ export async function refreshAntigravityCredential(
   return res.data
 }
 
+/** Who the channel's Cursor bridge is signed in as, plus any login in progress. */
+export type CursorLoginState = {
+  status: 'pending' | 'succeeded' | 'failed'
+  url?: string
+  started_at?: string
+  finished_at?: string
+  error?: string
+}
+
+export type CursorAccount = {
+  authenticated: boolean
+  email?: string
+  subscription_tier?: string
+  error?: string
+  login?: CursorLoginState
+}
+
+export async function getCursorAccount(
+  channelId: number,
+  signal?: AbortSignal
+): Promise<CursorAccount> {
+  const response = await api.get<{ success: boolean; data: CursorAccount }>(
+    `/api/channel/${channelId}/cursor/account`,
+    channelActionConfig({ signal, disableDuplicate: true })
+  )
+  return requireServerSuccess(response.data).data
+}
+
+/**
+ * Start a Cursor sign-in on the channel's bridge. The returned link is opened
+ * in the operator's own browser; the bridge notices on its own once Cursor
+ * confirms. `restart` replaces a link that is still waiting.
+ */
+export async function startCursorLogin(
+  channelId: number,
+  restart = false
+): Promise<CursorLoginState> {
+  const response = await api.post<{ success: boolean; data: CursorLoginState }>(
+    `/api/channel/${channelId}/cursor/login`,
+    { restart },
+    channelActionConfig()
+  )
+  return requireServerSuccess(response.data).data
+}
+
+export async function logoutCursor(channelId: number): Promise<CursorAccount> {
+  const response = await api.post<{ success: boolean; data: CursorAccount }>(
+    `/api/channel/${channelId}/cursor/logout`,
+    {},
+    channelActionConfig()
+  )
+  return requireServerSuccess(response.data).data
+}
+
 export async function getCodexUsage(
   channelId: number
 ): Promise<CodexUsageResponse> {
