@@ -252,14 +252,18 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
-	if info.ChannelType != constant.ChannelTypeOpenAI && info.ChannelType != constant.ChannelTypeAzure {
+	// The Cursor bridge reports a stream's usage (cached tokens included) only
+	// when asked; without it the gateway would bill its own text estimate.
+	if info.ChannelType != constant.ChannelTypeOpenAI && info.ChannelType != constant.ChannelTypeAzure &&
+		info.ChannelType != constant.ChannelTypeCursor {
 		request.StreamOptions = nil
 	}
 	// Nested reasoning is an OpenRouter-compatible input dialect and needs
 	// projection even without a protocol conversion hop. Native top-level
 	// reasoning_effort stays untouched unless a modifier or conversion applies.
 	// OpenRouter retains its own dialect normalization below.
-	preserveSuffix := model_setting.ShouldPreserveThinkingSuffix(info.OriginModelName) || model_setting.ShouldPreserveThinkingSuffix(info.UpstreamModelName)
+	preserveSuffix := info.ChannelType == constant.ChannelTypeCursor ||
+		model_setting.ShouldPreserveThinkingSuffix(info.OriginModelName) || model_setting.ShouldPreserveThinkingSuffix(info.UpstreamModelName)
 	upstreamEffort, _ := reasoning.ParseOpenAIReasoningEffortFromModelSuffix(info.UpstreamModelName)
 	originEffort, _ := reasoning.ParseOpenAIReasoningEffortFromModelSuffix(info.OriginModelName)
 	renderReasoning := len(request.Reasoning) > 0 || len(info.RequestConversionChain) > 1 || request.ReasoningConversion != nil || info.ReasoningState() != nil ||
@@ -731,7 +735,8 @@ func detectImageMimeType(filename string) string {
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
 	//  转换模型推理力度后缀
 	effort, originModel := reasoning.ParseOpenAIReasoningEffortFromModelSuffix(request.Model)
-	preserveSuffix := model_setting.ShouldPreserveThinkingSuffix(request.Model) || (info != nil && model_setting.ShouldPreserveThinkingSuffix(info.OriginModelName))
+	preserveSuffix := model_setting.ShouldPreserveThinkingSuffix(request.Model) ||
+		(info != nil && (info.ChannelType == constant.ChannelTypeCursor || model_setting.ShouldPreserveThinkingSuffix(info.OriginModelName)))
 	if preserveSuffix {
 		effort = ""
 	}

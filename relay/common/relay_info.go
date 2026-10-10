@@ -931,6 +931,14 @@ func (info *RelayInfo) ConvOptions() *convmeta.Options {
 
 	claudeSettings := model_setting.GetClaudeSettings()
 	geminiSettings := model_setting.GetGeminiSettings()
+	preserveThinkingSuffix := model_setting.ShouldPreserveThinkingSuffix
+	preserveEffortTail := model_setting.ShouldPreserveEffortTail
+	if info.GetChannelType() == constant.ChannelTypeCursor {
+		// Cursor model ids carry their effort in the name (claude-opus-5-5-high,
+		// grok-4.7-medium); stripping it would run the bridge at default effort.
+		preserveThinkingSuffix = func(string) bool { return true }
+		preserveEffortTail = func(string) bool { return true }
+	}
 	options := &convmeta.Options{
 		Claude: convmeta.ClaudeOptions{
 			ThinkingAdapterEnabled:                claudeSettings.ThinkingAdapterEnabled,
@@ -945,8 +953,8 @@ func (info *RelayInfo) ConvOptions() *convmeta.Options {
 			SafetySetting:                         model_setting.GetGeminiSafetySetting,
 		},
 		OpenRouterDialect:      info != nil && info.GetChannelType() == constant.ChannelTypeOpenRouter,
-		PreserveThinkingSuffix: model_setting.ShouldPreserveThinkingSuffix,
-		PreserveEffortTail:     model_setting.ShouldPreserveEffortTail,
+		PreserveThinkingSuffix: preserveThinkingSuffix,
+		PreserveEffortTail:     preserveEffortTail,
 	}
 	if info != nil {
 		if info.ChannelMeta != nil {

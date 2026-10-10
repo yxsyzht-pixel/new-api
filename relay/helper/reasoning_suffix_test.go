@@ -583,3 +583,18 @@ func TestApplyReasoningModelSuffixPreservesGpt51CodexMax(t *testing.T) {
 	assert.Nil(t, info.ReasoningConversion)
 	assert.Equal(t, "gpt-5.1-codex-max", hostreasoning.BaseModelName("gpt-5.1-codex-max"))
 }
+
+func TestApplyReasoningModelSuffixKeepsCursorModelIDsWhole(t *testing.T) {
+	for _, model := range []string{"claude-opus-5-5-high", "claude-haiku-5-5-thinking-medium", "gemini-3.8-flash-medium"} {
+		info := &relaycommon.RelayInfo{
+			OriginModelName: model,
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelType:       constant.ChannelTypeCursor,
+				UpstreamModelName: model,
+			},
+		}
+		mustApplyReasoningModelSuffix(t, info)
+		assert.Equal(t, model, info.UpstreamModelName)
+		assert.Nil(t, info.ReasoningConversion, model)
+	}
+}
