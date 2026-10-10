@@ -22,6 +22,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/lingyiwanwu"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert"
 
 	//"github.com/QuantumNous/new-api/relay/channel/minimax"
 	"github.com/QuantumNous/new-api/relay/channel/xinference"
@@ -181,6 +182,9 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 		if (info.RelayFormat == types.RelayFormatClaude || info.RelayFormat == types.RelayFormatGemini) &&
 			info.RelayMode != relayconstant.RelayModeResponses &&
 			info.RelayMode != relayconstant.RelayModeResponsesCompact {
+			return fmt.Sprintf("%s/v1/chat/completions", info.ChannelBaseUrl), nil
+		}
+		if cursorServesResponsesOverChat(info) {
 			return fmt.Sprintf("%s/v1/chat/completions", info.ChannelBaseUrl), nil
 		}
 		return relaycommon.GetFullRequestURL(info.ChannelBaseUrl, info.RequestURLPath, info.ChannelType), nil
@@ -733,6 +737,20 @@ func detectImageMimeType(filename string) string {
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
+	if cursorServesResponsesOverChat(info) {
+		result, err := service.ConvertRequestByID(c, info, relayconvert.ConverterOpenAIResponsesToOpenAIChat, request)
+		if err != nil {
+			return nil, err
+		}
+		chatRequest, ok := result.Value.(*dto.GeneralOpenAIRequest)
+		if !ok {
+			return nil, fmt.Errorf("expected OpenAI chat completions request, got %T", result.Value)
+		}
+		if info.SupportStreamOptions && info.IsStream {
+			chatRequest.StreamOptions = &dto.StreamOptions{IncludeUsage: true}
+		}
+		return a.ConvertOpenAIRequest(c, info, chatRequest)
+	}
 	//  转换模型推理力度后缀
 	effort, originModel := reasoning.ParseOpenAIReasoningEffortFromModelSuffix(request.Model)
 	preserveSuffix := model_setting.ShouldPreserveThinkingSuffix(request.Model) ||
@@ -835,6 +853,14 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	case relayconstant.RelayModeRerank:
 		usage, err = common_handler.RerankHandler(c, info, resp)
 	case relayconstant.RelayModeResponses:
+		if cursorServesResponsesOverChat(info) {
+			if info.IsStream {
+				usage, err = OaiChatToResponsesStreamHandler(c, info, resp)
+			} else {
+				usage, err = OaiChatToResponsesHandler(c, info, resp)
+			}
+			break
+		}
 		if info.IsStream {
 			usage, err = OaiResponsesStreamHandler(c, info, resp)
 		} else {
@@ -900,4 +926,14 @@ func recordReasoningDiagnostics(c *gin.Context, info *relaycommon.RelayInfo, dia
 		diagnostics[i].From = info.RelayFormat
 	}
 	info.RecordConversionDiagnostics(c, diagnostics)
+}
+
+// cursorServesResponsesOverChat sends a Responses turn on a Cursor channel to
+// the bridge's Chat Completions endpoint instead. The bridge's own Responses
+// endpoint drops function_call items, tool results and Responses-shaped tool
+// definitions, so a Codex-style agent would lose every tool; over chat the
+// gateway's converter carries them both ways.
+func cursorServesResponsesOverChat(info *relaycommon.RelayInfo) bool {
+	return info != nil && info.ChannelType == constant.ChannelTypeCursor &&
+		info.RelayMode == relayconstant.RelayModeResponses
 }

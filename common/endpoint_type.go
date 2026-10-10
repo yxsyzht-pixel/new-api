@@ -47,6 +47,14 @@ func GetEndpointTypesByChannelType(channelType int, modelName string) []constant
 			constant.EndpointTypeOpenAIResponseCompact,
 			constant.EndpointTypeOpenAIAlphaSearch,
 		}
+	case constant.ChannelTypeCursor:
+		// The bridge speaks Chat Completions; Responses and Claude Messages
+		// reach it through the gateway's converters.
+		endpointTypes = []constant.EndpointType{
+			constant.EndpointTypeOpenAI,
+			constant.EndpointTypeOpenAIResponse,
+			constant.EndpointTypeAnthropic,
+		}
 	case constant.ChannelTypeAntigravity:
 		endpointTypes = []constant.EndpointType{
 			constant.EndpointTypeOpenAI,
