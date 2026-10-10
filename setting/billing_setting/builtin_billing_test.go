@@ -182,10 +182,12 @@ func TestCursorModelsArePricedFromTheBridgeUsage(t *testing.T) {
 	}
 	// 6000 * $0.5 + 4000 * $0.2 + 200 * $2.5 per 1M = $0.0043
 	assert.Equal(t, 2150, quota("composer-2.5", 10000, 4000, 200))
-	// Grok 4.7 doubles the whole request past 256K input tokens.
-	assert.Equal(t, 259000, quota("grok-4.7-medium", 256000, 0, 1000))
-	assert.Equal(t, 518002, quota("grok-4.7-medium", 256001, 0, 1000))
+	// Grok 4.7 doubles the whole request past 256K input tokens; fast mode
+	// moves to its own 500k rates there.
+	assert.Equal(t, 259000, quota("grok-4.7", 256000, 0, 1000))
+	assert.Equal(t, 518002, quota("grok-4.7", 256001, 0, 1000))
+	assert.Equal(t, 777003, quota("grok-4.7-fast", 256001, 0, 1000))
 	// Haiku 5.5 bills 5x past 100K input tokens.
-	assert.Equal(t, 5025, quota("claude-haiku-5-5-thinking-medium", 100000, 0, 100))
-	assert.Equal(t, 25251, quota("claude-haiku-5-5-thinking-medium", 100004, 0, 200))
+	assert.Equal(t, 5025, quota("claude-haiku-5-5", 100000, 0, 100))
+	assert.Equal(t, 25251, quota("claude-haiku-5-5", 100004, 0, 200))
 }
