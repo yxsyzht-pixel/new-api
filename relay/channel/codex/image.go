@@ -204,11 +204,10 @@ func imageMimeType(header *multipart.FileHeader, data []byte) string {
 }
 
 // The tool carries no model choice of its own here: probed on 2026-09-16 and
-// again on 2026-10-12 with `model: gpt-image-2.5` / `gpt-image-2.5-flare` in
-// the tool call, the backend echoed `gpt-image-2-codex` back in
-// response.created and drew with that. So gpt-image-2.5 is advertised only as
-// another name for the same tool, and a specific 2.5 variant still needs an
-// API-key channel.
+// again on 2026-10-12 with `model: gpt-image-2.5-flare` in the tool call, the
+// backend echoed `gpt-image-2-codex` back in response.created and drew with
+// that. So the 2.5 ids are advertised only as other names for the same tool,
+// and a specific 2.5 variant still needs an API-key channel.
 //
 // imageRequestUpstreamModel resolves the model the Responses call is issued
 // against. Callers naming an image model are asking for a capability rather than
