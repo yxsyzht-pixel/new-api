@@ -12,11 +12,20 @@ var ModelList = []string{
 	// carried by the text models. The name is advertised anyway so ordinary image
 	// clients, which send a dedicated image model, can reach this channel.
 	ImageModelName,
+	// The same tool under the Images 2.5 name, for clients that ask for it.
+	ImageModel25Name,
 }
 
 const (
 	// ImageModelName is what image clients ask for when they want this channel to draw.
 	ImageModelName = "gpt-image-2"
+
+	// ImageModel25Name draws exactly as ImageModelName does: the backend picks the
+	// image model itself and reports gpt-image-2-codex whatever the tool names
+	// (re-probed 2026-10-12), and OpenAI has served Images 2.5 to Codex users
+	// since 2026-09-08. A specific variant (flare, sunburst) still needs an
+	// API-key channel.
+	ImageModel25Name = "gpt-image-2.5"
 
 	// imageToolHostModel serves image_generation requests. Image model names carry
 	// no upstream meaning, so requests naming one are issued against this model.

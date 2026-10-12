@@ -105,12 +105,14 @@ func TestAnEmptyPromptIsRejectedAsTheCallersErrorAndNotRetried(t *testing.T) {
 
 func TestImageModelIsAdvertised(t *testing.T) {
 	assert.Contains(t, ModelList, ImageModelName)
+	assert.Contains(t, ModelList, ImageModel25Name)
 }
 
 func TestImageRequestUpstreamModel(t *testing.T) {
 	assert.Equal(t, imageToolHostModel, imageRequestUpstreamModel(""))
 	assert.Equal(t, imageToolHostModel, imageRequestUpstreamModel("gpt-image-2"))
 	assert.Equal(t, imageToolHostModel, imageRequestUpstreamModel("gpt-image-2-high"))
+	assert.Equal(t, imageToolHostModel, imageRequestUpstreamModel(ImageModel25Name))
 	assert.Equal(t, "gpt-5.6-luna", imageRequestUpstreamModel("gpt-5.6-luna"))
 }
 
