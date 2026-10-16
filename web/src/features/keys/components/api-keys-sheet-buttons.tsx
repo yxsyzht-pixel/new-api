@@ -79,7 +79,7 @@ export function ApiKeysSheetButtons() {
         onClick={onExport}
       >
         <Download className='h-4 w-4' />
-        {busy === 'export' ? t('Exporting…') : t('Export')}
+        {busy === 'export' ? t('Exporting…') : t('Export to Excel')}
       </Button>
       <Button
         size='sm'

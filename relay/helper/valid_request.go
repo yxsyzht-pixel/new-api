@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -106,7 +105,7 @@ func GetAndValidateRerankRequest(c *gin.Context) (*dto.RerankRequest, error) {
 	var rerankRequest *dto.RerankRequest
 	err := common.UnmarshalBodyReusable(c, &rerankRequest)
 	if err != nil {
-		logger.LogError(c, fmt.Sprintf("getAndValidateTextRequest failed: %s", err.Error()))
+		logger.LogError(c, common.LogText("getAndValidateTextRequest failed: %s", err.Error()))
 		return nil, types.NewError(err, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
 
@@ -123,7 +122,7 @@ func GetAndValidateEmbeddingRequest(c *gin.Context, relayMode int) (*dto.Embeddi
 	var embeddingRequest *dto.EmbeddingRequest
 	err := common.UnmarshalBodyReusable(c, &embeddingRequest)
 	if err != nil {
-		logger.LogError(c, fmt.Sprintf("getAndValidateTextRequest failed: %s", err.Error()))
+		logger.LogError(c, common.LogText("getAndValidateTextRequest failed: %s", err.Error()))
 		return nil, types.NewError(err, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
 
@@ -304,7 +303,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		}
 		imageRequest.BillingParameters = parameters
 	}
-	if _, err := imageRequest.ImageCount(common.GetContextKeyInt(c, constant.ContextKeyChannelType) == constant.ChannelTypeAli); err != nil {
+	if _, err := imageRequest.ImageCount(false); err != nil {
 		return nil, err
 	}
 	return imageRequest, nil

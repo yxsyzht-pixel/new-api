@@ -42,7 +42,7 @@ func StartCodexCredentialAutoRefreshTask() {
 		}
 
 		gopool.Go(func() {
-			logger.LogInfo(context.Background(), fmt.Sprintf("codex credential auto-refresh task started: tick=%s threshold=%s", codexCredentialRefreshTickInterval, codexCredentialRefreshThreshold))
+			logger.LogInfo(context.Background(), common.LogText("codex credential auto-refresh task started: tick=%s threshold=%s", codexCredentialRefreshTickInterval, codexCredentialRefreshThreshold))
 
 			ticker := time.NewTicker(codexCredentialRefreshTickInterval)
 			defer ticker.Stop()
@@ -82,7 +82,7 @@ func runCodexCredentialAutoRefreshOnce() {
 			Offset(offset).
 			Find(&channels).Error
 		if err != nil {
-			logger.LogError(ctx, fmt.Sprintf("codex credential auto-refresh: query channels failed: %v", err))
+			logger.LogError(ctx, common.LogText("codex credential auto-refresh: query channels failed: %v", err))
 			return
 		}
 		if len(channels) == 0 {
@@ -132,7 +132,7 @@ func runCodexCredentialAutoRefreshOnce() {
 				// out, so the operator needs to see it now rather than read about
 				// it in a warning nobody watches.
 				model.RecordCredentialRefreshOutcome(ch.Id, err.Error(), expiredAtRaw)
-				message := fmt.Sprintf("codex credential auto-refresh: channel_id=%d name=%s refresh failed: %v", ch.Id, ch.Name, err)
+				message := common.LogText("codex credential auto-refresh: channel_id=%d name=%s refresh failed: %v", ch.Id, ch.Name, err)
 				remaining := time.Duration(0)
 				if expiryKnown {
 					remaining = expiredAt.Sub(now)
@@ -150,7 +150,7 @@ func runCodexCredentialAutoRefreshOnce() {
 
 			refreshed++
 			model.RecordCredentialRefreshOutcome(ch.Id, "", newKey.Expired)
-			logger.LogInfo(ctx, fmt.Sprintf("codex credential auto-refresh: channel_id=%d name=%s refreshed, expires_at=%s", ch.Id, ch.Name, newKey.Expired))
+			logger.LogInfo(ctx, common.LogText("codex credential auto-refresh: channel_id=%d name=%s refreshed, expires_at=%s", ch.Id, ch.Name, newKey.Expired))
 		}
 	}
 
@@ -158,7 +158,7 @@ func runCodexCredentialAutoRefreshOnce() {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logger.LogWarn(ctx, fmt.Sprintf("codex credential auto-refresh: InitChannelCache panic: %v", r))
+					logger.LogWarn(ctx, common.LogText("codex credential auto-refresh: InitChannelCache panic: %v", r))
 				}
 			}()
 			model.InitChannelCache()

@@ -146,8 +146,8 @@ func codexResponsesUsage(info *relaycommon.RelayInfo, body []byte) *dto.Usage {
 
 	addImageToolUsage(usage, string(body))
 
-	// The helper reads the raw JSON value, not the decoded string.
-	billable := !relaycommon.IsNonBillableResponsesStatus([]byte(gjson.GetBytes(body, "status").Raw))
+	// An image that completed bills whatever the response's own status, as
+	// upstream's handler does: it already reached the caller.
 	imageCounter := &relaycommon.ImageGenerationCallCounter{}
 
 	gjson.GetBytes(body, "output").ForEach(func(index, item gjson.Result) bool {
@@ -159,12 +159,10 @@ func codexResponsesUsage(info *relaycommon.RelayInfo, body []byte) *dto.Usage {
 		case dto.BuildInCallFunctionCall:
 			info.CountBillableToolCall(dto.BuildInCallFunctionCall, item.Get("name").String())
 		}
-		if billable {
-			var output dto.ResponsesOutput
-			if err := common.Unmarshal([]byte(item.Raw), &output); err == nil {
-				position := int(index.Int())
-				imageCounter.Observe(&output, &position)
-			}
+		var output dto.ResponsesOutput
+		if err := common.Unmarshal([]byte(item.Raw), &output); err == nil {
+			position := int(index.Int())
+			imageCounter.Observe(&output, &position)
 		}
 		return true
 	})

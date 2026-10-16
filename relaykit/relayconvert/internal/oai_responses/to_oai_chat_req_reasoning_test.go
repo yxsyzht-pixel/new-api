@@ -1,6 +1,7 @@
 package oairesponses
 
 import (
+	"context"
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -26,7 +27,7 @@ func TestReasoningItemsAreDroppedOnTheWayToChat(t *testing.T) {
 		},
 	}
 
-	messages, err := responsesInputItemToChatMessages(item, nil)
+	messages, _, err := responsesInputItemToChatMessages(context.Background(), item, nil)
 
 	require.NoError(t, err)
 	assert.Empty(t, messages, "a reasoning item must not become a message of any role")
@@ -35,7 +36,7 @@ func TestReasoningItemsAreDroppedOnTheWayToChat(t *testing.T) {
 // Defence in depth: the same parts must not survive if they arrive nested in a
 // message that does have a role.
 func TestReasoningPartsAreStrippedFromContent(t *testing.T) {
-	content, err := responsesContentPartsToChatContent([]any{
+	content, err := responsesContentPartsToChatContent(context.Background(), []any{
 		map[string]any{"type": "reasoning_text", "text": "internal"},
 		map[string]any{"type": "input_text", "text": "hello"},
 		map[string]any{"type": "summary_text", "text": "summary"},
@@ -47,7 +48,7 @@ func TestReasoningPartsAreStrippedFromContent(t *testing.T) {
 
 // Ordinary items keep working.
 func TestOrdinaryItemsStillConvert(t *testing.T) {
-	messages, err := responsesInputItemToChatMessages(map[string]any{
+	messages, _, err := responsesInputItemToChatMessages(context.Background(), map[string]any{
 		"role":    "user",
 		"content": []any{map[string]any{"type": "input_text", "text": "hi"}},
 	}, nil)
@@ -57,7 +58,7 @@ func TestOrdinaryItemsStillConvert(t *testing.T) {
 	assert.Equal(t, "user", messages[0].Role)
 	assert.Equal(t, "hi", messages[0].Content)
 
-	messages, err = responsesInputItemToChatMessages(map[string]any{
+	messages, _, err = responsesInputItemToChatMessages(context.Background(), map[string]any{
 		"type":    "function_call_output",
 		"call_id": "call_1",
 		"output":  "done",

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
 )
 
@@ -26,6 +27,9 @@ type ChatToResponsesStreamState struct {
 	// EmitSequenceNumber enables the required sequence_number field for current
 	// Responses API SSE consumers while preserving the legacy relaykit default.
 	EmitSequenceNumber bool
+	// Tools marks the Chat function calls that encode Responses custom tools;
+	// they are streamed back as custom_tool_call items.
+	Tools *convmeta.ResponsesToolState
 
 	status             string
 	incompleteDetails  *dto.IncompleteDetails
@@ -45,6 +49,17 @@ type ChatToResponsesStreamState struct {
 	text               strings.Builder
 	annotations        []any
 	reasoning          strings.Builder
+	// usageText collects every text, reasoning, and tool argument delta sent
+	// to the client. It is the missing-usage estimate and tells whether any
+	// output reached the client.
+	usageText strings.Builder
+	// A mid-stream finish_reason closes the message and reasoning items. Deltas that
+	// arrive afterwards open a fresh item (next segment ordinal) instead of touching the
+	// closed one; the closed items are snapshotted so the final response keeps them.
+	textSegment      int
+	reasoningSegment int
+	closedMessages   []dto.ResponsesOutput
+	closedReasonings []dto.ResponsesOutput
 }
 
 type chatToResponsesStreamTool struct {
@@ -52,13 +67,20 @@ type chatToResponsesStreamTool struct {
 	OutputIndex int
 	ItemID      string
 	CallID      string
-	Name        string
-	Arguments   strings.Builder
-	Done        bool
+	// mintedCallID stands in for CallID while the upstream has sent none.
+	mintedCallID string
+	Name         string
+	Arguments    strings.Builder
+	// Announced records that output_item.added was sent. Custom reports that
+	// the call restores a Responses custom tool; it is fixed at announcement.
+	Announced bool
+	Custom    bool
+	Done      bool
 }
 
 type chatToResponsesOutputRef struct {
 	Kind      string
+	Segment   int
 	ToolIndex int
 	HostedID  string
 }
@@ -387,12 +409,13 @@ func (s *ChatToResponsesStreamState) UsageText() string {
 	if s == nil {
 		return ""
 	}
-	return s.text.String()
+	return s.usageText.String()
 }
 
 func (s *ChatToResponsesStreamState) appendTextDelta(delta string) []ChatToResponsesStreamEvent {
 	events := s.startText()
 	s.text.WriteString(delta)
+	s.usageText.WriteString(delta)
 	events = append(events, s.event(responsesEventOutputTextDelta, dto.ResponsesStreamResponse{
 		Type:         responsesEventOutputTextDelta,
 		OutputIndex:  intPtr(s.textOutputIndex),
@@ -404,9 +427,16 @@ func (s *ChatToResponsesStreamState) appendTextDelta(delta string) []ChatToRespo
 }
 
 func (s *ChatToResponsesStreamState) startText() []ChatToResponsesStreamEvent {
+	if s.textDone {
+		s.textSegment++
+		s.textStarted = false
+		s.textDone = false
+		s.text.Reset()
+		s.annotations = nil
+	}
 	if !s.textStarted {
 		s.textStarted = true
-		s.textOutputIndex = s.nextIndex("message", -1)
+		s.textOutputIndex = s.nextIndex(chatToResponsesOutputRef{Kind: "message", Segment: s.textSegment})
 		return []ChatToResponsesStreamEvent{s.event(responsesEventOutputItemAdded, dto.ResponsesStreamResponse{
 			Type:        responsesEventOutputItemAdded,
 			OutputIndex: intPtr(s.textOutputIndex),
@@ -448,10 +478,16 @@ func (s *ChatToResponsesStreamState) appendAnnotationDelta(raw []byte) ([]ChatTo
 }
 
 func (s *ChatToResponsesStreamState) appendReasoningDelta(delta string) []ChatToResponsesStreamEvent {
-	events := make([]ChatToResponsesStreamEvent, 0, 2)
+	events := make([]ChatToResponsesStreamEvent, 0, 3)
+	if s.reasoningDone {
+		s.reasoningSegment++
+		s.reasoningStarted = false
+		s.reasoningDone = false
+		s.reasoning.Reset()
+	}
 	if !s.reasoningStarted {
 		s.reasoningStarted = true
-		s.reasoningIndex = s.nextIndex("reasoning", -1)
+		s.reasoningIndex = s.nextIndex(chatToResponsesOutputRef{Kind: "reasoning", Segment: s.reasoningSegment})
 		events = append(events, s.event(responsesEventOutputItemAdded, dto.ResponsesStreamResponse{
 			Type:        responsesEventOutputItemAdded,
 			OutputIndex: intPtr(s.reasoningIndex),
@@ -462,8 +498,16 @@ func (s *ChatToResponsesStreamState) appendReasoningDelta(delta string) []ChatTo
 				Summary: []dto.ResponsesReasoningSummaryPart{},
 			},
 		}))
+		events = append(events, s.event(responsesEventReasoningSummaryPartAdded, dto.ResponsesStreamResponse{
+			Type:         responsesEventReasoningSummaryPartAdded,
+			OutputIndex:  intPtr(s.reasoningIndex),
+			SummaryIndex: intPtr(0),
+			ItemID:       s.reasoningID(),
+			Part:         &dto.ResponsesReasoningSummaryPart{Type: "summary_text"},
+		}))
 	}
 	s.reasoning.WriteString(delta)
+	s.usageText.WriteString(delta)
 	events = append(events, s.event(responsesEventReasoningSummaryDelta, dto.ResponsesStreamResponse{
 		Type:         responsesEventReasoningSummaryDelta,
 		OutputIndex:  intPtr(s.reasoningIndex),
@@ -484,33 +528,17 @@ func (s *ChatToResponsesStreamState) appendToolCallDelta(toolCall dto.ToolCallRe
 	events := make([]ChatToResponsesStreamEvent, 0, 2)
 	if tool == nil {
 		tool = &chatToResponsesStreamTool{
-			ChatIndex:   chatIndex,
-			OutputIndex: s.nextIndex("tool", chatIndex),
-			CallID:      incomingID,
-			Name:        strings.TrimSpace(toolCall.Function.Name),
-		}
-		if tool.CallID == "" {
-			tool.CallID = oairesponses.ItemID(oairesponses.CallIDPrefix, fmt.Sprintf("%s%d", s.ID, chatIndex))
+			ChatIndex:    chatIndex,
+			CallID:       incomingID,
+			mintedCallID: oairesponses.ItemID(oairesponses.CallIDPrefix, fmt.Sprintf("%s%d", s.ID, chatIndex)),
+			Name:         strings.TrimSpace(toolCall.Function.Name),
 		}
 		// The item's own id and the id the tool result refers back to are
 		// different things, and only the latter has to survive the round trip
 		// unchanged; the item id carries the prefix its kind requires so the
 		// conversation can be continued on a Responses model.
-		tool.ItemID = oairesponses.ItemID(oairesponses.FunctionCallIDPrefix, tool.CallID)
+		tool.ItemID = oairesponses.ItemID(oairesponses.FunctionCallIDPrefix, tool.callID())
 		s.toolsByIndex[chatIndex] = tool
-		events = append(events, s.event(responsesEventOutputItemAdded, dto.ResponsesStreamResponse{
-			Type:        responsesEventOutputItemAdded,
-			OutputIndex: intPtr(tool.OutputIndex),
-			ItemID:      tool.ItemID,
-			Item: &dto.ResponsesOutput{
-				Type:      responsesOutputTypeFunctionCall,
-				ID:        tool.ItemID,
-				Status:    "in_progress",
-				CallId:    tool.callID(),
-				Name:      tool.Name,
-				Arguments: []byte(`""`),
-			},
-		}))
 	}
 	if tool.Done {
 		return nil, fmt.Errorf("tool-call stream index %d received data after completion", chatIndex)
@@ -520,6 +548,9 @@ func (s *ChatToResponsesStreamState) appendToolCallDelta(toolCall dto.ToolCallRe
 			return nil, fmt.Errorf("tool-call stream index %d changed id from %q to %q", chatIndex, tool.CallID, incomingID)
 		}
 		tool.CallID = incomingID
+		if !tool.Announced {
+			tool.ItemID = oairesponses.ItemID(oairesponses.FunctionCallIDPrefix, incomingID)
+		}
 	}
 	incomingName := strings.TrimSpace(toolCall.Function.Name)
 	if incomingName != "" {
@@ -528,16 +559,62 @@ func (s *ChatToResponsesStreamState) appendToolCallDelta(toolCall dto.ToolCallRe
 		}
 		tool.Name = incomingName
 	}
-	if toolCall.Function.Arguments != "" {
-		tool.Arguments.WriteString(toolCall.Function.Arguments)
+	delta := toolCall.Function.Arguments
+	tool.Arguments.WriteString(delta)
+	// A nameless call is invalid Responses output, so hold it back until a
+	// valid name arrives. Announcement also determines whether it is custom.
+	if !tool.Announced && tool.Name != "" {
+		events = append(events, s.announceTool(tool))
+		delta = tool.Arguments.String()
+	}
+	if tool.Announced {
+		// Announced calls reach the client; custom tool input at completion.
+		s.usageText.WriteString(delta)
+	}
+	// Custom tool input is unwrapped from the complete arguments at the end.
+	if tool.Announced && !tool.Custom && delta != "" {
 		events = append(events, s.event(responsesEventFunctionArgsDelta, dto.ResponsesStreamResponse{
 			Type:        responsesEventFunctionArgsDelta,
 			OutputIndex: intPtr(tool.OutputIndex),
 			ItemID:      tool.ItemID,
-			Delta:       toolCall.Function.Arguments,
+			Delta:       delta,
 		}))
 	}
 	return events, nil
+}
+
+// announceTool also allocates the output index, so a held tool never ends up
+// behind items that were added to the stream before it.
+func (s *ChatToResponsesStreamState) announceTool(tool *chatToResponsesStreamTool) ChatToResponsesStreamEvent {
+	tool.Announced = true
+	tool.OutputIndex = s.nextIndex(chatToResponsesOutputRef{Kind: "tool", ToolIndex: tool.ChatIndex})
+	tool.Custom = s.Tools.IsCustomTool(tool.Name)
+	if tool.Custom {
+		// A custom tool call is identified by its call id, as in the
+		// non-streaming conversion; only function calls take the fc prefix.
+		tool.ItemID = tool.callID()
+	}
+	namespace, name := s.Tools.ResponsesToolName(tool.Name)
+	item := &dto.ResponsesOutput{
+		Type:      responsesOutputTypeFunctionCall,
+		ID:        tool.ItemID,
+		Status:    "in_progress",
+		CallId:    tool.callID(),
+		Name:      name,
+		Namespace: namespace,
+		Arguments: []byte(`""`),
+	}
+	if tool.Custom {
+		item.Type = responsesOutputTypeCustomToolCall
+		item.Arguments = nil
+		item.Input = []byte(`""`)
+	}
+	return s.event(responsesEventOutputItemAdded, dto.ResponsesStreamResponse{
+		Type:        responsesEventOutputItemAdded,
+		OutputIndex: intPtr(tool.OutputIndex),
+		ItemID:      tool.ItemID,
+		Item:        item,
+	})
 }
 
 func (s *ChatToResponsesStreamState) doneDeltaEvents() []ChatToResponsesStreamEvent {
@@ -555,11 +632,13 @@ func (s *ChatToResponsesStreamState) doneDeltaEvents() []ChatToResponsesStreamEv
 			textDone.Text = kitutil.GetPointer(s.text.String())
 		}
 		events = append(events, s.event("response.output_text.done", textDone))
+		closedMessage := s.messageOutput(status)
 		events = append(events, s.event(responsesEventOutputItemDone, dto.ResponsesStreamResponse{
 			Type:        responsesEventOutputItemDone,
 			OutputIndex: intPtr(s.textOutputIndex),
-			Item:        s.messageOutput(status),
+			Item:        closedMessage,
 		}))
+		s.closedMessages = append(s.closedMessages, *closedMessage)
 	}
 	if s.reasoningStarted && !s.reasoningDone {
 		s.reasoningDone = true
@@ -578,27 +657,71 @@ func (s *ChatToResponsesStreamState) doneDeltaEvents() []ChatToResponsesStreamEv
 			reasoningDone.Part = nil
 		}
 		events = append(events, s.event(responsesEventReasoningSummaryDone, reasoningDone))
+		events = append(events, s.event(responsesEventReasoningSummaryPartDone, dto.ResponsesStreamResponse{
+			Type:         responsesEventReasoningSummaryPartDone,
+			OutputIndex:  intPtr(s.reasoningIndex),
+			SummaryIndex: intPtr(0),
+			ItemID:       s.reasoningID(),
+			Part: &dto.ResponsesReasoningSummaryPart{
+				Type: "summary_text",
+				Text: s.reasoning.String(),
+			},
+		}))
+		closedReasoning := s.reasoningOutput(status)
 		events = append(events, s.event(responsesEventOutputItemDone, dto.ResponsesStreamResponse{
 			Type:        responsesEventOutputItemDone,
 			OutputIndex: intPtr(s.reasoningIndex),
-			Item:        s.reasoningOutput(status),
+			Item:        closedReasoning,
 		}))
+		s.closedReasonings = append(s.closedReasonings, *closedReasoning)
 	}
 	for _, tool := range s.sortedTools() {
 		if tool.Done {
 			continue
 		}
 		tool.Done = true
-		argumentsDone := dto.ResponsesStreamResponse{
-			Type:        responsesEventFunctionArgsDone,
-			OutputIndex: intPtr(tool.OutputIndex),
-			ItemID:      tool.ItemID,
+		if !tool.Announced {
+			if tool.Name == "" {
+				continue
+			}
+			events = append(events, s.announceTool(tool))
+			if !tool.Custom && tool.Arguments.Len() > 0 {
+				events = append(events, s.event(responsesEventFunctionArgsDelta, dto.ResponsesStreamResponse{
+					Type:        responsesEventFunctionArgsDelta,
+					OutputIndex: intPtr(tool.OutputIndex),
+					ItemID:      tool.ItemID,
+					Delta:       tool.Arguments.String(),
+				}))
+			}
 		}
-		if s.EmitSequenceNumber {
-			argumentsDone.Arguments = kitutil.GetPointer(tool.Arguments.String())
-			argumentsDone.Name = tool.Name
+		if tool.Custom {
+			input := customToolInputFromArguments(tool.Arguments.String())
+			if input != "" {
+				events = append(events, s.event(responsesEventCustomToolInputDelta, dto.ResponsesStreamResponse{
+					Type:        responsesEventCustomToolInputDelta,
+					OutputIndex: intPtr(tool.OutputIndex),
+					ItemID:      tool.ItemID,
+					Delta:       input,
+				}))
+			}
+			events = append(events, s.event(responsesEventCustomToolInputDone, dto.ResponsesStreamResponse{
+				Type:        responsesEventCustomToolInputDone,
+				OutputIndex: intPtr(tool.OutputIndex),
+				ItemID:      tool.ItemID,
+				Input:       kitutil.GetPointer(input),
+			}))
+		} else {
+			argumentsDone := dto.ResponsesStreamResponse{
+				Type:        responsesEventFunctionArgsDone,
+				OutputIndex: intPtr(tool.OutputIndex),
+				ItemID:      tool.ItemID,
+			}
+			if s.EmitSequenceNumber {
+				argumentsDone.Arguments = kitutil.GetPointer(tool.Arguments.String())
+				_, argumentsDone.Name = s.Tools.ResponsesToolName(tool.Name)
+			}
+			events = append(events, s.event(responsesEventFunctionArgsDone, argumentsDone))
 		}
-		events = append(events, s.event(responsesEventFunctionArgsDone, argumentsDone))
 		events = append(events, s.event(responsesEventOutputItemDone, dto.ResponsesStreamResponse{
 			Type:        responsesEventOutputItemDone,
 			OutputIndex: intPtr(tool.OutputIndex),
@@ -654,8 +777,20 @@ func (s *ChatToResponsesStreamState) finalResponse() *dto.OpenAIResponsesRespons
 	for _, ref := range s.outputOrder {
 		switch ref.Kind {
 		case "message":
+			if ref.Segment < len(s.closedMessages) {
+				closed := s.closedMessages[ref.Segment]
+				closed.Status = status
+				output = append(output, closed)
+				continue
+			}
 			output = append(output, *s.messageOutput(status))
 		case "reasoning":
+			if ref.Segment < len(s.closedReasonings) {
+				closed := s.closedReasonings[ref.Segment]
+				closed.Status = status
+				output = append(output, closed)
+				continue
+			}
 			output = append(output, *s.reasoningOutput(status))
 		case "tool":
 			if tool := s.toolsByIndex[ref.ToolIndex]; tool != nil {
@@ -690,10 +825,10 @@ func (s *ChatToResponsesStreamState) createdResponse() *dto.OpenAIResponsesRespo
 	}
 }
 
-func (s *ChatToResponsesStreamState) nextIndex(kind string, toolIndex int) int {
+func (s *ChatToResponsesStreamState) nextIndex(ref chatToResponsesOutputRef) int {
 	index := s.nextOutputIndex
 	s.nextOutputIndex++
-	s.outputOrder = append(s.outputOrder, chatToResponsesOutputRef{Kind: kind, ToolIndex: toolIndex})
+	s.outputOrder = append(s.outputOrder, ref)
 	return index
 }
 
@@ -725,11 +860,21 @@ func (s *ChatToResponsesStreamState) outputStatus() string {
 }
 
 func (s *ChatToResponsesStreamState) messageID() string {
-	return oairesponses.ItemID(oairesponses.MessageIDPrefix, s.ID)
+	return s.segmentItemID(oairesponses.MessageIDPrefix, s.textSegment)
 }
 
 func (s *ChatToResponsesStreamState) reasoningID() string {
-	return oairesponses.ItemID(oairesponses.ReasoningIDPrefix, s.ID)
+	return s.segmentItemID(oairesponses.ReasoningIDPrefix, s.reasoningSegment)
+}
+
+// segmentItemID numbers the items a stream splits one kind of output into.
+// The first keeps the bare id it had before streams were split, so a single
+// answer is minted exactly as before.
+func (s *ChatToResponsesStreamState) segmentItemID(prefix string, segment int) string {
+	if segment == 0 {
+		return oairesponses.ItemID(prefix, s.ID)
+	}
+	return oairesponses.ItemID(prefix, fmt.Sprintf("%s%d", s.ID, segment))
 }
 
 func (s *ChatToResponsesStreamState) messageOutput(status string) *dto.ResponsesOutput {
@@ -767,12 +912,25 @@ func (s *ChatToResponsesStreamState) reasoningOutput(status string) *dto.Respons
 }
 
 func (s *ChatToResponsesStreamState) toolOutput(tool *chatToResponsesStreamTool, status string) *dto.ResponsesOutput {
+	namespace, name := s.Tools.ResponsesToolName(tool.Name)
+	if tool.Custom {
+		return &dto.ResponsesOutput{
+			Type:      responsesOutputTypeCustomToolCall,
+			ID:        tool.ItemID,
+			Status:    status,
+			CallId:    tool.callID(),
+			Name:      name,
+			Namespace: namespace,
+			Input:     chatArgumentsRawMessage(customToolInputFromArguments(tool.Arguments.String())),
+		}
+	}
 	return &dto.ResponsesOutput{
 		Type:      responsesOutputTypeFunctionCall,
 		ID:        tool.ItemID,
 		Status:    status,
 		CallId:    tool.callID(),
-		Name:      tool.Name,
+		Name:      name,
+		Namespace: namespace,
 		Arguments: chatArgumentsRawMessage(tool.Arguments.String()),
 	}
 }
@@ -782,6 +940,9 @@ func (t *chatToResponsesStreamTool) callID() string {
 		return ""
 	}
 	if t.CallID == "" {
+		if t.mintedCallID != "" {
+			return t.mintedCallID
+		}
 		return t.ItemID
 	}
 	return t.CallID

@@ -1,6 +1,7 @@
 package oairesponses
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -18,7 +19,7 @@ func TestFunctionCallIDSurvivesGeminiConversion(t *testing.T) {
 		"name":      "get_weather",
 		"call_id":   "call_abc",
 		"arguments": `{"city":"Paris"}`,
-	})
+	}, responsesInputTypeFunctionCall)
 
 	require.NoError(t, err)
 	assert.Equal(t, "call_abc", callID)
@@ -28,10 +29,10 @@ func TestFunctionCallIDSurvivesGeminiConversion(t *testing.T) {
 }
 
 func TestFunctionOutputCarriesTheCallID(t *testing.T) {
-	part, err := responsesFunctionOutputItemToGeminiPart(map[string]any{
+	part, _, err := responsesFunctionOutputItemToGeminiPart(context.Background(), map[string]any{
 		"call_id": "call_abc",
 		"output":  "15 degrees",
-	}, map[string]string{"call_abc": "get_weather"})
+	}, map[string]string{"call_abc": "get_weather"}, false)
 
 	require.NoError(t, err)
 	require.NotNil(t, part.FunctionResponse)
@@ -46,10 +47,10 @@ func TestFunctionOutputCarriesTheCallID(t *testing.T) {
 // An item with no call id must not gain an empty one, which upstream would
 // reject as an invalid identifier.
 func TestFunctionOutputWithoutCallIDOmitsIt(t *testing.T) {
-	part, err := responsesFunctionOutputItemToGeminiPart(map[string]any{
+	part, _, err := responsesFunctionOutputItemToGeminiPart(context.Background(), map[string]any{
 		"name":   "get_weather",
 		"output": "15 degrees",
-	}, map[string]string{})
+	}, map[string]string{}, false)
 
 	require.NoError(t, err)
 	require.NotNil(t, part.FunctionResponse)

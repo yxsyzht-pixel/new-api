@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { StatusBadge } from '@/components/status-badge'
@@ -50,6 +51,8 @@ function renderApiKeyActor(id?: number | null, name?: string | null) {
   return <span className='text-sm'>{name || `#${id}`}</span>
 }
 
+const EMPTY_GROUP_RATIOS: Record<string, number | string> = {}
+
 function useGroupRatios(): Record<string, number | string> {
   const { data } = useQuery({
     queryKey: ['user-groups'],
@@ -67,7 +70,7 @@ function useGroupRatios(): Record<string, number | string> {
     },
   })
 
-  return data ?? {}
+  return data ?? EMPTY_GROUP_RATIOS
 }
 
 export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
@@ -80,233 +83,249 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const justNowLabel = t('Just now')
   const staleAccessThreshold = dayjs(now).subtract(3, 'month').valueOf()
-  return [
-    {
-      id: 'select',
-      header: ({ table }) => (
-        <Checkbox
-          checked={table.getIsAllPageRowsSelected()}
-          indeterminate={table.getIsSomePageRowsSelected()}
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label={t('Select all')}
-          className='translate-y-[2px]'
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label={t('Select row')}
-          className='translate-y-[2px]'
-        />
-      ),
-      enableSorting: false,
-      enableHiding: false,
-      size: 40,
-    },
-    {
-      accessorKey: 'staff_id',
-      header: t('Staff ID'),
-      cell: ({ row }) => {
-        const staffId = row.original.staff_id
-        return staffId ? (
-          <span className='font-mono text-sm'>{staffId}</span>
-        ) : (
-          <span className='text-muted-foreground'>—</span>
-        )
-      },
-      size: 110,
-    },
-
-    {
-      accessorKey: 'name',
-      header: t('Name'),
-      cell: ({ row }) => (
-        <span className='font-medium'>{row.getValue('name')}</span>
-      ),
-      size: 180,
-      meta: { mobileTitle: true },
-    },
-    {
-      id: 'key',
-      accessorKey: 'key',
-      header: t('API Key'),
-      cell: ({ row }) => <ApiKeyCell apiKey={row.original} />,
-      enableSorting: false,
-      size: 260,
-    },
-    {
-      accessorKey: 'status',
-      header: t('Status'),
-      cell: ({ row }) => {
-        const statusConfig = API_KEY_STATUSES[row.getValue('status') as number]
-        if (!statusConfig) return null
-        return (
-          <StatusBadge
-            label={t(statusConfig.label)}
-            variant={statusConfig.variant}
-            copyable={false}
-            className='-ml-1.5'
+  return useMemo<ColumnDef<ApiKey>[]>(
+    () => [
+      {
+        id: 'select',
+        header: ({ table }) => (
+          <Checkbox
+            checked={table.getIsAllPageRowsSelected()}
+            indeterminate={table.getIsSomePageRowsSelected()}
+            onCheckedChange={(value) =>
+              table.toggleAllPageRowsSelected(!!value)
+            }
+            aria-label={t('Select all')}
+            className='translate-y-[2px]'
           />
-        )
-      },
-      filterFn: (row, id, value) => value.includes(String(row.getValue(id))),
-      size: 120,
-      meta: { mobileBadge: true },
-    },
-    {
-      id: 'quota',
-      accessorKey: 'remain_quota',
-      header: `${t('Quota')} (${quotaUnit})`,
-      cell: ({ row }) => <ApiKeyQuotaCell apiKey={row.original} now={now} />,
-      size: 260,
-      minSize: 260,
-    },
-    {
-      accessorKey: 'group',
-      header: t('Group'),
-      cell: ({ row }) => {
-        const apiKey = row.original
-        const group = row.getValue('group') as string
-        return (
-          <ApiKeyGroupCell
-            group={group}
-            ratio={groupRatios[group]}
-            crossGroupRetry={apiKey.cross_group_retry}
-            shouldReduceMotion={shouldReduceMotion}
-          />
-        )
-      },
-      size: 220,
-      meta: { mobileHidden: true },
-    },
-    {
-      id: 'model_limits',
-      accessorKey: 'model_limits',
-      header: t('Models'),
-      cell: ({ row }) => <ModelLimitsCell apiKey={row.original} />,
-      enableSorting: false,
-      size: 160,
-      meta: { mobileHidden: true },
-    },
-    {
-      id: 'allow_ips',
-      accessorKey: 'allow_ips',
-      header: t('IP Restriction'),
-      cell: ({ row }) => <IpRestrictionsCell apiKey={row.original} />,
-      enableSorting: false,
-      size: 160,
-      meta: { mobileHidden: true },
-    },
-    {
-      id: 'owner',
-      accessorKey: 'username',
-      header: t('Owner'),
-      cell: ({ row }) => {
-        const username = row.original.username
-        return username ? (
-          <span className='text-sm'>{username}</span>
-        ) : (
-          <span className='text-muted-foreground'>#{row.original.user_id}</span>
-        )
-      },
-      size: 130,
-    },
-    {
-      id: 'created_by',
-      accessorKey: 'created_by_name',
-      header: t('Created by'),
-      cell: ({ row }) =>
-        renderApiKeyActor(
-          row.original.created_by,
-          row.original.created_by_name
         ),
-      size: 130,
-    },
-    {
-      accessorKey: 'accessed_time',
-      header: t('Last Used'),
-      cell: ({ row }) => {
-        const accessedTime = row.getValue('accessed_time') as number
-        const isStale =
-          accessedTime > 0 && accessedTime * 1000 < staleAccessThreshold
-
-        return (
-          <ApiKeyTimestampCell
-            timestamp={accessedTime}
-            now={now}
-            locale={locale}
-            justNowLabel={justNowLabel}
-            className={isStale ? 'text-warning' : 'text-muted-foreground'}
+        cell: ({ row }) => (
+          <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(value) => row.toggleSelected(!!value)}
+            aria-label={t('Select row')}
+            className='translate-y-[2px]'
           />
-        )
-      },
-      size: 180,
-      meta: { mobileHidden: true },
-    },
-    {
-      accessorKey: 'created_time',
-      header: t('Created'),
-      cell: ({ row }) => (
-        <ApiKeyTimestampCell
-          timestamp={row.getValue('created_time')}
-          now={now}
-          locale={locale}
-          justNowLabel={justNowLabel}
-          className='text-muted-foreground'
-        />
-      ),
-      size: 180,
-      meta: { mobileHidden: true },
-    },
-    {
-      id: 'updated_by',
-      accessorKey: 'updated_by_name',
-      header: t('Updated by'),
-      cell: ({ row }) =>
-        renderApiKeyActor(
-          row.original.updated_by,
-          row.original.updated_by_name
         ),
-      size: 130,
-    },
-    {
-      accessorKey: 'expired_time',
-      header: t('Expires'),
-      cell: ({ row }) => {
-        const expiredTime = row.getValue('expired_time') as number
-        if (expiredTime === -1) {
+        enableSorting: false,
+        enableHiding: false,
+        size: 40,
+      },
+      {
+        accessorKey: 'staff_id',
+        header: t('Staff ID'),
+        cell: ({ row }) => {
+          const staffId = row.original.staff_id
+          return staffId ? (
+            <span className='font-mono text-sm'>{staffId}</span>
+          ) : (
+            <span className='text-muted-foreground'>—</span>
+          )
+        },
+        size: 110,
+      },
+      {
+        accessorKey: 'name',
+        header: t('Name'),
+        cell: ({ row }) => (
+          <span className='font-medium'>{row.getValue('name')}</span>
+        ),
+        size: 180,
+        meta: { mobileTitle: true },
+      },
+      {
+        id: 'key',
+        accessorKey: 'key',
+        header: t('API Key'),
+        cell: ({ row }) => <ApiKeyCell apiKey={row.original} />,
+        enableSorting: false,
+        size: 260,
+      },
+      {
+        accessorKey: 'status',
+        header: t('Status'),
+        cell: ({ row }) => {
+          const statusConfig =
+            API_KEY_STATUSES[row.getValue('status') as number]
+          if (!statusConfig) return null
           return (
             <StatusBadge
-              label={t('Never')}
-              variant='neutral'
+              label={t(statusConfig.label)}
+              variant={statusConfig.variant}
               copyable={false}
               className='-ml-1.5'
             />
           )
-        }
-        return (
+        },
+        filterFn: (row, id, value) => value.includes(String(row.getValue(id))),
+        size: 120,
+        meta: { mobileBadge: true },
+      },
+      {
+        id: 'quota',
+        accessorKey: 'remain_quota',
+        header: `${t('Quota')} (${quotaUnit})`,
+        cell: ({ row }) => <ApiKeyQuotaCell apiKey={row.original} now={now} />,
+        size: 260,
+        minSize: 260,
+      },
+      {
+        accessorKey: 'group',
+        header: t('Group'),
+        cell: ({ row }) => {
+          const apiKey = row.original
+          const group = row.getValue('group') as string
+          return (
+            <ApiKeyGroupCell
+              group={group}
+              ratio={groupRatios[group]}
+              crossGroupRetry={apiKey.cross_group_retry}
+              shouldReduceMotion={shouldReduceMotion}
+            />
+          )
+        },
+        size: 220,
+        meta: { mobileHidden: true },
+      },
+      {
+        id: 'model_limits',
+        accessorKey: 'model_limits',
+        header: t('Models'),
+        cell: ({ row }) => <ModelLimitsCell apiKey={row.original} />,
+        enableSorting: false,
+        size: 160,
+        meta: { mobileHidden: true },
+      },
+      {
+        id: 'allow_ips',
+        accessorKey: 'allow_ips',
+        header: t('IP Restriction'),
+        cell: ({ row }) => <IpRestrictionsCell apiKey={row.original} />,
+        enableSorting: false,
+        size: 160,
+        meta: { mobileHidden: true },
+      },
+      {
+        id: 'owner',
+        accessorKey: 'username',
+        header: t('Owner'),
+        cell: ({ row }) => {
+          const username = row.original.username
+          return username ? (
+            <span className='text-sm'>{username}</span>
+          ) : (
+            <span className='text-muted-foreground'>
+              #{row.original.user_id}
+            </span>
+          )
+        },
+        size: 130,
+      },
+      {
+        id: 'created_by',
+        accessorKey: 'created_by_name',
+        header: t('Created by'),
+        cell: ({ row }) =>
+          renderApiKeyActor(
+            row.original.created_by,
+            row.original.created_by_name
+          ),
+        size: 130,
+      },
+      {
+        accessorKey: 'accessed_time',
+        header: t('Last Used'),
+        cell: ({ row }) => {
+          const accessedTime = row.getValue('accessed_time') as number
+          const isStale =
+            accessedTime > 0 && accessedTime * 1000 < staleAccessThreshold
+
+          return (
+            <ApiKeyTimestampCell
+              timestamp={accessedTime}
+              now={now}
+              locale={locale}
+              justNowLabel={justNowLabel}
+              className={isStale ? 'text-warning' : 'text-muted-foreground'}
+            />
+          )
+        },
+        size: 180,
+        meta: { mobileHidden: true },
+      },
+      {
+        accessorKey: 'created_time',
+        header: t('Created'),
+        cell: ({ row }) => (
           <ApiKeyTimestampCell
-            timestamp={expiredTime}
+            timestamp={row.getValue('created_time')}
             now={now}
             locale={locale}
             justNowLabel={justNowLabel}
-            className={
-              expiredTime * 1000 <= now
-                ? 'text-destructive'
-                : 'text-muted-foreground'
-            }
+            className='text-muted-foreground'
           />
-        )
+        ),
+        size: 180,
+        meta: { mobileHidden: true },
       },
-      size: 180,
-      meta: { mobileHidden: true },
-    },
-    {
-      id: 'actions',
-      header: () => t('Actions'),
-      cell: ({ row }) => <DataTableRowActions row={row} />,
-      meta: { pinned: 'right' as const },
-    },
-  ]
+      {
+        id: 'updated_by',
+        accessorKey: 'updated_by_name',
+        header: t('Updated by'),
+        cell: ({ row }) =>
+          renderApiKeyActor(
+            row.original.updated_by,
+            row.original.updated_by_name
+          ),
+        size: 130,
+      },
+      {
+        accessorKey: 'expired_time',
+        header: t('Expires'),
+        cell: ({ row }) => {
+          const expiredTime = row.getValue('expired_time') as number
+          if (expiredTime === -1) {
+            return (
+              <StatusBadge
+                label={t('Never')}
+                variant='neutral'
+                copyable={false}
+                className='-ml-1.5'
+              />
+            )
+          }
+          return (
+            <ApiKeyTimestampCell
+              timestamp={expiredTime}
+              now={now}
+              locale={locale}
+              justNowLabel={justNowLabel}
+              className={
+                expiredTime * 1000 <= now
+                  ? 'text-destructive'
+                  : 'text-muted-foreground'
+              }
+            />
+          )
+        },
+        size: 180,
+        meta: { mobileHidden: true },
+      },
+      {
+        id: 'actions',
+        header: () => t('Actions'),
+        cell: ({ row }) => <DataTableRowActions row={row} />,
+        meta: { pinned: 'right' as const },
+      },
+    ],
+    [
+      t,
+      quotaUnit,
+      now,
+      groupRatios,
+      shouldReduceMotion,
+      locale,
+      justNowLabel,
+      staleAccessThreshold,
+    ]
+  )
 }
