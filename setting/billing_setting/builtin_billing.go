@@ -1,5 +1,14 @@
 package billing_setting
 
+import "github.com/QuantumNous/new-api/constant"
+
+// deepSeekPeak is DeepSeek's peak window: Monday to Friday, 09:00-12:00 and
+// 14:00-18:00 Beijing time. The Chinese public holidays DeepSeek bills
+// off-peak are not known in advance and bill at peak here.
+const deepSeekPeak = `weekday("Asia/Shanghai") >= 1 && weekday("Asia/Shanghai") <= 5 && ((hour("Asia/Shanghai") >= 9 && hour("Asia/Shanghai") < 12) || (hour("Asia/Shanghai") >= 14 && hour("Asia/Shanghai") < 18))`
+
+const deepSeekFlashExpr = deepSeekPeak + ` ? tier("peak", p * 0.3 + cr * 0.006 + c * 1.2) : tier("off_peak", p * 0.15 + cr * 0.003 + c * 0.6)`
+
 // Built-in token prices use actual USD per million tokens. Keep new model
 // defaults here instead of splitting them across the legacy ratio tables.
 var builtinBillingExpr = map[string]string{
@@ -38,4 +47,17 @@ var builtinBillingExpr = map[string]string{
 	"claude-haiku-5-5": `len <= 100000 ? tier("standard", p * 0.1 + c * 0.5 + cr * 0.01 + cc * 0.125) : tier("long_context", p * 0.5 + c * 2.5 + cr * 0.05 + cc * 0.625)`,
 	"gemini-3.1-pro":   `tier("standard", p * 2 + c * 12 + cr * 0.2)`,
 	"gemini-3.8-flash": `tier("standard", p * 0.75 + c * 3.5 + cr * 0.075)`,
+
+	// https://api-docs.deepseek.com/quick_start/pricing (2026-10-17). Off-peak
+	// is half the peak price. deepseek-v4-flash and deepseek-v4-flash-vision-exp
+	// run on V4.1 Flash and bill at the Flash price. Images bill as input
+	// tokens, and there is no cache-write price.
+	"deepseek-flash":               deepSeekFlashExpr,
+	"deepseek-v4-flash":            deepSeekFlashExpr,
+	"deepseek-v4-flash-vision-exp": deepSeekFlashExpr,
+	"deepseek-v4-pro":              deepSeekPeak + ` ? tier("peak", p * 1.32 + cr * 0.044 + c * 3.96) : tier("off_peak", p * 0.66 + cr * 0.022 + c * 1.98)`,
+	// The Search and Fetch API routing names: $0.75 per 1,000 successful
+	// requests each, the same pricing page. The calls carry no tokens.
+	constant.DeepSeekSearchModel: `tier("request", fixed(0.00075))`,
+	constant.DeepSeekFetchModel:  `tier("request", fixed(0.00075))`,
 }

@@ -115,10 +115,15 @@ func NewChannelSortOptions(sortBy string, sortOrder string, idSort bool) Channel
 // every refresh. Sorting by a column full of ties is not sorting.
 func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
 	if columnName, ok := channelSortColumns[options.SortBy]; ok {
-		descending := options.SortOrder != "asc"
-		return query.
-			Order(clause.OrderByColumn{Column: clause.Column{Name: columnName}, Desc: descending}).
-			Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}, Desc: descending})
+		column := clause.Column{Name: columnName}
+		if columnName == "priority" {
+			// Routing treats a missing priority as zero on every database.
+			column = clause.Column{Name: "COALESCE(priority, 0)", Raw: true}
+		}
+		return query.Order(clause.OrderByColumn{
+			Column: column,
+			Desc:   options.SortOrder != "asc",
+		}).Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}, Desc: true})
 	}
 	if options.IDSort {
 		return query.Order(clause.OrderByColumn{
@@ -126,9 +131,10 @@ func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
 			Desc:   true,
 		})
 	}
-	return query.
-		Order(clause.OrderByColumn{Column: clause.Column{Name: "priority"}, Desc: true}).
-		Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}, Desc: true})
+	return query.Order(clause.OrderByColumn{
+		Column: clause.Column{Name: "COALESCE(priority, 0)", Raw: true},
+		Desc:   true,
+	}).Order(clause.OrderByColumn{Column: clause.Column{Name: "id"}, Desc: true})
 }
 
 func resolveChannelSortOptions(idSort bool, sortOptions []ChannelSortOptions) ChannelSortOptions {

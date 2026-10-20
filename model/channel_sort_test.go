@@ -66,13 +66,15 @@ func TestAChosenColumnFullOfTiesIsStillStable(t *testing.T) {
 	}
 }
 
-// Ascending has to break ties ascending too, or the two halves of the order
-// disagree and the list reads as sorted backwards within each group.
-func TestAscendingBreaksTiesAscending(t *testing.T) {
+// Ties stay newest first whichever way the column is sorted. The priority
+// drag mode places a dropped channel inside its tier by id, newest first, in
+// both directions; a server that broke ties the other way when ascending would
+// move the row somewhere other than where the drop showed it.
+func TestTiesStayNewestFirstInEitherDirection(t *testing.T) {
 	tiedChannels(t)
 
 	ascending := orderedIDs(t, NewChannelSortOptions("priority", "asc", false))
-	assert.Equal(t, []int{2, 3, 16, 22, 49, 54}, ascending)
+	assert.Equal(t, []int{54, 49, 22, 16, 3, 2}, ascending)
 }
 
 // Explicit id sorting was already total and must keep its meaning.

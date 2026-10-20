@@ -149,6 +149,7 @@ var ChannelDisableThreshold = 5.0
 // back when someone logs in again, not on a timer.
 var AutomaticDisableChannelEnabled = true
 var AutomaticEnableChannelEnabled = false
+var QuotaRemindEnabled = true
 var QuotaRemindThreshold = 1000
 
 // PreConsumedQuota is retained for old option clients; token reservations now
