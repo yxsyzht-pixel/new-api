@@ -7584,7 +7584,6 @@
     "Sign out of Cursor?": "Sign out of Cursor?",
     "Requests on this channel will fail until someone signs in again.": "Requests on this channel will fail until someone signs in again.",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.",
-    "Export to Excel": "Export to Excel",
-    "This key uses its owner's user group. Administrators change it on the user, not on the key.": "This key uses its owner's user group. Administrators change it on the user, not on the key."
+    "Export to Excel": "Export to Excel"
   }
 }

@@ -7587,7 +7587,6 @@
     "Sign out of Cursor?": "退出 Cursor 登录？",
     "Requests on this channel will fail until someone signs in again.": "退出后，这个渠道的请求都会失败，直到有人重新登录。",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "这个渠道的每次请求都会消耗所登录 Cursor 账号的套餐额度。多人共用一个订阅可能违反 Cursor 的条款，账号有被限制的风险。",
-    "Export to Excel": "导出 Excel",
-    "This key uses its owner's user group. Administrators change it on the user, not on the key.": "此密钥使用所属用户的分组。分组由管理员在用户上修改，而不是在密钥上。"
+    "Export to Excel": "导出 Excel"
   }
 }

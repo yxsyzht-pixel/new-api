@@ -7571,7 +7571,6 @@
     "Sign out of Cursor?": "Выйти из Cursor?",
     "Requests on this channel will fail until someone signs in again.": "Запросы этого канала будут завершаться ошибкой, пока кто-нибудь снова не войдёт.",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "Каждый запрос этого канала расходует тариф аккаунта Cursor, в который выполнен вход. Совместное использование одной подписки многими пользователями может нарушать условия Cursor и привести к ограничению аккаунта.",
-    "Export to Excel": "Экспорт в Excel",
-    "This key uses its owner's user group. Administrators change it on the user, not on the key.": "Этот ключ использует группу своего владельца. Администраторы меняют её у пользователя, а не у ключа."
+    "Export to Excel": "Экспорт в Excel"
   }
 }

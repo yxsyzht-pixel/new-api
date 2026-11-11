@@ -472,15 +472,6 @@ export function ApiKeysMutateDrawer({
                 />
               ) : null}
 
-              <div className='flex flex-col gap-1'>
-                <span className='text-sm font-medium'>{t('Group')}</span>
-                <p className='text-muted-foreground text-xs'>
-                  {t(
-                    "This key uses its owner's user group. Administrators change it on the user, not on the key."
-                  )}
-                </p>
-              </div>
-
               <FormField
                 control={form.control}
                 name='expired_time'

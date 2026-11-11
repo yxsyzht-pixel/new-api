@@ -7571,7 +7571,6 @@
     "Sign out of Cursor?": "Cursor からサインアウトしますか？",
     "Requests on this channel will fail until someone signs in again.": "誰かが再度サインインするまで、このチャネルのリクエストは失敗します。",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "このチャネルのリクエストはすべて、サインイン中の Cursor アカウントのプランを消費します。1 つのサブスクリプションを多数のユーザーで共有すると Cursor の規約に反し、アカウントが制限されるおそれがあります。",
-    "Export to Excel": "Excel にエクスポート",
-    "This key uses its owner's user group. Administrators change it on the user, not on the key.": "このキーは所有ユーザーのグループを使用します。グループは管理者がキーではなくユーザー側で変更します。"
+    "Export to Excel": "Excel にエクスポート"
   }
 }

@@ -7453,7 +7453,6 @@
     "Sign out of Cursor?": "Đăng xuất Cursor?",
     "Requests on this channel will fail until someone signs in again.": "Các yêu cầu trên kênh này sẽ thất bại cho đến khi có người đăng nhập lại.",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "Mỗi yêu cầu trên kênh này đều tiêu tốn gói của tài khoản Cursor đang đăng nhập. Dùng chung một gói cho nhiều người có thể vi phạm điều khoản của Cursor và khiến tài khoản bị hạn chế.",
-    "Export to Excel": "Xuất Excel",
-    "This key uses its owner's user group. Administrators change it on the user, not on the key.": "Khóa này dùng nhóm của người dùng sở hữu. Quản trị viên thay đổi nhóm ở người dùng, không phải ở khóa."
+    "Export to Excel": "Xuất Excel"
   }
 }
