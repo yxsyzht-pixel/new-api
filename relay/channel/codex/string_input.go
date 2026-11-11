@@ -20,7 +20,7 @@ func normalizeStringInput(input json.RawMessage) (json.RawMessage, bool) {
 		return input, false
 	}
 	var text string
-	if err := json.Unmarshal(trimmed, &text); err != nil {
+	if err := common.Unmarshal(trimmed, &text); err != nil {
 		return input, false
 	}
 	wrapped, err := common.Marshal([]map[string]any{{

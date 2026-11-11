@@ -3,6 +3,8 @@ package codex
 import (
 	"bytes"
 	"encoding/json"
+
+	"github.com/QuantumNous/new-api/common"
 )
 
 // stripBoundReasoning removes the parts of a Responses input that only one
@@ -25,7 +27,7 @@ func stripBoundReasoning(input json.RawMessage) (json.RawMessage, bool) {
 	}
 
 	var items []json.RawMessage
-	if err := json.Unmarshal(trimmed, &items); err != nil {
+	if err := common.Unmarshal(trimmed, &items); err != nil {
 		return input, false
 	}
 
@@ -33,7 +35,7 @@ func stripBoundReasoning(input json.RawMessage) (json.RawMessage, bool) {
 	changed := false
 	for _, item := range items {
 		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(item, &fields); err != nil {
+		if err := common.Unmarshal(item, &fields); err != nil {
 			kept = append(kept, item)
 			continue
 		}
@@ -45,7 +47,7 @@ func stripBoundReasoning(input json.RawMessage) (json.RawMessage, bool) {
 			kept = append(kept, item)
 			continue
 		}
-		rebuilt, err := json.Marshal(fields)
+		rebuilt, err := common.Marshal(fields)
 		if err != nil {
 			kept = append(kept, item)
 			continue
@@ -63,7 +65,7 @@ func stripBoundReasoning(input json.RawMessage) (json.RawMessage, bool) {
 	if len(kept) == 0 {
 		return input, false
 	}
-	out, err := json.Marshal(kept)
+	out, err := common.Marshal(kept)
 	if err != nil {
 		return input, false
 	}
@@ -76,7 +78,7 @@ func isReasoningItem(fields map[string]json.RawMessage) bool {
 		return false
 	}
 	var itemType string
-	if err := json.Unmarshal(raw, &itemType); err != nil {
+	if err := common.Unmarshal(raw, &itemType); err != nil {
 		return false
 	}
 	return itemType == "reasoning"

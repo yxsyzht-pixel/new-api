@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -206,7 +207,7 @@ func FreeformInputToFunctions(input json.RawMessage, info *RelayInfo) json.RawMe
 			if !info.IsFreeformTool(item.Get("name").String()) {
 				return true
 			}
-			args, mErr := json.Marshal(map[string]string{freeformArgument: item.Get(freeformArgument).String()})
+			args, mErr := common.Marshal(map[string]string{freeformArgument: item.Get(freeformArgument).String()})
 			if mErr != nil {
 				failed = true
 				return false

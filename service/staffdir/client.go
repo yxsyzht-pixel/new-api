@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
@@ -38,7 +39,7 @@ func (e envelope) failure() error {
 var client = &http.Client{Timeout: 30 * time.Second}
 
 func call(ctx context.Context, cfg *operation_setting.StaffDirectorySetting, path string, body any, bearer string, out any) error {
-	payload, err := json.Marshal(body)
+	payload, err := common.Marshal(body)
 	if err != nil {
 		return err
 	}
@@ -69,7 +70,7 @@ func call(ctx context.Context, cfg *operation_setting.StaffDirectorySetting, pat
 	}
 
 	var wrapper envelope
-	if err := json.Unmarshal(raw, &wrapper); err != nil {
+	if err := common.Unmarshal(raw, &wrapper); err != nil {
 		return fmt.Errorf("人事接口返回的不是预期格式：%w", err)
 	}
 	if err := wrapper.failure(); err != nil {
@@ -78,7 +79,7 @@ func call(ctx context.Context, cfg *operation_setting.StaffDirectorySetting, pat
 	if out == nil {
 		return nil
 	}
-	return json.Unmarshal(wrapper.Data, out)
+	return common.Unmarshal(wrapper.Data, out)
 }
 
 // accessToken returns a live token, exchanging a new one shortly before the

@@ -1,9 +1,9 @@
 package antigravity
 
 import (
-	"encoding/json"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 )
 
@@ -39,7 +39,7 @@ func restoreToolSchemasForAnthropic(request any, model string) {
 	}
 
 	var tools []map[string]any
-	if err := json.Unmarshal(geminiRequest.Tools, &tools); err != nil {
+	if err := common.Unmarshal(geminiRequest.Tools, &tools); err != nil {
 		// Not a shape this understands; forwarding it unchanged is better than
 		// failing a request that might have worked.
 		return
@@ -64,7 +64,7 @@ func restoreToolSchemasForAnthropic(request any, model string) {
 	if !changed {
 		return
 	}
-	if encoded, err := json.Marshal(tools); err == nil {
+	if encoded, err := common.Marshal(tools); err == nil {
 		geminiRequest.Tools = encoded
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+
+	"github.com/QuantumNous/new-api/common"
 )
 
 // The internal surface answers with the ordinary Gemini payload nested under a
@@ -97,7 +99,7 @@ func unwrapEnvelope(body []byte) []byte {
 	var envelope struct {
 		Response json.RawMessage `json:"response"`
 	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
+	if err := common.Unmarshal(body, &envelope); err != nil {
 		return body
 	}
 	inner := bytes.TrimSpace(envelope.Response)

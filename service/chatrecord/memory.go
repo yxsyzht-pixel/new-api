@@ -3,7 +3,6 @@ package chatrecord
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -320,7 +319,7 @@ func (w *memoryWriter) deliver(ctx context.Context, turn MemoryTurn) {
 		})
 	}
 
-	body, err := json.Marshal(map[string]any{"messages": messages})
+	body, err := common.Marshal(map[string]any{"messages": messages})
 	if err != nil {
 		w.totals.Failed.Add(1)
 		return
@@ -401,7 +400,7 @@ func (w *memoryWriter) configurePeer(ctx context.Context, cfg *operation_setting
 	url := fmt.Sprintf("%s/v3/workspaces/%s/sessions/%s/peers/%s/config",
 		strings.TrimRight(strings.TrimSpace(cfg.MemoryBaseURL), "/"),
 		workspace, session, peer)
-	body, err := json.Marshal(map[string]any{
+	body, err := common.Marshal(map[string]any{
 		"observe_me":     observeMe,
 		"observe_others": observeOthers,
 	})
