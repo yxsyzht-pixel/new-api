@@ -17,7 +17,6 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -619,24 +618,15 @@ func TokenAuth() func(c *gin.Context) {
 
 		userCache.WriteContext(c)
 
-		userGroup := userCache.Group
-		tokenGroup := token.Group
-		if tokenGroup != "" {
-			// check common.UserUsableGroups[userGroup]
-			if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
-				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgAuthTokenGroupForbidden, map[string]any{"Group": tokenGroup}))
-				return
-			}
-			// check group in common.GroupRatio
-			if !ratio_setting.ContainsGroupRatio(tokenGroup) {
-				if tokenGroup != "auto" {
-					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgAuthTokenGroupDeprecated, map[string]any{"Group": tokenGroup}))
-					return
-				}
-			}
-			userGroup = tokenGroup
-		}
-		common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
+		// A key routes and bills in its owner's user group. In this deployment
+		// the group is the administrator's choice per user, not the key
+		// holder's, so whatever group, Auto order or cross-group retry is stored
+		// on the key is set aside here; moving a user to another group then moves
+		// every key they hold with them.
+		token.Group = ""
+		token.AutoGroups = ""
+		token.CrossGroupRetry = false
+		common.SetContextKey(c, constant.ContextKeyUsingGroup, userCache.Group)
 
 		err = SetupContextForToken(c, token, parts...)
 		if err != nil {

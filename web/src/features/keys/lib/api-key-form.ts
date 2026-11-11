@@ -190,12 +190,11 @@ export function transformFormDataToPayload(
     model_limits: data.model_limits.join(','),
     allow_ips: data.allow_ips || '',
     allow_user_quota_query: data.allow_user_quota_query,
-    group: data.group || '',
-    auto_groups:
-      data.group === 'auto' && data.auto_groups_mode === 'custom'
-        ? data.auto_groups
-        : [],
-    cross_group_retry: data.group === 'auto' ? !!data.cross_group_retry : false,
+    // A key carries no group of its own: it routes in its owner's user group,
+    // which administrators set per user. The server ignores any stored value.
+    group: '',
+    auto_groups: [],
+    cross_group_retry: false,
   }
 }
 

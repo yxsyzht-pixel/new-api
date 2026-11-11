@@ -7453,6 +7453,7 @@
     "Sign out of Cursor?": "登出 Cursor？",
     "Requests on this channel will fail until someone signs in again.": "登出後，這個渠道的請求都會失敗，直到有人重新登入。",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "這個渠道的每次請求都會消耗所登入 Cursor 帳號的方案額度。多人共用一個訂閱可能違反 Cursor 的條款，帳號有被限制的風險。",
-    "Export to Excel": "匯出 Excel"
+    "Export to Excel": "匯出 Excel",
+    "This key uses its owner's user group. Administrators change it on the user, not on the key.": "此金鑰使用所屬使用者的分組。分組由管理員在使用者上修改，而不是在金鑰上。"
   }
 }

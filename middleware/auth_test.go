@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -112,6 +114,66 @@ func TestTokenAuthReadOnlyTranslatesErrors(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, recorder.Code, tc.acceptLanguage)
 		assert.JSONEq(t, `{"success":false,"message":"`+tc.want+`"}`, recorder.Body.String(), tc.acceptLanguage)
 	}
+}
+
+// In this deployment a key routes and bills in its owner's group. A group,
+// Auto order or cross-group retry stored on the key, even one the owner may no
+// longer select, is set aside rather than honoured or refused.
+func TestTokenAuthUsesOwnerGroupNotKeyGroup(t *testing.T) {
+	// The key lookup needs the dialect's quoted column names, which only the
+	// real database initialisation sets up.
+	previousDB, previousLogDB := model.DB, model.LOG_DB
+	previousType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
+	previousRedis, previousMemory, previousSQLite := common.RedisEnabled, common.MemoryCacheEnabled, common.SQLitePath
+	previousMaster := common.IsMasterNode
+	t.Setenv("SQL_DSN", "")
+	t.Setenv("LOG_SQL_DSN", "")
+	common.IsMasterNode, common.RedisEnabled, common.MemoryCacheEnabled = true, false, false
+	common.SQLitePath = filepath.Join(t.TempDir(), "token-group.db")
+	require.NoError(t, model.InitDB())
+	sqlDB, err := model.DB.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, sqlDB.Close())
+		model.DB, model.LOG_DB = previousDB, previousLogDB
+		common.SetDatabaseTypes(previousType, previousLogType)
+		common.RedisEnabled, common.MemoryCacheEnabled, common.SQLitePath = previousRedis, previousMemory, previousSQLite
+		common.IsMasterNode = previousMaster
+	})
+	model.LOG_DB = model.DB
+
+	user := &model.User{
+		Username: "key-group-owner", Password: "password-placeholder", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, Group: "team-a", AuthVersion: 1, AffCode: "middleware-aff-key-group-owner",
+	}
+	require.NoError(t, model.DB.Create(user).Error)
+	key := "keygroupfollowsowner0000000000000000000000000000"
+	require.NoError(t, model.DB.Create(&model.Token{
+		UserId: user.Id, Key: key, Name: "pinned-to-vip", Status: common.TokenStatusEnabled,
+		ExpiredTime: -1, UnlimitedQuota: true, Group: "vip", AutoGroups: `["vip","default"]`, CrossGroupRetry: true,
+	}).Error)
+
+	var usingGroup, tokenGroup string
+	var crossGroupRetry, hasAutoGroups bool
+	router := gin.New()
+	router.POST("/v1/chat/completions", TokenAuth(), func(c *gin.Context) {
+		usingGroup = common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+		tokenGroup = common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
+		crossGroupRetry = common.GetContextKeyBool(c, constant.ContextKeyTokenCrossGroupRetry)
+		_, hasAutoGroups = common.GetContextKey(c, constant.ContextKeyTokenAutoGroups)
+		c.Status(http.StatusOK)
+	})
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
+	request.Header.Set("Authorization", "Bearer sk-"+key)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	assert.Equal(t, "team-a", usingGroup)
+	assert.Empty(t, tokenGroup)
+	assert.False(t, crossGroupRetry)
+	assert.False(t, hasAutoGroups)
 }
 
 func TestUserAuthAllowsOpaqueDottedPAT(t *testing.T) {

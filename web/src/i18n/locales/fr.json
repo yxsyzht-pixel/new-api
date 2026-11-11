@@ -7571,6 +7571,7 @@
     "Sign out of Cursor?": "Se déconnecter de Cursor ?",
     "Requests on this channel will fail until someone signs in again.": "Les requêtes de ce canal échoueront jusqu'à ce que quelqu'un se reconnecte.",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "Chaque requête de ce canal consomme le forfait du compte Cursor connecté. Partager un abonnement entre de nombreux utilisateurs peut enfreindre les conditions de Cursor et entraîner la restriction du compte.",
-    "Export to Excel": "Exporter vers Excel"
+    "Export to Excel": "Exporter vers Excel",
+    "This key uses its owner's user group. Administrators change it on the user, not on the key.": "Cette clé utilise le groupe de son propriétaire. Les administrateurs le modifient sur l'utilisateur, pas sur la clé."
   }
 }

@@ -132,17 +132,19 @@ describe('API key Auto group form mapping', () => {
     )
   })
 
-  test('submits a valid custom snapshot in its configured order', () => {
+  // Keys follow their owner's user group here, so whatever group or Auto order
+  // the form state holds is never sent.
+  test('submits no group of its own even with a custom Auto order in the form', () => {
     const custom = {
       ...getApiKeyFormDefaultValues(true),
       auto_groups_mode: 'custom' as const,
       auto_groups: ['vip', 'default'],
     }
 
-    expect(transformFormDataToPayload(custom).auto_groups).toEqual([
-      'vip',
-      'default',
-    ])
+    const payload = transformFormDataToPayload(custom)
+    expect(payload.group).toBe('')
+    expect(payload.auto_groups).toEqual([])
+    expect(payload.cross_group_retry).toBe(false)
   })
 
   test('submits an empty array for inheritance and for non-Auto groups', () => {
