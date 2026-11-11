@@ -17,9 +17,9 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 const (
@@ -144,7 +144,7 @@ func sendResponsesTerminalFailure(c *gin.Context, info *relaycommon.RelayInfo, u
 	if err != nil {
 		return
 	}
-	sendResponsesStreamData(c, terminal, string(payload))
+	_ = helper.ResponseChunkData(c, terminal, string(payload))
 }
 
 // upstreamFailureCode reads the code out of an upstream failure event, matching
@@ -262,7 +262,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				// what a client reports as "stream did not emit a terminal response"
 				// — an unhelpful message for a request that was simply refused.
 				// Forwarding the upstream failure gives the caller the real reason.
-				sendResponsesStreamData(c, streamResponse, data)
+				_ = helper.ResponseChunkData(c, streamResponse, data)
 				sendResponsesTerminalFailure(c, info, streamResponse.Type, data, upstreamStreamErr)
 				sr.Stop(upstreamStreamErr.Err)
 				return
@@ -288,8 +288,15 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		if streamResponse.Response != nil {
 			data = string(rewriteSGLangResponsesCreatedAt(info, []byte(data), "response.created_at", streamResponse.Response.CreatedAt))
 		}
-		sendResponsesStreamData(c, streamResponse, data)
 		accumulator.Observe(&streamResponse, common.StringToByteSlice(data))
+		if err := helper.ResponseChunkData(c, streamResponse, data); err != nil {
+			sr.Stop(err)
+			return
+		}
+		if (streamResponse.Type == "response.completed" || streamResponse.Type == "response.done") &&
+			streamResponse.Response != nil && info.StreamStatus.ResponseOutcome() == string(relaycommon.ResponseOutcomeCompleted) {
+			sr.Done()
+		}
 	})
 
 	// The upstream can die in the middle of a stream — an h2 INTERNAL_ERROR from the
@@ -355,10 +362,10 @@ func rewriteSGLangResponsesCreatedAt(info *relaycommon.RelayInfo, payload []byte
 	if info.GetChannelType() != constant.ChannelTypeSGLang {
 		return payload
 	}
-	if !gjson.GetBytes(payload, path).Exists() {
+	if !ojson.GetBytes(payload, path).Exists() {
 		return payload
 	}
-	patched, err := sjson.SetBytes(payload, path, int(createdAt))
+	patched, err := ojson.SetBytes(payload, path, int(createdAt))
 	if err != nil {
 		return payload
 	}

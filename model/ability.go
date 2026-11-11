@@ -112,9 +112,19 @@ func descendingTiers(priorities []int) []int {
 // the index only ever has somewhere to land. Past the last tier it clamps and
 // re-rolls within it, which is worth something when the tier still holds
 // several channels to choose between.
-func pickPriorityTier(tiers []int, retry int) (int, bool) {
+//
+// excludedTried says the tried channels were already taken out. A tier then
+// leaves the list once its channels are spent, so stepping the index down as
+// well would skip a tier that still has untried channels: three single-channel
+// tiers came out in the order 4, 2, 3. With the tried set applied the retry
+// aims at the highest tier still standing, so every channel of a tier is tried
+// before the next one down.
+func pickPriorityTier(tiers []int, retry int, excludedTried bool) (int, bool) {
 	if len(tiers) == 0 {
 		return 0, false
+	}
+	if excludedTried {
+		retry = 0
 	}
 	if retry < 0 {
 		retry = 0
@@ -209,7 +219,7 @@ func GetChannel(
 		return nil, nil
 	}
 
-	targetPriority, ok := pickPriorityTier(priorityTiers(abilities), retry)
+	targetPriority, ok := pickPriorityTier(priorityTiers(abilities), retry, len(tried) > 0)
 	if !ok {
 		return nil, nil
 	}

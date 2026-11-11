@@ -18,36 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
 
-import { Window } from 'happy-dom'
-import { afterAll, describe, test } from 'vitest'
+import { describe, test } from 'vitest'
 
 import type { UserAnalyticsMetric } from '@/features/dashboard/types'
-
-const domWindow = new Window()
-const domGlobals = [
-  'window',
-  'document',
-  'navigator',
-  'HTMLElement',
-  'HTMLButtonElement',
-  'SVGElement',
-  'Node',
-  'Element',
-  'Event',
-  'CustomEvent',
-  'MutationObserver',
-  'ResizeObserver',
-  'requestAnimationFrame',
-  'cancelAnimationFrame',
-  'getComputedStyle',
-] as const
-
-for (const key of domGlobals) {
-  Object.defineProperty(globalThis, key, {
-    configurable: true,
-    value: domWindow[key],
-  })
-}
 
 const { act, useState } = await import('react')
 const { createRoot } = await import('react-dom/client')
@@ -86,10 +59,6 @@ function Harness() {
 }
 
 describe('user analytics metric tabs', () => {
-  afterAll(() => {
-    domWindow.close()
-  })
-
   test('switches the selected user analytics metric from amount to Tokens', async () => {
     const container = document.createElement('div')
     document.body.append(container)

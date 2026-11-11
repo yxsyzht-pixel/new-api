@@ -158,22 +158,27 @@ func TestPickPriorityTier(t *testing.T) {
 	tiers := []int{9, 8, 7}
 
 	for _, tc := range []struct {
-		why    string
-		tiers  []int
-		retry  int
-		want   int
-		wantOK bool
+		why           string
+		tiers         []int
+		retry         int
+		excludedTried bool
+		want          int
+		wantOK        bool
 	}{
-		{"first attempt takes the highest tier", tiers, 0, 9, true},
-		{"each retry steps one tier down", tiers, 1, 8, true},
-		{"and again", tiers, 2, 7, true},
-		{"past the last tier it re-rolls within it", tiers, 3, 7, true},
-		{"however far past", tiers, 99, 7, true},
-		{"a negative index is the first attempt", tiers, -1, 9, true},
-		{"a single tier takes every index", []int{7}, 4, 7, true},
-		{"nothing left to try", nil, 0, 0, false},
+		{"first attempt takes the highest tier", tiers, 0, false, 9, true},
+		{"each retry steps one tier down", tiers, 1, false, 8, true},
+		{"and again", tiers, 2, false, 7, true},
+		{"past the last tier it re-rolls within it", tiers, 3, false, 7, true},
+		{"however far past", tiers, 99, false, 7, true},
+		{"a negative index is the first attempt", tiers, -1, false, 9, true},
+		{"a single tier takes every index", []int{7}, 4, false, 7, true},
+		{"nothing left to try", nil, 0, false, 0, false},
+		// The spent tier is already gone from the list, so stepping down as
+		// well would skip the next one.
+		{"with tried channels removed a retry takes the highest tier left", []int{8, 7}, 1, true, 8, true},
+		{"nothing left once every channel is tried", nil, 3, true, 0, false},
 	} {
-		got, ok := pickPriorityTier(tc.tiers, tc.retry)
+		got, ok := pickPriorityTier(tc.tiers, tc.retry, tc.excludedTried)
 		assert.Equal(t, tc.wantOK, ok, tc.why)
 		if tc.wantOK {
 			assert.Equal(t, tc.want, got, tc.why)

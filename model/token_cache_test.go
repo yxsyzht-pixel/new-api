@@ -42,14 +42,18 @@ func TestTokenCacheRoundTripsRequestPathFields(t *testing.T) {
 
 	allowIps := "10.0.0.0/8"
 	stored := Token{
-		Id:                 4242,
-		UserId:             7,
-		Key:                "round-trip-key",
-		Status:             common.TokenStatusEnabled,
-		Name:               "zht-macmini",
-		StaffId:            "LS000041",
-		SkipChatRecord:     true,
-		SkipMemory:         true,
+		Id:             4242,
+		UserId:         7,
+		Key:            "round-trip-key",
+		Status:         common.TokenStatusEnabled,
+		Name:           "zht-macmini",
+		StaffId:        "LS000041",
+		SkipChatRecord: true,
+		SkipMemory:     true,
+		// Set but never cached: the integrity MAC must not cover them, or the
+		// read below fails verification.
+		CreatedBy:          3,
+		UpdatedBy:          5,
 		CreatedTime:        1_700_000_000,
 		AccessedTime:       1_700_000_500,
 		ExpiredTime:        -1,

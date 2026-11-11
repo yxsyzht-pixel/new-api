@@ -262,6 +262,10 @@ func (s *StreamStatus) Verdict() StreamVerdict {
 	switch {
 	case s.HasErrors():
 		return StreamVerdictError
+	// A stream that ended cleanly can still carry a response the upstream
+	// itself marked failed; that is a failure, not a normal end.
+	case s.ResponseFailed():
+		return StreamVerdictError
 	case s.IsNormalEnd():
 		return StreamVerdictOK
 	case s.EndReason == StreamEndReasonClientGone:

@@ -162,7 +162,7 @@ func GetRandomSatisfiedChannel(
 	tiers := descendingTiers(priorities)
 
 	// Shared with the database path — see pickPriorityTier.
-	tier, ok := pickPriorityTier(tiers, retry)
+	tier, ok := pickPriorityTier(tiers, retry, len(tried) > 0)
 	if !ok {
 		return nil, nil
 	}

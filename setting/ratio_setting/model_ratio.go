@@ -59,7 +59,6 @@ var defaultModelRatio = map[string]float64{
 	"gpt-4.1-nano":                            0.05, // $0.1 / 1M tokens
 	"gpt-4.1-nano-2025-04-14":                 0.05, // $0.1 / 1M tokens
 	"gpt-image-1":                             2.5,  // $5 / 1M tokens
-	"gpt-image-2":                             2.5,  // $5 / 1M tokens，与 gpt-image-1 同价
 	"o1":                                      7.5,  // $15 / 1M tokens
 	"o1-2024-12-17":                           7.5,  // $15 / 1M tokens
 	"o1-preview":                              7.5,  // $15 / 1M tokens
@@ -344,7 +343,6 @@ var defaultCompletionRatio = map[string]float64{
 	"gpt-4o-gizmo-*": 3,
 	"gpt-4-all":      2,
 	"gpt-image-1":    8,
-	"gpt-image-2":    8,
 	// The 5.6 models get their completion ratio of 6 from the "gpt-" prefix rule
 	// in getHardcodedCompletionModelRatio. codex-auto-review runs on the same
 	// backend but its name does not start with "gpt-", so without an entry here it
@@ -668,7 +666,6 @@ func ModelRatio2JSONString() string {
 
 var defaultImageRatio = map[string]float64{
 	"gpt-image-1": 2,
-	"gpt-image-2": 2,
 }
 var imageRatioMap = types.NewRWMap[string, float64]()
 var audioRatioMap = types.NewRWMap[string, float64]()
