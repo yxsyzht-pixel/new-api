@@ -40,10 +40,14 @@ const (
 	FilterTaskPluginEndpoint ChannelFilterKind = "task_plugin_endpoint"
 	FilterTaskPluginIdentity ChannelFilterKind = "task_plugin_identity"
 	FilterResponsesWebSocket ChannelFilterKind = "responses_websocket"
+	// FilterKeyChannels limits a request to the channels configured on its key.
+	// Such a key draws from those channels whatever group they are in.
+	FilterKeyChannels ChannelFilterKind = "key_channels"
 )
 
 type ChannelFilter struct {
 	Kind                   ChannelFilterKind
+	ChannelIDs             []int
 	RequestPath            string
 	TaskPluginKey          string
 	TaskPluginKeys         []string

@@ -76,6 +76,7 @@ import {
   createApiKey,
   updateApiKey,
   getApiKey,
+  getKeyChannelOptions,
   getTokenAutoGroups,
 } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
@@ -173,6 +174,27 @@ export function ApiKeysMutateDrawer({
     enabled: open,
     staleTime: 0,
   })
+
+  // Only a key manager may limit a key to chosen channels, so only they need
+  // the channel list.
+  const { data: keyChannels } = useQuery({
+    queryKey: ['key-channel-options'],
+    queryFn: getKeyChannelOptions,
+    enabled: open && canManageAllKeys,
+    staleTime: 30_000,
+  })
+  const channelOptions = useMemo(
+    () =>
+      (keyChannels ?? []).map((channel) => ({
+        value: String(channel.id),
+        label: `#${channel.id} ${channel.name}`,
+        hint:
+          channel.status === 1
+            ? channel.group
+            : `${channel.group} · ${t('Disabled')}`,
+      })),
+    [keyChannels, t]
+  )
 
   const models = modelsData?.data || []
   const groups = useMemo<ApiKeyGroupOption[]>(
@@ -647,6 +669,34 @@ export function ApiKeysMutateDrawer({
                         </FormItem>
                       )}
                     />
+
+                    {canManageAllKeys ? (
+                      <FormField
+                        control={form.control}
+                        name='channel_ids'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('Allowed channels')}</FormLabel>
+                            <FormControl>
+                              <MultiSelect
+                                options={channelOptions}
+                                selected={field.value}
+                                onChange={field.onChange}
+                                placeholder={t(
+                                  'Select channels (empty to route by user group)'
+                                )}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {t(
+                                "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group."
+                              )}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    ) : null}
 
                     <FormField
                       control={form.control}

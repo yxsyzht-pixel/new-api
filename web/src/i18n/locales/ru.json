@@ -7576,6 +7576,10 @@
     "Group name cannot be empty": "Название группы не может быть пустым",
     "Group name {{name}} cannot contain a comma": "Название группы {{name}} не может содержать запятую",
     "Group name {{name}} is too long": "Название группы {{name}} слишком длинное",
-    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "У канала {{name}} получились бы группы {{groups}} длиной более 64 символов"
+    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "У канала {{name}} получились бы группы {{groups}} длиной более 64 символов",
+    "Allowed channels": "Разрешённые каналы",
+    "Select channels (empty to route by user group)": "Выберите каналы (пусто — маршрутизация по группе пользователя)",
+    "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group.": "Если выбраны каналы, ключ использует только их и не учитывает группу пользователя. Оставьте пустым для маршрутизации по группе пользователя.",
+    "Channel {{ids}} does not exist": "Канал {{ids}} не существует"
   }
 }

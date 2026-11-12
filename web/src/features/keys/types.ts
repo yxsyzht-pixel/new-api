@@ -56,6 +56,8 @@ export const apiKeySchema = z.object({
   model_limits: z.string().nullish().default(''),
   allow_ips: z.string().nullish().default(''),
   allow_user_quota_query: z.boolean().optional().default(false),
+  // Channels the key is limited to; none means it routes by its owner's group.
+  channel_ids: z.array(z.number()).nullish().default(null),
 })
 
 export type ApiKey = z.infer<typeof apiKeySchema>
@@ -116,6 +118,16 @@ export interface ApiKeyFormData {
   group: string
   auto_groups: string[]
   cross_group_retry: boolean
+  // Ignored by the server unless the caller may manage everyone's keys.
+  channel_ids: number[]
+}
+
+/** A channel offered when limiting a key to chosen channels. */
+export interface KeyChannelOption {
+  id: number
+  name: string
+  group: string
+  status: number
 }
 
 export interface TokenAutoGroupsConfig {

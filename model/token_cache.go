@@ -120,7 +120,7 @@ redis.call('HSET', KEYS[1],
   'AllowIps', ARGV[11], 'Group', ARGV[12], 'CrossGroupRetry', ARGV[13],
   'AutoGroups', ARGV[14],
   'StaffId', ARGV[17], 'SkipChatRecord', ARGV[18], 'SkipMemory', ARGV[19],
-  'AllowUserQuotaQuery', ARGV[20],
+  'AllowUserQuotaQuery', ARGV[20], 'ChannelIds', ARGV[26],
   'CacheExpiresAt', ARGV[22], 'CacheMAC', ARGV[23])
 for _, counter in ipairs({{'AccessedTime', ARGV[6]}, {'RemainQuota', ARGV[15]}, {'UsedQuota', ARGV[16]}}) do
   if not string.match(redis.call('HGET', KEYS[1], counter[1]) or '', '^-?%d+$') then
@@ -145,6 +145,7 @@ return 1`
 		strconv.FormatBool(token.AllowUserQuotaQuery),
 		tokenCacheTTLSeconds(),
 		token.CacheExpiresAt, mac, strconv.FormatBool(repair), existing.CacheMAC,
+		token.ChannelIds,
 	).Int()
 }
 

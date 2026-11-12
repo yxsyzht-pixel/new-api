@@ -26,6 +26,7 @@ const { I18nextProvider, initReactI18next } = await import('react-i18next')
 const { QueryClient, QueryClientProvider } =
   await import('@tanstack/react-query')
 const { api } = await import('@/lib/api')
+const { useAuthStore } = await import('@/stores/auth-store')
 const { ApiKeysProvider } = await import('../api-keys-provider')
 const { ApiKeysMutateDrawer } = await import('../api-keys-mutate-drawer')
 
@@ -242,6 +243,7 @@ describe('API key expiry across editing sessions', () => {
         model_limits: '',
         allow_ips: '',
         allow_user_quota_query: true,
+        channel_ids: null,
       }
       const second = { ...first, id: 2, name: 'non-expiring', expired_time: -1 }
       let resolveDetail!: (value: { data: unknown }) => void
@@ -364,5 +366,74 @@ describe('API keys mutate drawer user quota query switch', () => {
     fireEvent.click(findButton('Save changes', true))
     await waitFor(() => expect(createdPayloads).toHaveLength(1))
     expect(createdPayloads[0]?.allow_user_quota_query).toBe(false)
+  })
+})
+
+describe('API keys mutate drawer allowed channels', () => {
+  function installChannelFixtures(
+    createdPayloads: Array<Record<string, unknown>>,
+    channelRequests: string[]
+  ) {
+    installApiFixtures(createdPayloads)
+    const groupFixtures = apiClient.get
+    apiClient.get = async (url, data) => {
+      if (url === '/api/channel/') {
+        channelRequests.push(url)
+        return {
+          data: {
+            success: true,
+            data: {
+              items: [
+                { id: 4, name: 'codex-a', group: 'IT分组', status: 1 },
+                { id: 9, name: 'image', group: '生图分组', status: 2 },
+              ],
+              total: 2,
+            },
+          },
+        }
+      }
+      return groupFixtures(url, data)
+    }
+  }
+
+  afterEach(() => {
+    useAuthStore.getState().auth.reset()
+  })
+
+  test('lists every channel for a key manager and sends none when none is chosen', async () => {
+    useAuthStore.getState().auth.setUser({
+      id: 1,
+      username: 'root',
+      display_name: 'Root',
+      role: 100,
+      group: 'IT分组',
+    })
+    const createdPayloads: Array<Record<string, unknown>> = []
+    const channelRequests: string[] = []
+    installChannelFixtures(createdPayloads, channelRequests)
+    await renderCreateDrawer()
+
+    fireEvent.click(findButton('Advanced Settings', true))
+    expect(await screen.findByText('Allowed channels')).toBeVisible()
+    await waitFor(() => expect(channelRequests.length).toBeGreaterThan(0))
+
+    changeInput(getControlByLabel('Name'), 'group-routed')
+    changeInput(getControlByLabel('Staff ID'), '10018037')
+    fireEvent.click(findButton('Save changes', true))
+    await waitFor(() => expect(createdPayloads).toHaveLength(1))
+    expect(createdPayloads[0]?.channel_ids).toEqual([])
+  })
+
+  test('hides the control and the channel list from someone who cannot manage every key', async () => {
+    const createdPayloads: Array<Record<string, unknown>> = []
+    const channelRequests: string[] = []
+    installChannelFixtures(createdPayloads, channelRequests)
+    await renderCreateDrawer()
+
+    fireEvent.click(findButton('Advanced Settings', true))
+    await screen.findByRole('switch', { name: 'Allow querying user quota' })
+
+    expect(screen.queryByText('Allowed channels')).toBeNull()
+    expect(channelRequests).toEqual([])
   })
 })

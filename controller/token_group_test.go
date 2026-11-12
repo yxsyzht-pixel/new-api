@@ -310,3 +310,69 @@ func TestUpdateTokenForOtherUserUsesOwnerGroup(t *testing.T) {
 	require.NoError(t, model.DB.First(&stored, existing.Id).Error)
 	assert.Equal(t, "default", stored.Group)
 }
+
+// Channels on a key route around the owner's group, so only a key manager may
+// set them, and only to channels that exist. Root stands in for a key manager:
+// it passes the permission check without the policy engine these tests skip.
+func TestAddTokenKeyChannelsComeFromAKeyManager(t *testing.T) {
+	setupTokenGroupTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Channel{}))
+	require.NoError(t, model.DB.Create(&[]model.Channel{{Id: 4, Key: "k4"}, {Id: 9, Key: "k9"}}).Error)
+	user := setupTokenGroupUser(t, 101, "channel-key-owner", "default")
+
+	request := baseGroupTokenRequest("two-channels", "")
+	request["channel_ids"] = []int{9, 4, 9}
+	ctx, recorder := newTokenGroupContext(t, http.MethodPost, "/api/token/", request, user.Id, common.RoleRootUser, "default")
+	AddToken(ctx)
+	require.True(t, decodeAPIResponse(t, recorder).Success, recorder.Body.String())
+	var stored model.Token
+	require.NoError(t, model.DB.Where("name = ?", "two-channels").First(&stored).Error)
+	assert.Equal(t, "4,9", stored.ChannelIds)
+
+	request = baseGroupTokenRequest("missing-channel", "")
+	request["channel_ids"] = []int{4, 77}
+	ctx, recorder = newTokenGroupContext(t, http.MethodPost, "/api/token/", request, user.Id, common.RoleRootUser, "default")
+	AddToken(ctx)
+	assert.False(t, decodeAPIResponse(t, recorder).Success, "a channel that does not exist must be refused")
+	assert.Zero(t, countTokensNamed(t, "missing-channel"))
+}
+
+func TestUpdateTokenKeepsKeyChannelsUnlessAKeyManagerSendsThem(t *testing.T) {
+	setupTokenGroupTestDB(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Channel{}))
+	require.NoError(t, model.DB.Create(&[]model.Channel{{Id: 4, Key: "k4"}, {Id: 9, Key: "k9"}}).Error)
+	user := setupTokenGroupUser(t, 101, "channel-key-editor", "default")
+	existing := createTokenRow(t, 7, user.Id, "routed", "default")
+
+	for _, tc := range []struct {
+		name     string
+		stored   string
+		role     int
+		channels any
+		want     string
+	}{
+		{name: "the owner cannot move their own key onto other channels", stored: "4", role: common.RoleCommonUser, channels: []int{9}, want: "4"},
+		{name: "an edit that does not mention channels leaves them alone", stored: "4", role: common.RoleRootUser, channels: nil, want: "4"},
+		{name: "a key manager can replace them", stored: "4", role: common.RoleRootUser, channels: []int{9}, want: "9"},
+		{name: "a key manager can clear them back to group routing", stored: "4", role: common.RoleRootUser, channels: []int{}, want: ""},
+		// Channel 55 was on the key and has since been deleted. Refusing it
+		// would leave the key impossible to save; it is dropped instead.
+		{name: "a deleted channel the key already had is dropped on save", stored: "4,55", role: common.RoleRootUser, channels: []int{4, 55}, want: "4"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, model.DB.Model(existing).Update("channel_ids", tc.stored).Error)
+			request := baseGroupTokenRequest("routed", "default")
+			request["id"] = existing.Id
+			if tc.channels != nil {
+				request["channel_ids"] = tc.channels
+			}
+			ctx, recorder := newTokenGroupContext(t, http.MethodPut, "/api/token/", request, user.Id, tc.role, "default")
+			UpdateToken(ctx)
+
+			require.True(t, decodeAPIResponse(t, recorder).Success, recorder.Body.String())
+			var stored model.Token
+			require.NoError(t, model.DB.First(&stored, existing.Id).Error)
+			assert.Equal(t, tc.want, stored.ChannelIds)
+		})
+	}
+}

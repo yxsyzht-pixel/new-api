@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -45,11 +46,17 @@ type tokenRequest struct {
 	AutoGroups tokenAutoGroupsInput `json:"auto_groups"`
 	// 指针区分“未传”和显式 false：新建时未传即开启，更新时未传则保留原值。
 	AllowUserQuotaQuery *bool `json:"allow_user_quota_query"`
+	// ChannelIds shadows the stored comma-separated column with the list the
+	// page sends. Nil leaves an existing key's channels as they are.
+	ChannelIds *[]int `json:"channel_ids"`
 }
 
 type tokenResponse struct {
 	*model.Token
 	AutoGroups []string `json:"auto_groups"`
+	// ChannelIds is the key's channel list as numbers; empty means the key
+	// routes by its owner's group.
+	ChannelIds []int `json:"channel_ids"`
 	// Username is the owner's, filled in only for listings that can span more
 	// than one account.
 	Username string `json:"username,omitempty"`
@@ -83,7 +90,43 @@ func buildMaskedTokenResponse(token *model.Token) *tokenResponse {
 	if len(autoGroups) == 0 {
 		autoGroups = nil
 	}
-	return &tokenResponse{Token: &maskedToken, AutoGroups: autoGroups}
+	return &tokenResponse{Token: &maskedToken, AutoGroups: autoGroups, ChannelIds: token.GetChannelIds()}
+}
+
+// tokenChannelIds is the stored form of the channels a key manager put on a
+// key. Nobody else may set them: a user who could pick channels would route
+// around the group an administrator gave them, so for anyone else the stored
+// value stands, whatever the request carried.
+//
+// A channel being added has to exist. One the key already had but that has
+// since been deleted is dropped instead of refused, so a deleted channel never
+// leaves its keys impossible to save.
+func tokenChannelIds(c *gin.Context, requested *[]int, stored string) (string, bool) {
+	if requested == nil || !canManageAllTokens(c) {
+		return stored, true
+	}
+	ids := (&model.Token{ChannelIds: model.FormatChannelIds(*requested)}).GetChannelIds()
+	if len(ids) == 0 {
+		return "", true
+	}
+	missing, err := model.MissingChannelIds(ids)
+	if err != nil {
+		common.ApiError(c, err)
+		return "", false
+	}
+	storedIds := (&model.Token{ChannelIds: stored}).GetChannelIds()
+	var added []int
+	for _, id := range missing {
+		if !slices.Contains(storedIds, id) {
+			added = append(added, id)
+		}
+	}
+	if len(added) > 0 {
+		common.ApiErrorT(c, "Channel {{ids}} does not exist", map[string]any{"ids": model.FormatChannelIds(added)})
+		return "", false
+	}
+	kept := slices.DeleteFunc(ids, func(id int) bool { return slices.Contains(missing, id) })
+	return model.FormatChannelIds(kept), true
 }
 
 // withOwnerNames attaches each key's owner, so a page listing more than one
@@ -720,6 +763,10 @@ func AddToken(c *gin.Context) {
 		token.CrossGroupRetry = false
 		_ = token.SetAutoGroups(nil)
 	}
+	channelIds, ok := tokenChannelIds(c, request.ChannelIds, "")
+	if !ok {
+		return
+	}
 	key, err := common.GenerateKey()
 	if err != nil {
 		common.ApiErrorT(c, "Failed to generate token")
@@ -746,6 +793,7 @@ func AddToken(c *gin.Context) {
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
 		AutoGroups:         token.AutoGroups,
+		ChannelIds:         channelIds,
 	}
 	cleanToken.AllowUserQuotaQuery = request.AllowUserQuotaQuery == nil || *request.AllowUserQuotaQuery
 	err = cleanToken.Insert()
@@ -888,6 +936,11 @@ func UpdateToken(c *gin.Context) {
 				return
 			}
 		}
+		channelIds, ok := tokenChannelIds(c, request.ChannelIds, cleanToken.ChannelIds)
+		if !ok {
+			return
+		}
+		cleanToken.ChannelIds = channelIds
 	}
 	cleanToken.UpdatedBy = c.GetInt("id")
 	err = cleanToken.Update()
@@ -916,6 +969,7 @@ func UpdateToken(c *gin.Context) {
 			{"group", previous.Group != cleanToken.Group},
 			{"cross_group_retry", previous.CrossGroupRetry != cleanToken.CrossGroupRetry},
 			{"auto_groups", previous.AutoGroups != cleanToken.AutoGroups},
+			{"channel_ids", previous.ChannelIds != cleanToken.ChannelIds},
 		} {
 			if field.changed {
 				changedFields = append(changedFields, field.name)

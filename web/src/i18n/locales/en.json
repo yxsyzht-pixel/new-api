@@ -7589,6 +7589,10 @@
     "Group name cannot be empty": "Group name cannot be empty",
     "Group name {{name}} cannot contain a comma": "Group name {{name}} cannot contain a comma",
     "Group name {{name}} is too long": "Group name {{name}} is too long",
-    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "Channel {{name}} would have groups {{groups}}, longer than 64 characters"
+    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "Channel {{name}} would have groups {{groups}}, longer than 64 characters",
+    "Allowed channels": "Allowed channels",
+    "Select channels (empty to route by user group)": "Select channels (empty to route by user group)",
+    "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group.": "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group.",
+    "Channel {{ids}} does not exist": "Channel {{ids}} does not exist"
   }
 }

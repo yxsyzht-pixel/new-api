@@ -3,6 +3,8 @@ package model
 import (
 	"errors"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -28,25 +30,65 @@ type Token struct {
 	// being the same as UserId once an administrator could create a key on
 	// somebody else's account. Zero means "written before this was recorded" —
 	// shown as unknown rather than guessed at.
-	CreatedBy          int            `json:"created_by" gorm:"index;default:0"`
-	UpdatedBy          int            `json:"updated_by" gorm:"default:0"`
-	CreatedTime        int64          `json:"created_time" gorm:"bigint"`
-	AccessedTime       int64          `json:"accessed_time" gorm:"bigint"`
-	ExpiredTime        int64          `json:"expired_time" gorm:"bigint;default:-1"` // -1 means never expired
-	RemainQuota        int            `json:"remain_quota" gorm:"default:0"`
-	UnlimitedQuota     bool           `json:"unlimited_quota"`
-	ModelLimitsEnabled bool           `json:"model_limits_enabled"`
-	ModelLimits        string         `json:"model_limits" gorm:"type:text"`
-	AllowIps           *string        `json:"allow_ips" gorm:"default:''"`
-	UsedQuota          int            `json:"used_quota" gorm:"default:0"` // used quota
-	Group              string         `json:"group" gorm:"default:''"`
-	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
-	AutoGroups         string         `json:"-" gorm:"type:text"`
-	DeletedAt          gorm.DeletedAt `gorm:"index"`
+	CreatedBy          int     `json:"created_by" gorm:"index;default:0"`
+	UpdatedBy          int     `json:"updated_by" gorm:"default:0"`
+	CreatedTime        int64   `json:"created_time" gorm:"bigint"`
+	AccessedTime       int64   `json:"accessed_time" gorm:"bigint"`
+	ExpiredTime        int64   `json:"expired_time" gorm:"bigint;default:-1"` // -1 means never expired
+	RemainQuota        int     `json:"remain_quota" gorm:"default:0"`
+	UnlimitedQuota     bool    `json:"unlimited_quota"`
+	ModelLimitsEnabled bool    `json:"model_limits_enabled"`
+	ModelLimits        string  `json:"model_limits" gorm:"type:text"`
+	AllowIps           *string `json:"allow_ips" gorm:"default:''"`
+	UsedQuota          int     `json:"used_quota" gorm:"default:0"` // used quota
+	Group              string  `json:"group" gorm:"default:''"`
+	CrossGroupRetry    bool    `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
+	AutoGroups         string  `json:"-" gorm:"type:text"`
+	// ChannelIds, comma-separated, limits the key to these channels. When set,
+	// the key draws from them in any group and its owner's group no longer
+	// decides routing; empty leaves routing to the owner's group. Only an
+	// administrator may set it.
+	ChannelIds string         `json:"channel_ids" gorm:"type:text"`
+	DeletedAt  gorm.DeletedAt `gorm:"index"`
 	// 允许用此令牌查询所属用户的额度；新建令牌默认开启，已有令牌升级后保持关闭
 	AllowUserQuotaQuery bool   `json:"allow_user_quota_query"`
 	CacheExpiresAt      int64  `json:"-" gorm:"-"`
 	CacheMAC            string `json:"-" gorm:"-"`
+}
+
+// GetChannelIds returns the channels the key is limited to; none means the
+// key routes by its owner's group. Entries that are not positive ids are
+// skipped rather than failing the request.
+func (token *Token) GetChannelIds() []int {
+	if strings.TrimSpace(token.ChannelIds) == "" {
+		return nil
+	}
+	ids := make([]int, 0)
+	for part := range strings.SplitSeq(token.ChannelIds, ",") {
+		id, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || id <= 0 || slices.Contains(ids, id) {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// FormatChannelIds is the stored form of a key's channel list: sorted,
+// de-duplicated positive ids joined by commas.
+func FormatChannelIds(ids []int) string {
+	unique := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if id > 0 && !slices.Contains(unique, id) {
+			unique = append(unique, id)
+		}
+	}
+	slices.Sort(unique)
+	parts := make([]string, len(unique))
+	for i, id := range unique {
+		parts[i] = strconv.Itoa(id)
+	}
+	return strings.Join(parts, ",")
 }
 
 func (token *Token) GetAutoGroups() ([]string, error) {
@@ -371,7 +413,7 @@ func (token *Token) Update() (err error) {
 	}
 	return DB.Model(token).Select("name", "staff_id", "skip_chat_record", "skip_memory", "updated_by", "status", "expired_time",
 		"remain_quota", "unlimited_quota", "model_limits_enabled", "model_limits", "allow_ips", "group",
-		"cross_group_retry", "auto_groups", "allow_user_quota_query").Updates(token).Error
+		"cross_group_retry", "auto_groups", "channel_ids", "allow_user_quota_query").Updates(token).Error
 }
 
 func (token *Token) SelectUpdate() (err error) {

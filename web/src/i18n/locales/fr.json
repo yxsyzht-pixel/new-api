@@ -7576,6 +7576,10 @@
     "Group name cannot be empty": "Le nom du groupe ne peut pas être vide",
     "Group name {{name}} cannot contain a comma": "Le nom du groupe {{name}} ne peut pas contenir de virgule",
     "Group name {{name}} is too long": "Le nom du groupe {{name}} est trop long",
-    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "Le canal {{name}} aurait les groupes {{groups}}, soit plus de 64 caractères"
+    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "Le canal {{name}} aurait les groupes {{groups}}, soit plus de 64 caractères",
+    "Allowed channels": "Canaux autorisés",
+    "Select channels (empty to route by user group)": "Sélectionnez des canaux (vide pour router selon le groupe de l’utilisateur)",
+    "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group.": "Avec des canaux sélectionnés, cette clé n’utilise qu’eux et ignore le groupe de l’utilisateur. Laissez vide pour router selon le groupe de l’utilisateur.",
+    "Channel {{ids}} does not exist": "Le canal {{ids}} n’existe pas"
   }
 }

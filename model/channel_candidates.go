@@ -26,7 +26,7 @@ func CountSelectableChannels(group string, modelName string, filters []dto.Chann
 	if common.MemoryCacheEnabled {
 		return countSelectableFromCache(group, modelName, filters)
 	}
-	return countSelectableFromDB(group, modelName)
+	return countSelectableFromDB(group, modelName, filters)
 }
 
 // countSelectableFromCache resolves candidates exactly as selection does, then
@@ -47,12 +47,21 @@ func countSelectableFromCache(group string, modelName string, filters []dto.Chan
 }
 
 // countSelectableFromDB serves deployments without the memory cache. It matches
-// the model name exactly because the uncached selection path does too.
-func countSelectableFromDB(group string, modelName string) int {
+// the model name exactly because the uncached selection path does too. For
+// AllGroups it counts the key's own channels, never every channel there is.
+func countSelectableFromDB(group string, modelName string, filters []dto.ChannelFilter) int {
+	query := DB.Model(&Ability{}).Where("model = ? and enabled = ?", modelName, true)
+	if group == AllGroups {
+		allowed, ok := KeyChannelIDs(filters)
+		if !ok || len(allowed) == 0 {
+			return 0
+		}
+		query = query.Where("channel_id IN ?", allowed)
+	} else {
+		query = query.Where(commonGroupCol+" = ?", group)
+	}
 	var channelIDs []int
-	if err := DB.Model(&Ability{}).
-		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, modelName, true).
-		Distinct().Pluck("channel_id", &channelIDs).Error; err != nil {
+	if err := query.Distinct().Pluck("channel_id", &channelIDs).Error; err != nil {
 		return unknownCandidateCount
 	}
 	if len(channelIDs) == 0 {

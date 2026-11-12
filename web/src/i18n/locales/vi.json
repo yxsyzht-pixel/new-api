@@ -7458,6 +7458,10 @@
     "Group name cannot be empty": "Tên nhóm không được để trống",
     "Group name {{name}} cannot contain a comma": "Tên nhóm {{name}} không được chứa dấu phẩy",
     "Group name {{name}} is too long": "Tên nhóm {{name}} quá dài",
-    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "Kênh {{name}} sẽ có các nhóm {{groups}}, dài hơn 64 ký tự"
+    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "Kênh {{name}} sẽ có các nhóm {{groups}}, dài hơn 64 ký tự",
+    "Allowed channels": "Kênh được phép",
+    "Select channels (empty to route by user group)": "Chọn kênh (để trống để định tuyến theo nhóm người dùng)",
+    "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group.": "Khi đã chọn kênh, khóa này chỉ dùng các kênh đó và bỏ qua nhóm của người dùng. Để trống để định tuyến theo nhóm người dùng.",
+    "Channel {{ids}} does not exist": "Kênh {{ids}} không tồn tại"
   }
 }

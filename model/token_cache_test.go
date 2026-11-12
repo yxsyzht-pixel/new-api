@@ -66,6 +66,7 @@ func TestTokenCacheRoundTripsRequestPathFields(t *testing.T) {
 		Group:              "default",
 		CrossGroupRetry:    true,
 		AutoGroups:         `["a","b"]`,
+		ChannelIds:         "3,7",
 	}
 
 	result, err := cacheInitToken(stored)
@@ -92,6 +93,9 @@ func TestTokenCacheRoundTripsRequestPathFields(t *testing.T) {
 	require.Equal(t, stored.Group, loaded.Group)
 	require.Equal(t, stored.CrossGroupRetry, loaded.CrossGroupRetry)
 	require.Equal(t, stored.AutoGroups, loaded.AutoGroups)
+	// A key limited to channels that lost the list in the cache would silently
+	// route by its owner's group again.
+	require.Equal(t, stored.ChannelIds, loaded.ChannelIds, "ChannelIds must survive the cache")
 	require.NotNil(t, loaded.AllowIps)
 	require.Equal(t, allowIps, *loaded.AllowIps)
 }

@@ -71,6 +71,23 @@ func (p *RetryParam) triedChannels() map[int]bool {
 	return tried
 }
 
+// SelectionGroup is the group a request's channels are drawn from. A key
+// limited to chosen channels draws from them in any group, so its owner's
+// group does not narrow them; billing still uses the owner's group.
+func SelectionGroup(c *gin.Context, usingGroup string) string {
+	if _, limited := model.KeyChannelIDs(GetChannelConstraints(c).Filters); limited {
+		return model.AllGroups
+	}
+	return usingGroup
+}
+
+func (p *RetryParam) selectionGroup() string {
+	if p == nil {
+		return ""
+	}
+	return SelectionGroup(p.Ctx, p.TokenGroup)
+}
+
 func (p *RetryParam) GetRetry() int {
 	if p.Retry == nil {
 		return 0
@@ -135,12 +152,12 @@ func (p *RetryParam) ResetRetryNextTry() {
 func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
 	var channel *model.Channel
 	var err error
-	selectGroup := param.TokenGroup
+	selectGroup := param.selectionGroup()
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 	filters := GetChannelConstraints(param.Ctx).Filters
 	affinityRetryOffset := param.Ctx.GetInt(ginKeyChannelAffinityRetryOffset)
 
-	if param.TokenGroup == "auto" {
+	if selectGroup == "auto" {
 		autoGroups := GetRequestAutoGroups(param.Ctx, userGroup)
 		if len(autoGroups) == 0 {
 			return nil, selectGroup, errors.New("auto groups is not enabled")
@@ -224,14 +241,14 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		}
 	} else {
 		channel, err = model.GetRandomSatisfiedChannel(
-			param.TokenGroup,
+			selectGroup,
 			param.ModelName,
 			max(param.GetRetry()-affinityRetryOffset, 0),
 			filters,
 			param.triedChannels(),
 		)
 		if err != nil {
-			return nil, param.TokenGroup, err
+			return nil, selectGroup, err
 		}
 	}
 	return channel, selectGroup, nil
@@ -356,7 +373,7 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 		return channel, "", nil
 	}
 
-	usingGroup := retry.TokenGroup
+	usingGroup := retry.selectionGroup()
 	var channel *model.Channel
 	var selectGroup string
 	if retry.GetRetry() == 0 {
@@ -449,10 +466,11 @@ func (p *RetryParam) candidateGroups() []string {
 	if p == nil {
 		return nil
 	}
-	if p.TokenGroup == "auto" {
+	group := p.selectionGroup()
+	if group == "auto" {
 		return GetRequestAutoGroups(p.Ctx, common.GetContextKeyString(p.Ctx, constant.ContextKeyUserGroup))
 	}
-	return []string{p.TokenGroup}
+	return []string{group}
 }
 
 // GroupCandidateCount is how many channels could serve this request in one

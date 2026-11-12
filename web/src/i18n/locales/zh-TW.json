@@ -7458,6 +7458,10 @@
     "Group name cannot be empty": "分組名稱不能為空",
     "Group name {{name}} cannot contain a comma": "分組名稱 {{name}} 不能包含逗號",
     "Group name {{name}} is too long": "分組名稱 {{name}} 過長",
-    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "渠道 {{name}} 的分組將變為 {{groups}}，超過 64 個字元"
+    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "渠道 {{name}} 的分組將變為 {{groups}}，超過 64 個字元",
+    "Allowed channels": "可用渠道",
+    "Select channels (empty to route by user group)": "選擇渠道（留空則依使用者分組路由）",
+    "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group.": "選擇了渠道後，此金鑰只使用這些渠道，不再受使用者分組限制；留空則依使用者分組路由。",
+    "Channel {{ids}} does not exist": "渠道 {{ids}} 不存在"
   }
 }

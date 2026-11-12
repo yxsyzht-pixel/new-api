@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
 import type {
   ApiKey,
@@ -27,6 +28,7 @@ import type {
   ApiKeyFormData,
   TokenAutoGroupsConfig,
   ApiKeyScope,
+  KeyChannelOption,
 } from './types'
 
 // ============================================================================
@@ -42,6 +44,39 @@ export async function getApiKeys(
   if (scope !== undefined) queryParams.set('user_id', String(scope))
   const res = await api.get(`/api/token/?${queryParams.toString()}`)
   return res.data
+}
+
+type ChannelPage = {
+  success: boolean
+  message?: string
+  data?: { items?: KeyChannelOption[]; total?: number }
+}
+
+/**
+ * Every channel, for limiting a key to chosen channels. The channel list is
+ * paged at 100, so this walks the pages; it is only ever asked for by someone
+ * who may manage everyone's keys.
+ */
+export async function getKeyChannelOptions(): Promise<KeyChannelOption[]> {
+  const pageSize = 100
+  const channels: KeyChannelOption[] = []
+  for (let page = 1; page <= 50; page++) {
+    const res = await api.get<ChannelPage>('/api/channel/', {
+      params: { p: page, page_size: pageSize, id_sort: true },
+    })
+    const items = requireServerSuccess(res.data).data?.items ?? []
+    channels.push(
+      ...items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        group: item.group,
+        status: item.status,
+      }))
+    )
+    const total = res.data.data?.total ?? 0
+    if (items.length < pageSize || channels.length >= total) break
+  }
+  return channels
 }
 
 // Search API keys by keyword or token (with pagination)

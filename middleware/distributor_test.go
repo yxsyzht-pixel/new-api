@@ -10,10 +10,12 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	hostdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -399,4 +401,22 @@ func TestSharedEndpointRebindsToBoundNewAPIExtension(t *testing.T) {
 	require.Nil(t, SetupContextForSelectedChannel(c, channel, "task-model"))
 	assert.Equal(t, "alpha", c.GetString("task_plugin_key"), "the first bound candidate executes regardless of the earlier pin")
 	assert.Equal(t, "alpha", c.MustGet(jsplugin.ContextKeyPinnedEndpoint).(jsplugin.PinnedEndpoint).Plugin.Meta.Key)
+}
+
+// When a key's own channels decided there was nothing to route to, the message
+// says so instead of naming the owner's group, which played no part in it.
+func TestNoAvailableChannelMessageNamesTheKeysChannels(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	for _, tc := range []struct{ language, want string }{
+		{"en", "None of the channels configured on this key can serve model m (distributor)"},
+		{"zh-CN", "此密钥配置的渠道中没有可用于模型 m 的渠道（distributor）"},
+	} {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		c.Request.Header.Set("Accept-Language", tc.language)
+		service.GetChannelConstraints(c).AddFilter(hostdto.ChannelFilter{Kind: hostdto.FilterKeyChannels, ChannelIDs: []int{4}})
+
+		assert.Equal(t, tc.want, noAvailableChannelMessage(c, "team-a", "m"), tc.language)
+	}
 }

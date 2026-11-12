@@ -63,6 +63,8 @@ export function getApiKeyFormSchema(
       auto_groups_mode: z.enum(['inherit', 'custom']),
       auto_groups: z.array(z.string()),
       cross_group_retry: z.boolean().optional(),
+      // Channel ids as strings, the way the multi-select holds its values.
+      channel_ids: z.array(z.string()),
     })
     .superRefine((data, ctx) => {
       if (data.group === 'auto') {
@@ -145,6 +147,7 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   auto_groups_mode: 'inherit',
   auto_groups: [],
   cross_group_retry: true,
+  channel_ids: [],
 }
 
 export function getApiKeyFormDefaultValues(
@@ -195,6 +198,10 @@ export function transformFormDataToPayload(
     group: '',
     auto_groups: [],
     cross_group_retry: false,
+    // Chosen channels replace the owner's group for routing; none keeps it.
+    channel_ids: data.channel_ids
+      .map(Number)
+      .filter((id) => Number.isInteger(id) && id > 0),
   }
 }
 
@@ -234,5 +241,6 @@ export function transformApiKeyToFormDefaults(
     auto_groups_mode: autoGroupsMode,
     auto_groups: autoGroups,
     cross_group_retry: !!apiKey.cross_group_retry,
+    channel_ids: (apiKey.channel_ids ?? []).map(String),
   }
 }

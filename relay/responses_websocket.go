@@ -588,7 +588,10 @@ func (s *responsesWSSession) restoreConnectionContext(c *gin.Context, model stri
 			return types.NewErrorWithStatusCode(errors.New("channel pin changed; reconnect required"), types.ErrorCodeAccessDenied, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 		}
 	} else {
-		group := common.GetContextKeyString(c, appconstant.ContextKeyUsingGroup)
+		group := service.SelectionGroup(c, common.GetContextKeyString(c, appconstant.ContextKeyUsingGroup))
+		if allowed, limited := appmodel.KeyChannelIDs(service.GetChannelConstraints(c).Filters); limited && !slices.Contains(allowed, s.lockedChannelID) {
+			return types.NewErrorWithStatusCode(errors.New("the connection channel is no longer allowed for this key"), types.ErrorCodeAccessDenied, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+		}
 		if group == "auto" {
 			if !slices.Contains(service.GetRequestAutoGroups(c, common.GetContextKeyString(c, appconstant.ContextKeyUserGroup)), s.lockedGroup) {
 				return types.NewErrorWithStatusCode(errors.New("the connection group is no longer allowed"), types.ErrorCodeAccessDenied, http.StatusForbidden, types.ErrOptionWithSkipRetry())

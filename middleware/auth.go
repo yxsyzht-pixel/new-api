@@ -693,6 +693,15 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 			common.SetContextKey(c, constant.ContextKeyTokenAutoGroups, autoGroups)
 		}
 	}
+	if channelIds := token.GetChannelIds(); len(channelIds) > 0 {
+		// The key's own channels replace its owner's group for routing. As a
+		// filter it holds for every attempt: first pick, retries, affinity and
+		// an explicit channel pin all have to stay inside the list.
+		service.GetChannelConstraints(c).AddFilter(dto.ChannelFilter{
+			Kind:       dto.FilterKeyChannels,
+			ChannelIDs: channelIds,
+		})
+	}
 	if len(parts) > 1 {
 		if model.IsAdmin(token.UserId) {
 			id, err := strconv.Atoi(parts[1])

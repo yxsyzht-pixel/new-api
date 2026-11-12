@@ -315,6 +315,9 @@ func CacheUpdateChannel(channel *Channel) {
 // zero candidates and was given no retries at all, while selection went on to
 // find channels for it.
 func candidateChannelIDsLocked(group string, model string, filters []dto.ChannelFilter) []int {
+	if group == AllGroups {
+		return keyChannelCandidatesLocked(model, filters)
+	}
 	// First, try to find channels with the exact model name.
 	channels, _ := filterCandidateIDs(group2model2channels[group][model], model, filters)
 	if len(channels) > 0 {

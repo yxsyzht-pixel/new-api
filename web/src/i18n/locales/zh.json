@@ -7592,6 +7592,10 @@
     "Group name cannot be empty": "分组名不能为空",
     "Group name {{name}} cannot contain a comma": "分组名 {{name}} 不能包含逗号",
     "Group name {{name}} is too long": "分组名 {{name}} 过长",
-    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "渠道 {{name}} 的分组将变为 {{groups}}，超过 64 个字符"
+    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "渠道 {{name}} 的分组将变为 {{groups}}，超过 64 个字符",
+    "Allowed channels": "可用渠道",
+    "Select channels (empty to route by user group)": "选择渠道（留空则按用户分组路由）",
+    "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group.": "选择了渠道后，此密钥只使用这些渠道，不再受用户分组限制；留空则按用户分组路由。",
+    "Channel {{ids}} does not exist": "渠道 {{ids}} 不存在"
   }
 }

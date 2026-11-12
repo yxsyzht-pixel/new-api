@@ -190,8 +190,7 @@ func GetChannel(
 	filters []dto.ChannelFilter,
 	tried map[int]bool,
 ) (*Channel, error) {
-	var abilities []Ability
-	err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).Order("priority DESC, weight DESC").Find(&abilities).Error
+	abilities, err := enabledAbilities(group, model, filters)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +198,7 @@ func GetChannel(
 	// Like the memory cache, retry with the routing name (for example without
 	// @ modifiers) when no channel serves the exact name.
 	if normalized := ratio_setting.RoutingMatchModelName(model); len(abilities) == 0 && normalized != "" && normalized != model {
-		err = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, normalized, true).Order("priority DESC, weight DESC").Find(&abilities).Error
+		abilities, err = enabledAbilities(group, normalized, filters)
 		if err != nil {
 			return nil, err
 		}
@@ -231,6 +230,30 @@ func GetChannel(
 	channel := Channel{}
 	err = DB.First(&channel, "id = ?", chosen.ChannelId).Error
 	return &channel, err
+}
+
+// enabledAbilities loads the enabled abilities that serve model in group,
+// highest priority first. For AllGroups it loads the key's channels in every
+// group, one ability per channel.
+func enabledAbilities(group string, model string, filters []dto.ChannelFilter) ([]Ability, error) {
+	query := DB.Where("model = ? and enabled = ?", model, true)
+	if group == AllGroups {
+		allowed, ok := KeyChannelIDs(filters)
+		if !ok || len(allowed) == 0 {
+			return nil, nil
+		}
+		query = query.Where("channel_id IN ?", allowed)
+	} else {
+		query = query.Where(commonGroupCol+" = ?", group)
+	}
+	var abilities []Ability
+	if err := query.Order("priority DESC, weight DESC, channel_id").Find(&abilities).Error; err != nil {
+		return nil, err
+	}
+	if group == AllGroups {
+		abilities = uniqueAbilityPerChannel(abilities)
+	}
+	return abilities, nil
 }
 
 // filterAbilitiesByConstraints applies the same ChannelSatisfiesFilters

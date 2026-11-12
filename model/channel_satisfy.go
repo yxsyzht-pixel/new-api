@@ -11,6 +11,9 @@ func IsChannelEnabledForGroupModel(group string, modelName string, channelID int
 	if group == "" || modelName == "" || channelID <= 0 {
 		return false
 	}
+	if group == AllGroups {
+		return isKeyChannelEnabledForModel(modelName, channelID)
+	}
 	if !common.MemoryCacheEnabled {
 		return isChannelEnabledForGroupModelDB(group, modelName, channelID)
 	}

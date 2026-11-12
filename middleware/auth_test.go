@@ -116,12 +116,11 @@ func TestTokenAuthReadOnlyTranslatesErrors(t *testing.T) {
 	}
 }
 
-// In this deployment a key routes and bills in its owner's group. A group,
-// Auto order or cross-group retry stored on the key, even one the owner may no
-// longer select, is set aside rather than honoured or refused.
-func TestTokenAuthUsesOwnerGroupNotKeyGroup(t *testing.T) {
-	// The key lookup needs the dialect's quoted column names, which only the
-	// real database initialisation sets up.
+// initTokenAuthDB opens a fresh SQLite database through the real
+// initialisation: the key lookup needs the dialect's quoted column names,
+// which only InitDB sets up.
+func initTokenAuthDB(t *testing.T) {
+	t.Helper()
 	previousDB, previousLogDB := model.DB, model.LOG_DB
 	previousType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
 	previousRedis, previousMemory, previousSQLite := common.RedisEnabled, common.MemoryCacheEnabled, common.SQLitePath
@@ -141,6 +140,13 @@ func TestTokenAuthUsesOwnerGroupNotKeyGroup(t *testing.T) {
 		common.IsMasterNode = previousMaster
 	})
 	model.LOG_DB = model.DB
+}
+
+// In this deployment a key routes and bills in its owner's group. A group,
+// Auto order or cross-group retry stored on the key, even one the owner may no
+// longer select, is set aside rather than honoured or refused.
+func TestTokenAuthUsesOwnerGroupNotKeyGroup(t *testing.T) {
+	initTokenAuthDB(t)
 
 	user := &model.User{
 		Username: "key-group-owner", Password: "password-placeholder", Role: common.RoleCommonUser,
@@ -174,6 +180,44 @@ func TestTokenAuthUsesOwnerGroupNotKeyGroup(t *testing.T) {
 	assert.Empty(t, tokenGroup)
 	assert.False(t, crossGroupRetry)
 	assert.False(t, hasAutoGroups)
+}
+
+// A key with its own channels keeps billing in its owner's group, but routing
+// is limited to those channels through a filter every selection step applies.
+func TestTokenAuthTurnsKeyChannelsIntoARoutingFilter(t *testing.T) {
+	initTokenAuthDB(t)
+	user := &model.User{
+		Username: "key-channels-owner", Password: "password-placeholder", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, Group: "team-a", AuthVersion: 1, AffCode: "middleware-aff-key-channels-owner",
+	}
+	require.NoError(t, model.DB.Create(user).Error)
+	key := "keychannelsbecomeafilter00000000000000000000000"
+	require.NoError(t, model.DB.Create(&model.Token{
+		UserId: user.Id, Key: key, Name: "two-channels", Status: common.TokenStatusEnabled,
+		ExpiredTime: -1, UnlimitedQuota: true, ChannelIds: "4,9",
+	}).Error)
+
+	var usingGroup, selectionGroup string
+	var allowed []int
+	var limited bool
+	router := gin.New()
+	router.POST("/v1/chat/completions", TokenAuth(), func(c *gin.Context) {
+		usingGroup = common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+		selectionGroup = service.SelectionGroup(c, usingGroup)
+		allowed, limited = model.KeyChannelIDs(service.GetChannelConstraints(c).Filters)
+		c.Status(http.StatusOK)
+	})
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
+	request.Header.Set("Authorization", "Bearer sk-"+key)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	assert.Equal(t, "team-a", usingGroup, "billing stays in the owner's group")
+	assert.Equal(t, model.AllGroups, selectionGroup, "routing no longer stops at the owner's group")
+	assert.True(t, limited)
+	assert.Equal(t, []int{4, 9}, allowed)
 }
 
 func TestUserAuthAllowsOpaqueDottedPAT(t *testing.T) {
