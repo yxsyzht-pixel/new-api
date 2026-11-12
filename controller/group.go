@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
@@ -21,6 +22,36 @@ func GetGroups(c *gin.Context) {
 		"message": "",
 		"data":    groupNames,
 	})
+}
+
+type groupRenameRequest struct {
+	Renames map[string]string `json:"renames"`
+}
+
+// RenameGroups moves users, keys, channels and subscriptions from old group
+// names to new ones. The group settings page calls it when a group is renamed,
+// so renaming a group no longer strands its members under a name that no
+// longer exists.
+func RenameGroups(c *gin.Context) {
+	var req groupRenameRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+		return
+	}
+	renames, err := model.NormalizeGroupRenames(req.Renames)
+	if err != nil {
+		common.ApiErrorStatus(c, http.StatusBadRequest, err)
+		return
+	}
+	result, err := model.RenameGroups(renames)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if result.Channels > 0 {
+		model.InitChannelCache()
+	}
+	common.ApiSuccess(c, result)
 }
 
 func GetUserGroups(c *gin.Context) {

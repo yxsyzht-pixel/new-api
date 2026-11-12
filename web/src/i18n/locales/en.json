@@ -7584,6 +7584,11 @@
     "Sign out of Cursor?": "Sign out of Cursor?",
     "Requests on this channel will fail until someone signs in again.": "Requests on this channel will fail until someone signs in again.",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.",
-    "Export to Excel": "Export to Excel"
+    "Export to Excel": "Export to Excel",
+    "Renamed groups: moved {{users}} users and {{channels}} channels": "Renamed groups: moved {{users}} users and {{channels}} channels",
+    "Group name cannot be empty": "Group name cannot be empty",
+    "Group name {{name}} cannot contain a comma": "Group name {{name}} cannot contain a comma",
+    "Group name {{name}} is too long": "Group name {{name}} is too long",
+    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "Channel {{name}} would have groups {{groups}}, longer than 64 characters"
   }
 }

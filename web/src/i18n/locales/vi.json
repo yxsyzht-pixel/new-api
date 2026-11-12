@@ -7453,6 +7453,11 @@
     "Sign out of Cursor?": "Đăng xuất Cursor?",
     "Requests on this channel will fail until someone signs in again.": "Các yêu cầu trên kênh này sẽ thất bại cho đến khi có người đăng nhập lại.",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "Mỗi yêu cầu trên kênh này đều tiêu tốn gói của tài khoản Cursor đang đăng nhập. Dùng chung một gói cho nhiều người có thể vi phạm điều khoản của Cursor và khiến tài khoản bị hạn chế.",
-    "Export to Excel": "Xuất Excel"
+    "Export to Excel": "Xuất Excel",
+    "Renamed groups: moved {{users}} users and {{channels}} channels": "Đã đổi tên nhóm: đã chuyển {{users}} người dùng và {{channels}} kênh",
+    "Group name cannot be empty": "Tên nhóm không được để trống",
+    "Group name {{name}} cannot contain a comma": "Tên nhóm {{name}} không được chứa dấu phẩy",
+    "Group name {{name}} is too long": "Tên nhóm {{name}} quá dài",
+    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "Kênh {{name}} sẽ có các nhóm {{groups}}, dài hơn 64 ký tự"
   }
 }

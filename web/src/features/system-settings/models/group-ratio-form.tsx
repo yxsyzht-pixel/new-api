@@ -80,12 +80,14 @@ type GroupRatioFormProps = {
   form: UseFormReturn<GroupFormValues>
   onSave: (values: GroupFormValues) => Promise<void>
   isSaving: boolean
+  onRenameGroup?: (from: string, to: string) => void
 }
 
 export const GroupRatioForm = memo(function GroupRatioForm({
   form,
   onSave,
   isSaving,
+  onRenameGroup,
 }: GroupRatioFormProps) {
   const { t } = useTranslation()
   const values = useWatch({ control: form.control })
@@ -167,6 +169,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
           <GroupRatioVisualEditor
             section={section}
             onSectionChange={setSection}
+            onRenameGroup={onRenameGroup}
             groupRatio={values.GroupRatio ?? ''}
             topupGroupRatio={values.TopupGroupRatio ?? ''}
             userUsableGroups={values.UserUsableGroups ?? ''}

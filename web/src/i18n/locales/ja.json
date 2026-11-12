@@ -7571,6 +7571,11 @@
     "Sign out of Cursor?": "Cursor からサインアウトしますか？",
     "Requests on this channel will fail until someone signs in again.": "誰かが再度サインインするまで、このチャネルのリクエストは失敗します。",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "このチャネルのリクエストはすべて、サインイン中の Cursor アカウントのプランを消費します。1 つのサブスクリプションを多数のユーザーで共有すると Cursor の規約に反し、アカウントが制限されるおそれがあります。",
-    "Export to Excel": "Excel にエクスポート"
+    "Export to Excel": "Excel にエクスポート",
+    "Renamed groups: moved {{users}} users and {{channels}} channels": "グループ名を変更しました：ユーザー {{users}} 件とチャネル {{channels}} 件を移行しました",
+    "Group name cannot be empty": "グループ名を空にすることはできません",
+    "Group name {{name}} cannot contain a comma": "グループ名 {{name}} にカンマを含めることはできません",
+    "Group name {{name}} is too long": "グループ名 {{name}} が長すぎます",
+    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "チャネル {{name}} のグループが {{groups}} となり、64 文字を超えます"
   }
 }

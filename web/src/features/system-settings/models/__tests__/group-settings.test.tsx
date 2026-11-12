@@ -33,6 +33,7 @@ import { z } from 'zod'
 import { SettingsPageProvider } from '../../components/settings-page-context'
 import { positiveIntegerSchema } from '../../utils/numeric-field'
 import { GroupRatioForm } from '../group-ratio-form'
+import { effectiveGroupRenames, trackGroupRename } from '../group-rename'
 
 const defaults = {
   GroupRatio: '{"default":1,"vip":0.8}',
@@ -60,6 +61,7 @@ function Fixture(props: {
   onSave?: (values: typeof defaults) => Promise<void>
   initial?: Partial<typeof defaults>
   isSaving?: boolean
+  onRenameGroup?: (from: string, to: string) => void
 }) {
   const [actions, setActions] = useState<HTMLDivElement | null>(null)
   const form = useForm({
@@ -73,6 +75,7 @@ function Fixture(props: {
         form={form}
         onSave={props.onSave ?? (async () => {})}
         isSaving={props.isSaving ?? false}
+        onRenameGroup={props.onRenameGroup}
       />
     </SettingsPageProvider>
   )
@@ -128,7 +131,9 @@ describe('group settings workspace', () => {
         .map((input) => input.value)
     ).toEqual(['group_2', 'group_1', 'default', 'vip'])
 
-    await user.click(screen.getByRole('button', { name: 'Save group settings' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
     await waitFor(() => expect(onSave).toHaveBeenCalled())
     const saved = onSave.mock.calls[0][0]
     expect(JSON.parse(saved.GroupRatio)).toEqual({
@@ -145,6 +150,33 @@ describe('group settings workspace', () => {
     })
     expect(JSON.parse(saved.TopupGroupRatio)).toEqual({ vip: 1.2 })
     expect(saved.AutoGroups).toBe(defaults.AutoGroups)
+  })
+
+  it('reports a typed-over group name so the save renames the saved group', async () => {
+    const user = userEvent.setup()
+    let tracked = {}
+    const onSave = vi.fn(async (_values: typeof defaults) => {})
+    render(
+      <Fixture
+        onSave={onSave}
+        onRenameGroup={(from, to) => {
+          tracked = trackGroupRename(tracked, from, to)
+        }}
+      />
+    )
+
+    const nameInput = screen.getAllByRole('textbox', { name: 'Group name' })[0]
+    await user.clear(nameInput)
+    await user.type(nameInput, 'IT')
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const savedRatio = onSave.mock.calls[0][0].GroupRatio
+    expect(
+      effectiveGroupRenames(tracked, defaults.GroupRatio, savedRatio)
+    ).toEqual({ default: 'IT' })
   })
 
   it('keeps unfinished visibility rules while switching sections and supports keyboard tabs', async () => {
@@ -201,7 +233,9 @@ describe('group settings workspace', () => {
     expect(screen.getByRole('button', { name: 'Move vip up' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Move vip down' })).toBeDisabled()
     await user.click(screen.getByRole('tab', { name: 'Pricing groups' }))
-    await user.click(screen.getByRole('button', { name: 'Save group settings' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
     await waitFor(() => expect(onSave).toHaveBeenCalled())
     expect(onSave.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
@@ -244,7 +278,9 @@ describe('group settings workspace', () => {
     )
     expect(screen.getByText('Not in pricing table')).toBeVisible()
     await user.click(screen.getByRole('tab', { name: 'Pricing groups' }))
-    await user.click(screen.getByRole('button', { name: 'Save group settings' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
     await waitFor(() => expect(onSave).toHaveBeenCalled())
     expect(JSON.parse(onSave.mock.calls[0][0].AutoGroups)).toEqual([
       'vip',
@@ -286,7 +322,9 @@ describe('group settings workspace', () => {
       { target: { value: '0' } }
     )
     await user.click(screen.getByRole('tab', { name: 'Pricing groups' }))
-    await user.click(screen.getByRole('button', { name: 'Save group settings' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Save group settings' })
+    )
     await waitFor(() =>
       expect(
         screen.getByRole('tab', { name: 'Auto group order' })

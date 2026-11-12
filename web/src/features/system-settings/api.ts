@@ -22,6 +22,7 @@ import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
+  RenameGroupsResponse,
   SystemOptionsResponse,
   SystemTaskListResponse,
   SystemTaskFilters,
@@ -41,6 +42,14 @@ export async function getSystemOptions() {
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  return res.data
+}
+
+/** Moves users, keys, channels and subscriptions from old group names to new ones. */
+export async function renameGroups(renames: Record<string, string>) {
+  const res = await api.post<RenameGroupsResponse>('/api/option/group_rename', {
+    renames,
+  })
   return res.data
 }
 

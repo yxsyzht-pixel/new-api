@@ -7571,6 +7571,11 @@
     "Sign out of Cursor?": "Se déconnecter de Cursor ?",
     "Requests on this channel will fail until someone signs in again.": "Les requêtes de ce canal échoueront jusqu'à ce que quelqu'un se reconnecte.",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "Chaque requête de ce canal consomme le forfait du compte Cursor connecté. Partager un abonnement entre de nombreux utilisateurs peut enfreindre les conditions de Cursor et entraîner la restriction du compte.",
-    "Export to Excel": "Exporter vers Excel"
+    "Export to Excel": "Exporter vers Excel",
+    "Renamed groups: moved {{users}} users and {{channels}} channels": "Groupes renommés : {{users}} utilisateurs et {{channels}} canaux déplacés",
+    "Group name cannot be empty": "Le nom du groupe ne peut pas être vide",
+    "Group name {{name}} cannot contain a comma": "Le nom du groupe {{name}} ne peut pas contenir de virgule",
+    "Group name {{name}} is too long": "Le nom du groupe {{name}} est trop long",
+    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "Le canal {{name}} aurait les groupes {{groups}}, soit plus de 64 caractères"
   }
 }

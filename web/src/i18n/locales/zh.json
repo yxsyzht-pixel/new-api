@@ -7587,6 +7587,11 @@
     "Sign out of Cursor?": "退出 Cursor 登录？",
     "Requests on this channel will fail until someone signs in again.": "退出后，这个渠道的请求都会失败，直到有人重新登录。",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "这个渠道的每次请求都会消耗所登录 Cursor 账号的套餐额度。多人共用一个订阅可能违反 Cursor 的条款，账号有被限制的风险。",
-    "Export to Excel": "导出 Excel"
+    "Export to Excel": "导出 Excel",
+    "Renamed groups: moved {{users}} users and {{channels}} channels": "分组已改名：已迁移 {{users}} 个用户和 {{channels}} 个渠道",
+    "Group name cannot be empty": "分组名不能为空",
+    "Group name {{name}} cannot contain a comma": "分组名 {{name}} 不能包含逗号",
+    "Group name {{name}} is too long": "分组名 {{name}} 过长",
+    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "渠道 {{name}} 的分组将变为 {{groups}}，超过 64 个字符"
   }
 }

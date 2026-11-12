@@ -7571,6 +7571,11 @@
     "Sign out of Cursor?": "Выйти из Cursor?",
     "Requests on this channel will fail until someone signs in again.": "Запросы этого канала будут завершаться ошибкой, пока кто-нибудь снова не войдёт.",
     "Every request on this channel spends the signed-in Cursor plan. Sharing one subscription with many users may breach Cursor’s terms and get the account restricted.": "Каждый запрос этого канала расходует тариф аккаунта Cursor, в который выполнен вход. Совместное использование одной подписки многими пользователями может нарушать условия Cursor и привести к ограничению аккаунта.",
-    "Export to Excel": "Экспорт в Excel"
+    "Export to Excel": "Экспорт в Excel",
+    "Renamed groups: moved {{users}} users and {{channels}} channels": "Группы переименованы: перенесено пользователей — {{users}}, каналов — {{channels}}",
+    "Group name cannot be empty": "Название группы не может быть пустым",
+    "Group name {{name}} cannot contain a comma": "Название группы {{name}} не может содержать запятую",
+    "Group name {{name}} is too long": "Название группы {{name}} слишком длинное",
+    "Channel {{name}} would have groups {{groups}}, longer than 64 characters": "У канала {{name}} получились бы группы {{groups}} длиной более 64 символов"
   }
 }

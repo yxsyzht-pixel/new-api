@@ -103,6 +103,8 @@ type GroupRatioVisualEditorProps = {
   maxTokenAutoGroupsField: ReactNode
   groupSpecialUsableGroup: string
   onChange: (field: string, value: string) => void
+  /** Called with a group's previous and new name each time its name is edited. */
+  onRenameGroup?: (from: string, to: string) => void
 }
 
 type GroupPricingRow = {
@@ -278,6 +280,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   maxTokenAutoGroupsField,
   groupSpecialUsableGroup,
   onChange,
+  onRenameGroup,
 }: GroupRatioVisualEditorProps) {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
@@ -371,6 +374,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
           userUsableGroups={userUsableGroups}
           topupGroupRatio={topupGroupRatio}
           onChange={onChange}
+          onRenameGroup={onRenameGroup}
           onShowDetail={setDetailGroup}
         />
       </TabsContent>
@@ -476,6 +480,7 @@ type GroupPricingTableProps = {
   userUsableGroups: string
   topupGroupRatio: string
   onChange: (field: string, value: string) => void
+  onRenameGroup?: (from: string, to: string) => void
   onShowDetail: (name: string) => void
 }
 
@@ -484,6 +489,7 @@ function GroupPricingTable({
   userUsableGroups,
   topupGroupRatio,
   onChange,
+  onRenameGroup,
   onShowDetail,
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
@@ -661,9 +667,13 @@ function GroupPricingTable({
                   <Input
                     value={row.name}
                     aria-label={t('Group name')}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      onRenameGroup?.(
+                        row.name.trim(),
+                        event.target.value.trim()
+                      )
                       updateRow(row._id, 'name', event.target.value)
-                    }
+                    }}
                     aria-invalid={duplicateNames.includes(row.name.trim())}
                   />
                 ),

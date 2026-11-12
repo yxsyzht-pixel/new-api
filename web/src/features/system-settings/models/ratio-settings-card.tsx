@@ -38,12 +38,20 @@ import {
 import { pricingOptions } from '@/features/model-pricing/pricing'
 import { useMediaQuery } from '@/hooks'
 import { handleServerError } from '@/lib/handle-server-error'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
+import { renameGroups } from '../api'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import { positiveIntegerSchema } from '../utils/numeric-field'
 import { GroupRatioForm } from './group-ratio-form'
+import {
+  effectiveGroupRenames,
+  renameGroupsInSettings,
+  trackGroupRename,
+  type GroupRenames,
+} from './group-rename'
 import { ModelRatioForm } from './model-ratio-form'
 import { ToolPriceSettings } from './tool-price-settings'
 import { UpstreamRatioSync } from './upstream-ratio-sync'
@@ -332,7 +340,19 @@ export function RatioSettingsCard({
     })
   }, [modelDefaults, modelForm])
 
+  // Saved group name → its edited name, so a save can move the group's
+  // users and channels instead of stranding them under the old name.
+  const groupRenamesRef = useRef<GroupRenames>({})
+  const handleRenameGroup = useCallback((from: string, to: string) => {
+    groupRenamesRef.current = trackGroupRename(
+      groupRenamesRef.current,
+      from,
+      to
+    )
+  }, [])
+
   useEffect(() => {
+    groupRenamesRef.current = {}
     groupNormalizedDefaults.current = {
       GroupRatio: normalizeJsonString(groupDefaults.GroupRatio),
       TopupGroupRatio: normalizeJsonString(groupDefaults.TopupGroupRatio),
@@ -410,7 +430,13 @@ export function RatioSettingsCard({
   )
 
   const saveGroupRatios = useCallback(
-    async (values: GroupFormValues) => {
+    async (formValues: GroupFormValues) => {
+      const renames = effectiveGroupRenames(
+        groupRenamesRef.current,
+        groupNormalizedDefaults.current.GroupRatio,
+        formValues.GroupRatio
+      )
+      const values = renameGroupsInSettings(formValues, renames)
       const normalized = {
         GroupRatio: normalizeJsonString(values.GroupRatio),
         TopupGroupRatio: normalizeJsonString(values.TopupGroupRatio),
@@ -422,6 +448,26 @@ export function RatioSettingsCard({
         GroupSpecialUsableGroup: normalizeJsonString(
           values.GroupSpecialUsableGroup
         ),
+      }
+
+      // Move the renamed groups' users, keys and channels first: if that
+      // fails, nothing is saved and the old names still hold everything.
+      if (Object.keys(renames).length > 0) {
+        try {
+          const moved = requireServerSuccess(await renameGroups(renames)).data
+          toast.success(
+            t(
+              'Renamed groups: moved {{users}} users and {{channels}} channels',
+              {
+                users: moved?.users ?? 0,
+                channels: moved?.channels ?? 0,
+              }
+            )
+          )
+        } catch (error) {
+          handleServerError(error)
+          return
+        }
       }
 
       // Map form field names to API keys (most are 1:1, except GroupSpecialUsableGroup)
@@ -442,8 +488,17 @@ export function RatioSettingsCard({
       }
 
       groupNormalizedDefaults.current = normalized
+      groupRenamesRef.current = {}
+      if (Object.keys(renames).length > 0) {
+        groupForm.setValue('AutoGroups', values.AutoGroups)
+        groupForm.setValue('GroupGroupRatio', values.GroupGroupRatio)
+        groupForm.setValue(
+          'GroupSpecialUsableGroup',
+          values.GroupSpecialUsableGroup
+        )
+      }
     },
-    [updateOption]
+    [t, updateOption, groupForm]
   )
 
   const handleResetRatios = useCallback(() => {
@@ -515,6 +570,7 @@ export function RatioSettingsCard({
         <GroupRatioForm
           form={groupForm}
           onSave={saveGroupRatios}
+          onRenameGroup={handleRenameGroup}
           isSaving={updateOption.isPending}
         />
       )

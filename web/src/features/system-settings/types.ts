@@ -39,6 +39,19 @@ export type UpdateOptionResponse = {
   message: string
 }
 
+/** Stored records a group rename moved to the new names. */
+export type GroupRenameResult = {
+  users: number
+  tokens: number
+  channels: number
+  subscription_plans: number
+  user_subscriptions: number
+}
+
+export type RenameGroupsResponse = UpdateOptionResponse & {
+  data?: GroupRenameResult
+}
+
 export interface PasskeyDomainChange {
   rp_id: string
   legacy_rp_ids: string
