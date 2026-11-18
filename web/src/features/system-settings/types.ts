@@ -281,6 +281,8 @@ export type ModelSettings = {
   'group_ratio_setting.group_special_usable_group': string
   'model_deployment.ionet.api_key': string
   'model_deployment.ionet.enabled': boolean
+  /** The asset gateway's settings as JSON; the server leaves the secrets out. */
+  VolcAssetConfig: string
 }
 
 export type BillingSettings = {

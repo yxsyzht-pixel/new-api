@@ -66,6 +66,7 @@ const defaultModelSettings: ModelSettings = {
   'group_ratio_setting.group_special_usable_group': '{}',
   'model_deployment.ionet.api_key': '',
   'model_deployment.ionet.enabled': false,
+  VolcAssetConfig: '',
 }
 
 export function ModelSettings() {

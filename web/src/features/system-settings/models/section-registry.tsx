@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { IoNetDeploymentSettingsSection } from '../integrations/ionet-deployment-settings-section'
 import type { ModelSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { AssetLibrarySection } from './asset-library-section'
 import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
@@ -131,6 +132,13 @@ const MODELS_SECTIONS = [
           apiKey: settings['model_deployment.ionet.api_key'],
         }}
       />
+    ),
+  },
+  {
+    id: 'asset-library',
+    titleKey: 'Asset library',
+    build: (settings: ModelSettings) => (
+      <AssetLibrarySection config={settings.VolcAssetConfig} />
     ),
   },
 ] as const
