@@ -44,3 +44,19 @@ func RelayUpdateAssetGroup(c *gin.Context) {
 func RelayDeleteAssetGroup(c *gin.Context) {
 	doubao.HandleDeleteAssetGroup(c)
 }
+
+func RelayCreateVisualValidateSession(c *gin.Context) {
+	doubao.HandleCreateVisualValidateSession(c)
+}
+
+func RelayGetVisualValidateResult(c *gin.Context) {
+	doubao.HandleGetVisualValidateResult(c)
+}
+
+func RelayListLivenessGroups(c *gin.Context) {
+	doubao.HandleListLivenessGroups(c)
+}
+
+func RelayVisualValidateCallback(c *gin.Context) {
+	doubao.HandleVisualValidateCallback(c)
+}

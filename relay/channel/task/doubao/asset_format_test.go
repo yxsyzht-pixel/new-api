@@ -1,6 +1,10 @@
 package doubao
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/QuantumNous/new-api/setting/system_setting"
@@ -169,4 +173,46 @@ func TestParseCustomAssetResponse_ListMapping(t *testing.T) {
 	assert.Equal(t, "a1", gjson.GetBytes(result, "Items.0.Id").String())
 	assert.Equal(t, "n1", gjson.GetBytes(result, "Items.0.Name").String())
 	assert.Equal(t, "a2", gjson.GetBytes(result, "Items.1.Id").String())
+}
+
+// BytePlus ModelArk speaks the Volcengine protocol on its own domain and
+// regions: the request is signed for ap-southeast-1 and the result comes back
+// in the same envelope.
+func TestBytePlusFormatSignsForItsOwnRegion(t *testing.T) {
+	var got *http.Request
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Clone(context.Background())
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ResponseMetadata":{"Service":"ark","Region":"ap-southeast-1","Action":"GetVisualValidateResult"},"Result":{"GroupId":"group-1"}}`))
+	}))
+	defer server.Close()
+
+	ob := system_setting.AssetOutbound{Format: system_setting.AssetFormatBytePlus, BaseURL: server.URL, AccessKey: "ak", SecretKey: "sk"}
+	result, apiErr, status, err := callAssetAPI(context.Background(), ob, "GetVisualValidateResult", []byte(`{"BytedToken":"token-1"}`))
+	require.NoError(t, err)
+	require.Nil(t, apiErr)
+	assert.Equal(t, http.StatusOK, status)
+	assert.JSONEq(t, `{"GroupId":"group-1"}`, string(result))
+
+	require.NotNil(t, got)
+	assert.Equal(t, "GetVisualValidateResult", got.URL.Query().Get("Action"))
+	assert.Equal(t, "2024-01-01", got.URL.Query().Get("Version"))
+	assert.JSONEq(t, `{"BytedToken":"token-1"}`, string(gotBody))
+	assert.Contains(t, got.Header.Get("Authorization"), "HMAC-SHA256 Credential=ak/")
+	assert.Contains(t, got.Header.Get("Authorization"), "/ap-southeast-1/ark/request,")
+
+	// Vendor refusals keep their code.
+	refusing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"ResponseMetadata":{"Error":{"Code":"AccessDenied","Message":"no rights package"}}}`))
+	}))
+	defer refusing.Close()
+	ob.BaseURL = refusing.URL
+	_, apiErr, status, err = callAssetAPI(context.Background(), ob, "CreateAsset", []byte(`{}`))
+	require.NoError(t, err)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, "AccessDenied", apiErr.Code)
+	assert.Equal(t, http.StatusForbidden, status)
 }

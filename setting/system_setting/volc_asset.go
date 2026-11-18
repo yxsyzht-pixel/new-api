@@ -13,6 +13,9 @@ const (
 	// AssetFormatNewAPI is an official built-in outbound targeting another new-api
 	// instance's asset endpoints (path-style Action + Bearer), used for nesting.
 	AssetFormatNewAPI = "newapi"
+	// AssetFormatBytePlus is BytePlus ModelArk direct: the Volcengine protocol
+	// and AK/SK signing, on BytePlus's own domain and regions.
+	AssetFormatBytePlus = "byteplus"
 )
 
 const (
@@ -83,7 +86,7 @@ type AssetCustomFormat struct {
 type AssetOutbound struct {
 	Id          string `json:"id"`
 	Name        string `json:"name,omitempty"`
-	Format      string `json:"format"` // built-in: volcengine | newapi; or a custom format Id
+	Format      string `json:"format"` // built-in: volcengine | byteplus | newapi; or a custom format Id
 	BaseURL     string `json:"base_url,omitempty"`
 	Region      string `json:"region,omitempty"`
 	ProjectName string `json:"project_name,omitempty"`
@@ -93,6 +96,9 @@ type AssetOutbound struct {
 	AccessToken string `json:"access_token,omitempty"`
 	// Disabled, when true, excludes the outbound from resolution (default false means enabled).
 	Disabled bool `json:"disabled,omitempty"`
+	// ChannelIds are the channels whose key belongs to this outbound's vendor
+	// account and project. Empty means the outbound serves every channel.
+	ChannelIds []int `json:"channel_ids,omitempty"`
 }
 
 // VolcAssetSettings is the system-level config of the asset gateway: the inbound is
@@ -111,12 +117,18 @@ type VolcAssetSettings struct {
 
 	// ActionPrices configures a fixed charge for each user-facing asset operation
 	// (in the same unit as the system quota). Keys are actions
-	// (ListAssets/GetAsset/CreateAsset/UpdateAsset/DeleteAsset); missing or <=0 means free.
+	// (ListAssets/GetAsset/CreateAsset/UpdateAsset/DeleteAsset and the liveness
+	// actions CreateVisualValidateSession/GetVisualValidateResult/ListLivenessGroups);
+	// missing or <=0 means free.
 	ActionPrices map[string]int `json:"action_prices,omitempty"`
 
 	// RateLimitCount / RateLimitDurationSeconds control per-user rate limiting of the asset endpoints; either being <=0 disables rate limiting.
 	RateLimitCount           int `json:"rate_limit_count,omitempty"`
 	RateLimitDurationSeconds int `json:"rate_limit_duration_seconds,omitempty"`
+
+	// OneCall configures how a generation request's portrait references enter
+	// the asset library on their own.
+	OneCall AssetOneCall `json:"one_call"`
 }
 
 // ============================
@@ -142,6 +154,9 @@ func (o AssetOutbound) EffectiveId() string {
 
 func (o AssetOutbound) GetRegion() string {
 	if o.Region == "" {
+		if o.EffectiveFormat() == AssetFormatBytePlus {
+			return "ap-southeast-1"
+		}
 		return "cn-beijing"
 	}
 	return o.Region
@@ -160,13 +175,17 @@ func (o AssetOutbound) ResolvedBaseURL() string {
 	if o.EffectiveFormat() == AssetFormatVolcengine {
 		return fmt.Sprintf("https://ark.%s.volcengineapi.com", o.GetRegion())
 	}
+	// BytePlus composes its own domain; a configured BaseURL replaces it.
+	if o.EffectiveFormat() == AssetFormatBytePlus && o.BaseURL == "" {
+		return fmt.Sprintf("https://ark.%s.byteplusapi.com", o.GetRegion())
+	}
 	return o.BaseURL
 }
 
 // IsBuiltinAssetFormat reports whether the format is an official built-in format.
 func IsBuiltinAssetFormat(format string) bool {
 	switch format {
-	case "", AssetFormatVolcengine, AssetFormatNewAPI:
+	case "", AssetFormatVolcengine, AssetFormatBytePlus, AssetFormatNewAPI:
 		return true
 	default:
 		return false
@@ -201,7 +220,7 @@ func (v *VolcAssetSettings) CustomFormat(id string) (*AssetCustomFormat, bool) {
 // OutboundConfigured reports whether an outbound has all the credentials/references it needs (i.e. is usable).
 func (v *VolcAssetSettings) OutboundConfigured(o AssetOutbound) bool {
 	switch o.EffectiveFormat() {
-	case AssetFormatVolcengine:
+	case AssetFormatVolcengine, AssetFormatBytePlus:
 		return o.AccessKey != "" && o.SecretKey != ""
 	case AssetFormatNewAPI:
 		return o.BaseURL != "" && o.AccessToken != ""

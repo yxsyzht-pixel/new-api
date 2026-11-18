@@ -100,3 +100,10 @@ channel.upstream_update_more_omitted: " ({{.Count}} more omitted)"
 # A key's group refused on edit and on spreadsheet import
 token.group_invalid: "Group {{.Group}} is unavailable or unauthorized"
 channel.notify_scheduled_subject: "Channel \"{{.Name}}\" (#{{.Id}}) plugin notification"
+
+# The page a liveness check of the asset gateway returns to
+asset.liveness_title: "Identity verification"
+asset.liveness_passed: "Verification complete. You can close this page."
+asset.liveness_failed: "Verification was not completed (code {{.Code}}). Ask for a new link and try again."
+asset.liveness_pending: "Verification is complete, but the result could not be confirmed yet. It can be queried again shortly."
+asset.liveness_unknown: "This verification link is unknown or has expired."

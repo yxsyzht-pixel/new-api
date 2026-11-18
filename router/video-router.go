@@ -45,7 +45,15 @@ func SetVideoRouter(router *gin.Engine) {
 		doubaoAssetGroup.POST("/CreateAsset", controller.RelayCreateAsset)
 		doubaoAssetGroup.POST("/UpdateAsset", controller.RelayUpdateAsset)
 		doubaoAssetGroup.POST("/DeleteAsset", controller.RelayDeleteAsset)
+		// A real person enters the library through a liveness check; the
+		// groups it creates belong to the user who opened it.
+		doubaoAssetGroup.POST("/CreateVisualValidateSession", controller.RelayCreateVisualValidateSession)
+		doubaoAssetGroup.POST("/GetVisualValidateResult", controller.RelayGetVisualValidateResult)
+		doubaoAssetGroup.POST("/ListLivenessGroups", controller.RelayListLivenessGroups)
 	}
+	// The page a liveness check returns to. The verified person opens it, so
+	// it takes no key; the session token the vendor appends identifies the check.
+	router.GET("/volc-asset/VisualValidateCallback", middleware.RouteTag("relay"), middleware.CriticalRateLimit(), controller.RelayVisualValidateCallback)
 
 	// Doubao Asset Group management - admin only.
 	// Regular users' groups are auto-managed; group CRUD is not exposed to them to preserve isolation.

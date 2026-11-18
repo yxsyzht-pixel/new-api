@@ -128,3 +128,13 @@ const (
 const (
 	MsgTokenGroupInvalid = "token.group_invalid"
 )
+
+// The page a liveness check of the asset gateway returns to. The verified
+// person opens it in a browser without the web console.
+const (
+	MsgAssetLivenessTitle   = "asset.liveness_title"
+	MsgAssetLivenessPassed  = "asset.liveness_passed"
+	MsgAssetLivenessFailed  = "asset.liveness_failed"
+	MsgAssetLivenessPending = "asset.liveness_pending"
+	MsgAssetLivenessUnknown = "asset.liveness_unknown"
+)

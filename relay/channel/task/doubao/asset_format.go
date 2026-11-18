@@ -28,7 +28,7 @@ const assetMaxRespSize = 10 << 20 // 10MB
 // HTTP status code, and a transport-layer error.
 func callAssetAPI(ctx context.Context, ob system_setting.AssetOutbound, action string, body []byte) ([]byte, *assetAPIError, int, error) {
 	switch ob.EffectiveFormat() {
-	case system_setting.AssetFormatVolcengine:
+	case system_setting.AssetFormatVolcengine, system_setting.AssetFormatBytePlus:
 		return callVolcengineFormat(ctx, ob, action, body)
 	case system_setting.AssetFormatNewAPI:
 		return callNewAPIFormat(ctx, ob, action, body)

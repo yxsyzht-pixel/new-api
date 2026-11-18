@@ -210,6 +210,16 @@ func proxyAssetCall(c *gin.Context, ob system_setting.AssetOutbound, action stri
 // ensureAssetQuota checks whether the user and token quotas can cover one
 // operation; it writes a 402 response directly when they cannot.
 func ensureAssetQuota(c *gin.Context, userId, cost int) bool {
+	if shortfall := assetQuotaShortfall(c, userId, cost); shortfall != "" {
+		c.JSON(http.StatusPaymentRequired, gin.H{"error": shortfall})
+		return false
+	}
+	return true
+}
+
+// assetQuotaShortfall says which quota cannot cover one operation; empty when
+// both the user and the token can.
+func assetQuotaShortfall(c *gin.Context, userId, cost int) string {
 	userQuota := common.GetContextKeyInt(c, constant.ContextKeyUserQuota)
 	if userQuota < cost {
 		if fresh, err := model.GetUserQuota(userId, false); err == nil {
@@ -217,14 +227,12 @@ func ensureAssetQuota(c *gin.Context, userId, cost int) bool {
 		}
 	}
 	if userQuota < cost {
-		c.JSON(http.StatusPaymentRequired, gin.H{"error": "insufficient user quota for asset operation"})
-		return false
+		return "insufficient user quota for asset operation"
 	}
 	if !c.GetBool("token_unlimited_quota") && c.GetInt("token_quota") < cost {
-		c.JSON(http.StatusPaymentRequired, gin.H{"error": "insufficient token quota for asset operation"})
-		return false
+		return "insufficient token quota for asset operation"
 	}
-	return true
+	return ""
 }
 
 // settleAssetBilling deducts the user and token quotas after a successful call
@@ -293,6 +301,8 @@ type assetScope struct {
 	projectName string
 	groupId     string
 	groupType   string
+	// livenessGroups are the groups of the real people the user verified.
+	livenessGroups []string
 }
 
 // resolveAssetOutbound resolves an available outbound from the client selector
@@ -330,7 +340,10 @@ func resolveAssetScope(c *gin.Context) (*assetScope, bool) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to provision user asset group: %v", err)})
 		return nil, false
 	}
-	return &assetScope{userId: userId, outbound: ob, projectName: ob.ProjectName, groupId: groupId, groupType: groupType}, true
+	return &assetScope{
+		userId: userId, outbound: ob, projectName: ob.ProjectName, groupId: groupId, groupType: groupType,
+		livenessGroups: loadLivenessGroups(c, userId, ob.EffectiveId()),
+	}, true
 }
 
 // ensureUserAssetGroup returns the Id and GroupType of the user's dedicated
@@ -464,7 +477,7 @@ func assetBelongsToScope(result []byte, scope *assetScope) bool {
 	if err := common.Unmarshal(result, &item); err != nil {
 		return false
 	}
-	return item.GroupId != "" && item.GroupId == scope.groupId
+	return scope.owns(item.GroupId)
 }
 
 // verifyAssetOwnership verifies via an internal GetAsset that the asset belongs
@@ -522,9 +535,8 @@ func HandleListAssets(c *gin.Context) {
 	if listReq.Filter == nil {
 		listReq.Filter = &AssetFilter{}
 	}
-	// Enforce isolation: restrict to the caller's own group and project only.
-	listReq.Filter.GroupIds = []string{scope.groupId}
-	listReq.Filter.GroupType = scope.groupType
+	// Enforce isolation: restrict to the caller's own groups and project only.
+	listReq.Filter.GroupIds, listReq.Filter.GroupType = scope.listGroups(listReq.Filter.GroupIds)
 	listReq.Filter.Statuses = filterEmptyStrings(listReq.Filter.Statuses)
 	listReq.ProjectName = scope.projectName
 
@@ -609,8 +621,8 @@ func HandleCreateAsset(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request body: %v", err)})
 		return
 	}
-	// Enforce isolation: place it into the caller's own group and project.
-	req.GroupId = scope.groupId
+	// Enforce isolation: place it into one of the caller's own groups and project.
+	req.GroupId = scope.createGroup(req.GroupId)
 	req.ProjectName = scope.projectName
 
 	body, err := common.Marshal(req)

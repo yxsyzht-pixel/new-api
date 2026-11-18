@@ -377,6 +377,8 @@ func migrateDB() error {
 		&AuthzRole{},
 		&UserAccessToken{},
 		&VolcAssetUserGroup{},
+		&VolcAssetLivenessGroup{},
+		&VolcAssetUpload{},
 	)
 	if err != nil {
 		return err

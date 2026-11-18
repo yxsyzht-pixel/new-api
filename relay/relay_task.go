@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relay/channel"
+	"github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -370,6 +371,12 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	requestBody, err := adaptor.BuildRequestBody(c, info)
 	if err != nil {
 		return nil, service.TaskErrorWrapper(err, "build_request_failed", http.StatusInternalServerError, common.UpstreamAddresses(c)...)
+	}
+	// A Seedance request's portrait references enter the vendor's asset
+	// library first; the attempt sends their asset ids.
+	requestBody, assetErr := doubao.PrepareSubmitAssets(c, info, pluginKey, requestBody)
+	if assetErr != nil {
+		return nil, assetErr
 	}
 	// The egress request plugins check the body the attempt sends; the
 	// reservation of a stopped attempt is refunded.

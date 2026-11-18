@@ -101,3 +101,10 @@ channel.upstream_update_more_omitted: "（其餘 {{.Count}} 個已省略）"
 # A key's group refused on edit and on spreadsheet import
 token.group_invalid: "分組 {{.Group}} 不可用或無權存取"
 channel.notify_scheduled_subject: "渠道「{{.Name}}」(#{{.Id}}) 外掛通知"
+
+# The page a liveness check of the asset gateway returns to
+asset.liveness_title: "真人認證"
+asset.liveness_passed: "認證已完成，可以關閉此頁面。"
+asset.liveness_failed: "認證未完成（代碼 {{.Code}}）。請重新取得連結後再試。"
+asset.liveness_pending: "認證已完成，但結果暫時無法確認，稍後可再次查詢。"
+asset.liveness_unknown: "認證連結不存在或已過期。"

@@ -1177,6 +1177,32 @@ func TestDoubaoNativeOfficialBodies(t *testing.T) {
 		assert.Equal(t, map[string]any{"model": seedance, "content": []any{map[string]any{"type": "text", "text": "a cat"}}}, descriptor["body"])
 	})
 
+	// The gateway registers portrait references in the asset library just
+	// before the request is sent, so the mark has to be in the body the plugin
+	// builds, whichever protocol the client spoke.
+	t.Run("the portrait mark reaches the submit body", func(t *testing.T) {
+		native := map[string]any{"model": seedance, "content": []any{
+			map[string]any{"type": "text", "text": "Image 1 waves"},
+			map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://cdn.example/face.png"}, "role": "reference_image", "portrait": "group-person-1"},
+		}}
+		intent, err := call([]string{"native", "createTask"}, jsonBody(native))
+		require.NoError(t, err)
+		descriptor, err := call([]string{"buildSubmitRequest"}, map[string]any{"model": seedance, "upstreamModel": seedance, "requestBody": intent["requestBody"], "baseUrl": doubaoBaseURL, "apiKey": "key"})
+		require.NoError(t, err)
+		assert.Equal(t, alibabaObject(t, native), descriptor["body"])
+
+		intent, err = call([]string{"protocols", "openai_video", "decodeRequest"}, map[string]any{"model": seedance, "body": map[string]any{"kind": "json", "value": map[string]any{
+			"model": seedance, "prompt": "Image 1 waves", "images": []any{"https://cdn.example/face.png"}, "metadata": map[string]any{"portrait": true},
+		}}})
+		require.NoError(t, err)
+		descriptor, err = call([]string{"buildSubmitRequest"}, map[string]any{"model": seedance, "upstreamModel": seedance, "requestBody": intent["requestBody"], "baseUrl": doubaoBaseURL, "apiKey": "key"})
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"model": seedance, "portrait": true, "content": []any{
+			map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://cdn.example/face.png"}},
+			map[string]any{"type": "text", "text": "Image 1 waves"},
+		}}, descriptor["body"])
+	})
+
 	t.Run("query replies", func(t *testing.T) {
 		created, err := call([]string{"native", "taskStatus"}, map[string]any{}, map[string]any{"task_id": "task_pub", "status": "SUBMITTED", "data": map[string]any{"id": "task_pub"}})
 		require.NoError(t, err)

@@ -2,6 +2,7 @@ package relay
 
 import (
 	"encoding/base64"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -23,6 +24,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -786,6 +788,85 @@ export function parseTaskResult() { return {status:"SUCCESS"}; }
 			assert.JSONEq(t, `{"status":`+strconv.Itoa(tc.status)+`}`, string(result.TaskData))
 		})
 	}
+}
+
+// A Seedance submission that marks a reference as a portrait reaches the
+// vendor with that reference's asset id: the gateway registers it in the
+// asset library between building the body and sending it.
+func TestRelayTaskSubmitSendsPortraitReferencesAsAssets(t *testing.T) {
+	service.InitHttpClient()
+	const source = `
+export const meta = {apiVersion:1,key:"doubao",name:"Doubao",version:"1.0.0",author:{name:"Test"},models:["declared-model"],fetchMode:"per_task"};
+export function buildSubmitRequest(ctx) { return {url: ctx.baseUrl+"/submit", method:"POST", body:{model: ctx.model, portrait: true, content:[{type:"image_url", image_url:{url:"https://cdn.example/face.png"}}]}, action:"image_to_video"}; }
+export function parseSubmitResponse(ctx, response) { return {taskId: response.body.id}; }
+export function buildQueryRequest(ctx) { return {url: ctx.baseUrl+"/query"}; }
+export function parseTaskResult() { return {status:"SUCCESS"}; }
+`
+	saveBillingConfig(t)
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"billing_setting.billing_mode": `{"declared-model":"tiered_expr"}`,
+		"billing_setting.billing_expr": `{"declared-model":"tier(\"flat\", 3)"}`,
+	}))
+
+	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := database.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	require.NoError(t, database.AutoMigrate(&model.VolcAssetUserGroup{}, &model.VolcAssetLivenessGroup{}, &model.VolcAssetUpload{}))
+	previousDB, previousAssets, previousLogging := model.DB, system_setting.VolcAssetConfig, common.LogConsumeEnabled
+	t.Cleanup(func() {
+		model.DB, system_setting.VolcAssetConfig, common.LogConsumeEnabled = previousDB, previousAssets, previousLogging
+		require.NoError(t, sqlDB.Close())
+	})
+	model.DB = database
+	common.LogConsumeEnabled = false
+
+	library := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch strings.TrimPrefix(r.URL.Path, "/") {
+		case "ListAssetGroups":
+			_, _ = w.Write([]byte(`{"Items":[]}`))
+		case "CreateAssetGroup":
+			_, _ = w.Write([]byte(`{"Id":"group-user-7"}`))
+		case "CreateAsset":
+			_, _ = w.Write([]byte(`{"Id":"asset-1"}`))
+		case "GetAsset":
+			_, _ = w.Write([]byte(`{"Id":"asset-1","Status":"Active"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer library.Close()
+	system_setting.VolcAssetConfig = system_setting.VolcAssetSettings{Outbounds: []system_setting.AssetOutbound{{
+		Id: "main", Format: system_setting.AssetFormatNewAPI, BaseURL: library.URL, AccessToken: "token",
+	}}}
+
+	var sent []byte
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"job-42"}`))
+	}))
+	defer vendor.Close()
+
+	c, info := newTaskSubmitContext(t, "declared-model", "")
+	common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, vendor.URL)
+	c.Set("group", "default")
+	c.Set("id", 7)
+	c.Set("token_unlimited_quota", true)
+	info.UserId = 7
+	info.UserGroup, info.UsingGroup = "default", "default"
+	info.OriginModelName = "declared-model"
+	// An existing reservation stands in for the wallet so the fixture reaches the upstream call.
+	info.Billing = &imageReservation{limit: 1 << 30}
+	pinMappingOrderPlugin(t, c, source)
+
+	result, taskErr := RelayTaskSubmit(c, info)
+	require.Nil(t, taskErr, "submission error: %+v", taskErr)
+	require.NotNil(t, result)
+	assert.Equal(t, "job-42", result.UpstreamTaskID)
+	assert.JSONEq(t, `{"model":"declared-model","content":[{"type":"image_url","image_url":{"url":"asset://asset-1"}}]}`, string(sent))
 }
 
 // A retry prices the plugin it lands on from scratch and holds that price
