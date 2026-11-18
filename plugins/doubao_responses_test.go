@@ -295,6 +295,8 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 		fast20 = "doubao-seedance-2-0-fast-260128"
 		mini20 = "doubao-seedance-2-0-mini-260615"
 		v25    = "doubao-seedance-2-5-260628"
+		bp25   = "dreamina-seedance-2-5-260628"
+		bpfl25 = "dreamina-seedance-2-5-flash-261115"
 	)
 	families := []struct {
 		models      []string
@@ -303,9 +305,8 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 	}{
 		{[]string{pro10, "doubao-seedance-1-0-lite-t2v", "doubao-seedance-1-0-lite-i2v"}, []string{"480p", "720p", "1080p"}, []string{"resolution", "tokens"}},
 		{[]string{pro15}, []string{"480p", "720p", "1080p"}, []string{"generate_audio", "resolution", "tokens"}},
-		{[]string{v20}, []string{"480p", "720p", "1080p", "4k"}, []string{"resolution", "tokens", "video_input"}},
-		{[]string{fast20, mini20}, []string{"480p", "720p"}, []string{"resolution", "tokens", "video_input"}},
-		{[]string{v25}, []string{"480p", "720p", "1080p"}, []string{"resolution", "tokens", "video_input"}},
+		{[]string{v20, v25, bp25}, []string{"480p", "720p", "1080p", "4k"}, []string{"resolution", "tokens", "video_input"}},
+		{[]string{fast20, mini20, bpfl25}, []string{"480p", "720p"}, []string{"resolution", "tokens", "video_input"}},
 	}
 	profiled := make([]string, 0, len(plugin.Meta.Models))
 	for _, family := range families {
@@ -363,7 +364,11 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 		{"mini rejects 1080p", mini20, map[string]any{"metadata": map[string]any{"resolution": "1080p"}}, nil, mini20 + " resolution must be one of 480p, 720p"},
 		{"mini rejects a 1080p size", mini20, map[string]any{"size": "1920x1080"}, nil, mini20 + " resolution must be one of 480p, 720p"},
 		{"fast rejects 4k", fast20, map[string]any{"metadata": map[string]any{"resolution": "4k"}}, nil, fast20 + " resolution must be one of 480p, 720p"},
-		{"2.5 rejects 4k", v25, map[string]any{"metadata": map[string]any{"resolution": "4K"}}, nil, v25 + " resolution must be one of 480p, 720p, 1080p"},
+		{"2.5 offers 4k", v25, map[string]any{"metadata": map[string]any{"resolution": "4K"}},
+			map[string]any{"tokens": float64(972000), "resolution": "4k", "video_input": "none"}, ""},
+		{"BytePlus 2.5 offers 4k", bp25, map[string]any{"metadata": map[string]any{"resolution": "4k"}},
+			map[string]any{"tokens": float64(972000), "resolution": "4k", "video_input": "none"}, ""},
+		{"BytePlus 2.5 flash rejects 1080p", bpfl25, map[string]any{"metadata": map[string]any{"resolution": "1080p"}}, nil, bpfl25 + " resolution must be one of 480p, 720p"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			request := map[string]any{"model": tc.model, "prompt": "a cat", "seconds": float64(5)}
@@ -471,7 +476,7 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 			want       map[string]any
 		}{
 			{mini20, "1080p", map[string]any{"tokens": float64(90000)}},
-			{v25, "4k", map[string]any{"tokens": float64(90000)}},
+			{v25, "4k", map[string]any{"tokens": float64(90000), "resolution": "4k"}},
 			{v20, "4k", map[string]any{"tokens": float64(90000), "resolution": "4k"}},
 		} {
 			queryContext := map[string]any{"model": tc.model, "upstreamModel": tc.model, "action": "text_to_video"}
@@ -483,6 +488,33 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 			value, err := plugin.Engine.Call(t.Context(), "extractUsageOnComplete", queryContext, map[string]any{"status": "SUCCESS"}, body)
 			require.NoError(t, err, tc.model)
 			assert.Equal(t, tc.want, alibabaObject(t, value), tc.model)
+		}
+	})
+
+	// Legacy token pricing multiplies the 480p/720p price without video input
+	// by this ratio. Seedance 2.5 4K costs 31 and 19 of 70 yuan on Ark, and 4.7
+	// and 2.9 of 10.7 dollars on BytePlus.
+	t.Run("legacy pricing ratios cover the Seedance 2.5 4k tiers", func(t *testing.T) {
+		text := []any{map[string]any{"type": "text", "text": "a cat"}}
+		video := []any{map[string]any{"type": "video_url", "video_url": map[string]any{"url": "https://cdn.example/input.mp4"}}}
+		for _, tc := range []struct {
+			name    string
+			model   string
+			content []any
+			want    float64
+		}{
+			{"Ark without video input", v25, text, 31.0 / 70},
+			{"Ark with video input", v25, video, 19.0 / 70},
+			{"BytePlus without video input", bp25, text, 4.7 / 10.7},
+			{"BytePlus with video input", bp25, video, 2.9 / 10.7},
+		} {
+			ctx := map[string]any{
+				"model": tc.model, "upstreamModel": tc.model, "action": "text_to_video", "usagePurpose": "billing_ratios",
+				"requestBody": map[string]any{"metadata": map[string]any{"resolution": "4k", "content": tc.content}},
+			}
+			value, err := plugin.Engine.Call(t.Context(), "extractUsage", ctx)
+			require.NoError(t, err, tc.name)
+			assert.InDelta(t, tc.want, alibabaObject(t, value)["video_input_ratio"], 1e-9, tc.name)
 		}
 	})
 }
