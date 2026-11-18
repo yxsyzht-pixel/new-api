@@ -7959,6 +7959,7 @@
     "Allowed channels": "Разрешённые каналы",
     "Select channels (empty to route by user group)": "Выберите каналы (пусто — маршрутизация по группе пользователя)",
     "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group.": "Если выбраны каналы, ключ использует только их и не учитывает группу пользователя. Оставьте пустым для маршрутизации по группе пользователя.",
-    "Channel {{ids}} does not exist": "Канал {{ids}} не существует"
+    "Channel {{ids}} does not exist": "Канал {{ids}} не существует",
+    "Volcengine asset operation: {{action}}": "Операция с ресурсами Volcengine: {{action}}"
   }
 }

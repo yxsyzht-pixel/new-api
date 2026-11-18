@@ -7841,6 +7841,7 @@
     "Allowed channels": "可用渠道",
     "Select channels (empty to route by user group)": "選擇渠道（留空則依使用者分組路由）",
     "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group.": "選擇了渠道後，此金鑰只使用這些渠道，不再受使用者分組限制；留空則依使用者分組路由。",
-    "Channel {{ids}} does not exist": "渠道 {{ids}} 不存在"
+    "Channel {{ids}} does not exist": "渠道 {{ids}} 不存在",
+    "Volcengine asset operation: {{action}}": "火山引擎素材操作：{{action}}"
   }
 }

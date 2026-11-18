@@ -105,6 +105,14 @@ func GetOptions(c *gin.Context) {
 		if isSensitiveKey {
 			continue
 		}
+		// VolcAssetConfig is a JSON blob whose top-level key does not match the
+		// sensitive suffixes above, but it contains secret_key / access_token, so it
+		// must be redacted (cleared) before being sent to the frontend.
+		if k == "VolcAssetConfig" {
+			if b, mErr := common.Marshal(system_setting.VolcAssetConfig.Redacted()); mErr == nil {
+				value = string(b)
+			}
+		}
 		options = append(options, &model.Option{
 			Key:   k,
 			Value: value,
@@ -417,6 +425,22 @@ func UpdateOption(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
+	case "VolcAssetConfig":
+		// For security the frontend does not echo secret_key / access_token, so on
+		// submit those two fields may be empty, meaning "keep the existing value".
+		// Merge with the current in-memory config here to avoid overwriting stored
+		// secrets with empty values.
+		var incoming system_setting.VolcAssetSettings
+		if err = common.UnmarshalJsonStr(option.Value.(string), &incoming); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		merged, mErr := common.Marshal(incoming.MergeSecretsFromExisting(system_setting.VolcAssetConfig))
+		if mErr != nil {
+			common.ApiError(c, mErr)
+			return
+		}
+		option.Value = string(merged)
 	}
 	if model.IsPasskeyDomainOption(option.Key) {
 		change, updateErr := model.UpdatePasskeyDomainOptions(map[string]string{option.Key: option.Value.(string)}, false, "")

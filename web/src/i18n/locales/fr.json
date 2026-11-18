@@ -7959,6 +7959,7 @@
     "Allowed channels": "Canaux autorisés",
     "Select channels (empty to route by user group)": "Sélectionnez des canaux (vide pour router selon le groupe de l’utilisateur)",
     "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group.": "Avec des canaux sélectionnés, cette clé n’utilise qu’eux et ignore le groupe de l’utilisateur. Laissez vide pour router selon le groupe de l’utilisateur.",
-    "Channel {{ids}} does not exist": "Le canal {{ids}} n’existe pas"
+    "Channel {{ids}} does not exist": "Le canal {{ids}} n’existe pas",
+    "Volcengine asset operation: {{action}}": "Opération sur les ressources Volcengine : {{action}}"
   }
 }

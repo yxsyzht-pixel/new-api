@@ -7972,6 +7972,7 @@
     "Allowed channels": "Allowed channels",
     "Select channels (empty to route by user group)": "Select channels (empty to route by user group)",
     "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group.": "With channels selected, this key uses only them and ignores the user's group. Leave empty to route by the user's group.",
-    "Channel {{ids}} does not exist": "Channel {{ids}} does not exist"
+    "Channel {{ids}} does not exist": "Channel {{ids}} does not exist",
+    "Volcengine asset operation: {{action}}": "Volcengine asset operation: {{action}}"
   }
 }
