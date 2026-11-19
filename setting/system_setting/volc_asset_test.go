@@ -283,3 +283,48 @@ func TestLivenessCallbackURL(t *testing.T) {
 		assert.Equal(t, want, LivenessCallbackURL(), address)
 	}
 }
+
+func TestOneCallQueueWaitDefault(t *testing.T) {
+	assert.Equal(t, 10*time.Minute, AssetOneCall{}.QueueWait())
+	assert.Equal(t, 90*time.Second, AssetOneCall{QueueWaitSeconds: 90}.QueueWait())
+}
+
+func TestMediaStorageDefaults(t *testing.T) {
+	assert.False(t, AssetMediaStorage{}.Enabled())
+	storage := AssetMediaStorage{Provider: MediaStorageQiniu, AccessKey: "ak", SecretKey: "sk", Bucket: "media", Domain: " cdn.example.com/ "}
+	assert.True(t, storage.Enabled())
+	assert.Equal(t, "https://cdn.example.com", storage.BaseURL(), "a bare host is served over https")
+	assert.Equal(t, "gateway-media", storage.KeyPrefix())
+	assert.Equal(t, int64(64)<<20, storage.MaxFileBytes())
+	assert.Equal(t, 24*time.Hour, storage.URLTTL())
+
+	storage.Domain, storage.Prefix, storage.MaxFileMB, storage.URLTTLHours = "http://cdn.example.com", "/uploads/video/", 5, 2
+	assert.Equal(t, "http://cdn.example.com", storage.BaseURL())
+	assert.Equal(t, "uploads/video", storage.KeyPrefix())
+	assert.Equal(t, int64(5)<<20, storage.MaxFileBytes())
+	assert.Equal(t, 2*time.Hour, storage.URLTTL())
+
+	for name, incomplete := range map[string]AssetMediaStorage{
+		"no provider": {AccessKey: "ak", SecretKey: "sk", Bucket: "media", Domain: "cdn.example.com"},
+		"no secret":   {Provider: MediaStorageQiniu, AccessKey: "ak", Bucket: "media", Domain: "cdn.example.com"},
+		"no bucket":   {Provider: MediaStorageQiniu, AccessKey: "ak", SecretKey: "sk", Domain: "cdn.example.com"},
+		"no domain":   {Provider: MediaStorageQiniu, AccessKey: "ak", SecretKey: "sk", Bucket: "media"},
+	} {
+		assert.False(t, incomplete.Enabled(), name)
+	}
+}
+
+// The storage secret is never echoed to the settings page, and saving the
+// page without retyping it keeps the stored one.
+func TestMediaStorageSecretIsRedactedAndKept(t *testing.T) {
+	stored := VolcAssetSettings{MediaStorage: AssetMediaStorage{Provider: MediaStorageQiniu, AccessKey: "ak", SecretKey: "sk", Bucket: "media"}}
+	redacted := stored.Redacted()
+	assert.Empty(t, redacted.MediaStorage.SecretKey)
+	assert.Equal(t, "ak", redacted.MediaStorage.AccessKey)
+	assert.Equal(t, "sk", stored.MediaStorage.SecretKey, "the stored settings are untouched")
+
+	assert.Equal(t, "sk", redacted.MergeSecretsFromExisting(stored).MediaStorage.SecretKey)
+	retyped := redacted
+	retyped.MediaStorage.SecretKey = "new"
+	assert.Equal(t, "new", retyped.MergeSecretsFromExisting(stored).MediaStorage.SecretKey)
+}

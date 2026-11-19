@@ -378,6 +378,13 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if assetErr != nil {
 		return nil, assetErr
 	}
+	// An attempt that does not become a task gives back the assets it took.
+	submitted := false
+	defer func() {
+		if !submitted {
+			doubao.ReleaseSubmitAssets(c)
+		}
+	}()
 	// The egress request plugins check the body the attempt sends; the
 	// reservation of a stopped attempt is refunded.
 	requestBody, apiErr := requestplugin.TaskEgress(c, info, requestBody)
@@ -439,6 +446,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	}
 
 	info.PriceData.Quota = finalQuota
+	submitted = true
 
 	return &TaskSubmitResult{
 		UpstreamTaskID: parsed.UpstreamTaskID,

@@ -152,6 +152,9 @@ const DEFAULT_LAYER_IMAGES = 30;
 const MAX_REFERENCE_IMAGES = 14;
 // Documented per-image size ceiling for reference images.
 const MAX_INPUT_IMAGE_BYTES = 31457280;
+// The form fields a video request may upload its reference files in.
+const UPLOAD_FIELDS = ["input_reference", "image", "images", "video", "videos", "audio", "audios"];
+
 // Base64 references must be `data:image/<lowercase format>;base64,<payload>`.
 const IMAGE_DATA_URI = /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/]+={0,2}$/;
 // Responses fields copied verbatim into the Ark body. `background` is excluded:
@@ -330,7 +333,7 @@ export const meta = {
     en: "Volcengine Doubao Seedance video generation and Seedream image generation",
     zh: "火山引擎豆包 Seedance 视频生成与 Seedream 图片生成",
   },
-  version: "1.7.0",
+  version: "1.8.0",
   author: { name: "QuantumNous" },
   channelTypes: [54, 45], // VolcEngine-type channels serve Ark video models with the same wire format
   models: Object.keys(VIDEO_MODELS).concat(Object.keys(IMAGE_MODELS)),
@@ -1305,7 +1308,37 @@ protocols.openai_video = {
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("metadata must be a JSON object string");
       req.metadata = parsed;
     }
-    if ((ctx.body.files || []).length) throw new Error("Doubao requires image and video references to be URLs inside metadata.content");
+    // An uploaded file becomes a reference whose URL the host fills in: the
+    // file's content inline, which the gateway stores and replaces by the
+    // address it is served at before Ark sees it.
+    const files = ctx.body.files || [];
+    if (files.length) {
+      const uploads = files.map(function (file) {
+        const field = String(file.field || "").replace(/\[\d*\]$/, "");
+        if (!UPLOAD_FIELDS.includes(field)) throw new Error(file.field + " is not supported; upload references as " + UPLOAD_FIELDS.join(", "));
+        const mimeType = trimmed(file.mimeType).toLowerCase();
+        let kind = "image_url";
+        if (/^video\//.test(mimeType) || field === "video" || field === "videos") kind = "video_url";
+        else if (/^audio\//.test(mimeType) || field === "audio" || field === "audios") kind = "audio_url";
+        const fallback = kind === "video_url" ? "video/mp4" : kind === "audio_url" ? "audio/mpeg" : "image/png";
+        const item = { type: kind };
+        item[kind] = { url: { __fileRef: file.ref, encoding: "dataUrl", mimeType: /^(image|video|audio)\/[a-z0-9.+-]+$/.test(mimeType) ? mimeType : fallback } };
+        return item;
+      });
+      const images = uploads.filter((item) => item.type === "image_url");
+      // One uploaded image is the frame the video starts from, as an image
+      // URL is; several are references, unless image_role says otherwise.
+      const imageRole = trimmed(req.image_role) || (images.length > 1 ? "reference_image" : "");
+      delete req.image_role;
+      for (const item of uploads) {
+        if (item.type === "image_url" && imageRole) item.role = imageRole;
+        else if (item.type === "video_url") item.role = "reference_video";
+        else if (item.type === "audio_url") item.role = "reference_audio";
+      }
+      const metadata = Object.assign({}, req.metadata || {});
+      metadata.content = uploads.concat(Array.isArray(metadata.content) ? metadata.content : []);
+      req.metadata = metadata;
+    }
     if (req.seconds !== undefined) req.seconds = Number(req.seconds);
     else if (req.duration !== undefined) req.seconds = Number(req.duration);
     const seconds = req.seconds === undefined ? req.duration : req.seconds;
@@ -1316,7 +1349,7 @@ protocols.openai_video = {
     return {
       kind: "submit",
       model: ctx.model,
-      action: req.input_reference || req.image ? "image_to_video" : "text_to_video",
+      action: req.input_reference || req.image || files.length ? "image_to_video" : "text_to_video",
       requestBody: Object.assign({}, req, { model: ctx.model }),
     };
   },

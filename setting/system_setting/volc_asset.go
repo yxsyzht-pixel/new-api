@@ -129,6 +129,10 @@ type VolcAssetSettings struct {
 	// OneCall configures how a generation request's portrait references enter
 	// the asset library on their own.
 	OneCall AssetOneCall `json:"one_call"`
+
+	// MediaStorage is where files a generation request carries inline are
+	// uploaded, so the vendor can fetch them by URL.
+	MediaStorage AssetMediaStorage `json:"media_storage"`
 }
 
 // ============================
@@ -319,6 +323,7 @@ func (v *VolcAssetSettings) ActionPrice(action string) int {
 
 // Redacted returns a copy with all outbound secret fields cleared, for safely sending to the admin UI.
 func (v VolcAssetSettings) Redacted() VolcAssetSettings {
+	v.MediaStorage.SecretKey = ""
 	if len(v.Outbounds) == 0 {
 		return v
 	}
@@ -337,6 +342,9 @@ func (v VolcAssetSettings) Redacted() VolcAssetSettings {
 // submit means "keep the existing value"; this prevents a save from overwriting
 // stored secrets with empty strings.
 func (v VolcAssetSettings) MergeSecretsFromExisting(prev VolcAssetSettings) VolcAssetSettings {
+	if v.MediaStorage.SecretKey == "" {
+		v.MediaStorage.SecretKey = prev.MediaStorage.SecretKey
+	}
 	if len(v.Outbounds) == 0 {
 		return v
 	}

@@ -379,6 +379,7 @@ func migrateDB() error {
 		&VolcAssetUserGroup{},
 		&VolcAssetLivenessGroup{},
 		&VolcAssetUpload{},
+		&VolcAssetUse{},
 	)
 	if err != nil {
 		return err

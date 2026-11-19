@@ -27,6 +27,7 @@ import (
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/pkg/wsmanager"
 	"github.com/QuantumNous/new-api/relay"
+	"github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	"github.com/QuantumNous/new-api/relay/requestplugin"
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
 	"github.com/QuantumNous/new-api/router"
@@ -149,6 +150,12 @@ func main() {
 
 	// 数据看板
 	go model.UpdateQuotaData()
+
+	// Assets the gateway registered for generation requests are deleted once
+	// no unfinished task references them; one node does it.
+	if common.IsMasterNode {
+		go doubao.StartAssetCleanup()
+	}
 
 	// CHANNEL_UPDATE_FREQUENCY schedules the update of all balances, a system
 	// task registered below.

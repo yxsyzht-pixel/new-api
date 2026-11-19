@@ -76,18 +76,25 @@ func newAssetGateway(t *testing.T, handler func(action string, body []byte) (int
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, db.AutoMigrate(&model.VolcAssetUserGroup{}, &model.VolcAssetLivenessGroup{}, &model.VolcAssetUpload{}))
+	require.NoError(t, db.AutoMigrate(&model.VolcAssetUserGroup{}, &model.VolcAssetLivenessGroup{}, &model.VolcAssetUpload{}, &model.VolcAssetUse{}, &model.Task{}))
 	previousDB, previousConfig, previousLogging := model.DB, system_setting.VolcAssetConfig, common.LogConsumeEnabled
 	previousAddress, previousInterval := system_setting.ServerAddress, assetPollInterval
+	previousGatePoll, previousCountLife, previousWindow := assetGatePollInterval, assetCountLifetime, assetUploadWindow
+	resetAssetState()
 	t.Cleanup(func() {
 		model.DB, system_setting.VolcAssetConfig, common.LogConsumeEnabled = previousDB, previousConfig, previousLogging
 		system_setting.ServerAddress, assetPollInterval = previousAddress, previousInterval
+		assetGatePollInterval, assetCountLifetime, assetUploadWindow = previousGatePoll, previousCountLife, previousWindow
+		resetAssetState()
 		_ = sqlDB.Close()
 	})
 	model.DB = db
 	// The log row itself needs the log database; the request context keeps what would be written.
 	common.LogConsumeEnabled = false
 	assetPollInterval = 5 * time.Millisecond
+	assetGatePollInterval = 5 * time.Millisecond
+	// Every look at the library asks the fake vendor.
+	assetCountLifetime = 0
 
 	upstream := &assetUpstream{handler: handler}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -106,6 +113,21 @@ func newAssetGateway(t *testing.T, handler func(action string, body []byte) (int
 		Id: "main", Name: "Main", Format: system_setting.AssetFormatNewAPI, BaseURL: server.URL, AccessToken: "token", ProjectName: "default",
 	}}}
 	return upstream
+}
+
+// resetAssetState forgets what the process remembers between requests: the
+// lines of waiting requests and the files already stored.
+func resetAssetState() {
+	assetGates.Range(func(key, _ any) bool {
+		assetGates.Delete(key)
+		return true
+	})
+	uploadedMediaMu.Lock()
+	uploadedMediaAt = map[string]uploadedMedia{}
+	uploadedMediaMu.Unlock()
+	qiniuHostMu.Lock()
+	qiniuHosts = map[string]qiniuHost{}
+	qiniuHostMu.Unlock()
 }
 
 // assetRequest runs one asset gateway handler as a user.

@@ -50,6 +50,10 @@ const (
 	// assetScheme prefixes a reference that already is a library asset.
 	assetScheme = "asset://"
 
+	// assetUsesContextKey holds, on the request, the name its submission's
+	// references to assets are recorded under.
+	assetUsesContextKey = "volc_asset_uses_task"
+
 	assetStatusActive     = "Active"
 	assetStatusProcessing = "Processing"
 )
@@ -68,6 +72,9 @@ type portraitChoice struct {
 
 // portraitReference is one reference of a submit body that enters the library.
 type portraitReference struct {
+	// identity is what the same file is recognised by across requests: its
+	// URL, or the address an inline file was stored at.
+	identity  string
 	index     int
 	path      string // sjson path of the URL inside the body
 	url       string
@@ -144,6 +151,16 @@ func PrepareSubmitAssets(c *gin.Context, info *relaycommon.RelayInfo, pluginKey 
 func prepareSubmitAssets(c *gin.Context, info *relaycommon.RelayInfo, raw []byte) ([]byte, *dto.TaskError) {
 	cfg := &system_setting.VolcAssetConfig
 	oneCall := cfg.OneCall
+	// A file the request carries inline is stored first, so that everything
+	// after this sees a URL.
+	var stored map[string]string
+	if cfg.MediaStorage.Enabled() && bytes.Contains(raw, []byte(`"`+dataURLScheme)) {
+		uploaded, addresses, taskErr := uploadInlineReferences(c, cfg.MediaStorage, raw)
+		if taskErr != nil {
+			return nil, taskErr
+		}
+		raw, stored = uploaded, addresses
+	}
 	if !bytes.Contains(raw, []byte(`"`+portraitField+`"`)) && (!oneCall.AutoRegister || oneCall.Disabled) {
 		return raw, nil
 	}
@@ -209,13 +226,20 @@ func prepareSubmitAssets(c *gin.Context, info *relaycommon.RelayInfo, raw []byte
 		if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
 			// The library fetches the file itself and takes no inline data.
 			if own.set {
-				return nil, oneCallError(http.StatusBadRequest, "invalid_portrait", "content[%d]: a portrait reference must be a public URL", index)
+				return nil, oneCallError(http.StatusBadRequest, "invalid_portrait", "content[%d]: a portrait reference must be a public URL; this gateway has no media storage for inline files", index)
 			}
 			continue
 		}
+		path := fmt.Sprintf("content.%d.%s.url", index, field)
+		identity := mediaURL
+		// A stored file is recognised by where it is stored, not by a URL
+		// whose signature changes every time.
+		if address := stored[path]; address != "" {
+			identity = address
+		}
 		references = append(references, portraitReference{
-			index: index, path: fmt.Sprintf("content.%d.%s.url", index, field),
-			url: mediaURL, assetType: assetType, group: choice.group,
+			index: index, path: path,
+			url: mediaURL, identity: identity, assetType: assetType, group: choice.group,
 		})
 	}
 	if len(references) == 0 {
@@ -259,25 +283,87 @@ func prepareSubmitAssets(c *gin.Context, info *relaycommon.RelayInfo, raw []byte
 	// One file referenced twice is one asset.
 	assets := make(map[string]*registeredAsset, len(references))
 	order := make([]*registeredAsset, 0, len(references))
-	keyOf := func(ref portraitReference) string { return ref.group + "\n" + ref.assetType + "\n" + ref.url }
+	keyOf := func(ref portraitReference) string { return ref.group + "\n" + ref.assetType + "\n" + ref.identity }
+	taskKey := submitTaskKey(info)
+	gate := gateOf(ob.EffectiveId())
+	// From here the submission may hold assets; the request remembers under
+	// which name, for the attempt that fails later.
+	c.Set(assetUsesContextKey, taskKey)
+	// A submission that stops here holds no asset: what it took is given back
+	// for the cleanup.
+	kept := false
+	defer func() {
+		if !kept {
+			ReleaseSubmitAssets(c)
+		}
+	}()
 	created, reused := 0, 0
+	// An asset the library already holds for the file is taken first; only
+	// the files it does not hold need room.
+	var fresh []portraitReference
 	for _, ref := range references {
 		if _, seen := assets[keyOf(ref)]; seen {
 			continue
 		}
-		asset, fresh, taskErr := registerPortrait(c, ob, userId, ref)
+		asset, taskErr := reusePortrait(c, ob, gate, userId, taskKey, ref)
 		if taskErr != nil {
 			return nil, taskErr
 		}
-		if fresh {
-			created++
-		} else {
-			reused++
+		if asset == nil {
+			assets[keyOf(ref)] = &registeredAsset{index: ref.index}
+			fresh = append(fresh, ref)
+			continue
 		}
+		reused++
 		assets[keyOf(ref)] = asset
 		order = append(order, asset)
 	}
+	if len(fresh) > 0 {
+		if oneCall.MaxAssets > 0 && len(fresh) > oneCall.MaxAssets {
+			return nil, oneCallError(http.StatusBadRequest, "asset_request_too_large",
+				"the request needs %d new assets and the asset library holds %d at most", len(fresh), oneCall.MaxAssets)
+		}
+		deadline := time.Now().Add(oneCall.QueueWait())
+		queuedAt := time.Now()
+		held, err := gate.acquire(c.Request.Context(), ob, len(fresh), oneCall.MaxAssets, deadline)
+		if err != nil {
+			return nil, gateError(err, "asset_library_full",
+				"the asset library is full (%s assets) and no room appeared within %s; send the request again later",
+				describeLibrary(held, oneCall.MaxAssets), oneCall.QueueWait())
+		}
+		unsettled := 0
+		if oneCall.MaxAssets > 0 {
+			unsettled = len(fresh)
+		}
+		defer func() { gate.settle(unsettled) }()
+		if waited := time.Since(queuedAt); waited > time.Second {
+			logger.LogInfo(c, fmt.Sprintf("volc asset one-call: outbound=%s waited %s for room for %d assets", ob.EffectiveId(), waited.Round(time.Second), len(fresh)))
+		}
+		for _, ref := range fresh {
+			if err := gate.waitUploadSlot(c.Request.Context(), oneCall.UploadsPerMinute, deadline); err != nil {
+				return nil, gateError(err, "asset_upload_rate_limited",
+					"the asset library accepts %d uploads a minute and no slot came free within %s; send the request again later",
+					oneCall.UploadsPerMinute, oneCall.QueueWait())
+			}
+			asset, taskErr := createPortrait(c, ob, gate, userId, taskKey, ref)
+			if unsettled > 0 {
+				gate.settle(1)
+				unsettled--
+			}
+			if taskErr != nil {
+				return nil, taskErr
+			}
+			created++
+			assets[keyOf(ref)] = asset
+			order = append(order, asset)
+		}
+	}
 	if taskErr := waitForAssets(c, ob, order, oneCall.Wait()); taskErr != nil {
+		// The library is still working on the files: the assets are kept so
+		// that the same request, sent again, finds them.
+		if taskErr.Code == "asset_processing" {
+			kept = true
+		}
 		return nil, taskErr
 	}
 	for _, ref := range references {
@@ -287,6 +373,7 @@ func prepareSubmitAssets(c *gin.Context, info *relaycommon.RelayInfo, raw []byte
 		}
 	}
 	logger.LogInfo(c, fmt.Sprintf("volc asset one-call: outbound=%s references=%d registered=%d reused=%d", ob.EffectiveId(), len(references), created, reused))
+	kept = true
 	return prepared, nil
 }
 
@@ -305,59 +392,129 @@ func seedanceNeedsAssets(info *relaycommon.RelayInfo, root gjson.Result) bool {
 	return false
 }
 
-// registerPortrait returns the library asset of a reference: the one its URL
-// was registered as before while that still holds, otherwise a new one.
-func registerPortrait(c *gin.Context, ob system_setting.AssetOutbound, userId int, ref portraitReference) (*registeredAsset, bool, *dto.TaskError) {
+// submitTaskKey names the submission whose assets are being prepared: the id
+// its task will have, which is what the cleanup looks the task up by.
+func submitTaskKey(info *relaycommon.RelayInfo) string {
+	if info != nil && info.TaskRelayInfo != nil && info.PublicTaskID != "" {
+		return info.PublicTaskID
+	}
+	return "submit_" + common.GetUUID()
+}
+
+// gateError turns a wait that ended without room into the request's error.
+func gateError(err error, code, format string, args ...any) *dto.TaskError {
+	if errors.Is(err, errAssetGateTimeout) {
+		taskErr := oneCallError(http.StatusTooManyRequests, code, format, args...)
+		return taskErr
+	}
+	return service.TaskErrorWrapperLocal(err, "request_cancelled", http.StatusRequestTimeout)
+}
+
+// ReleaseSubmitAssets drops the references this request's submission took on
+// assets when the submission did not become a task, so the assets can be
+// cleaned up. A request that took none is left alone.
+func ReleaseSubmitAssets(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	taskKey := c.GetString(assetUsesContextKey)
+	if taskKey == "" {
+		return
+	}
+	c.Set(assetUsesContextKey, "")
+	if err := model.DeleteVolcAssetUsesOfTask(taskKey); err != nil {
+		common.SysError("failed to release volc asset uses: " + err.Error())
+	}
+}
+
+// reusePortrait returns the asset the library already holds for a reference,
+// held for this submission, or nil when the reference has to be registered.
+func reusePortrait(c *gin.Context, ob system_setting.AssetOutbound, gate *assetGate, userId int, taskKey string, ref portraitReference) (*registeredAsset, *dto.TaskError) {
 	cfg := &system_setting.VolcAssetConfig
-	urlHash := hex.EncodeToString(common.Sha256Raw([]byte(ref.url)))
-	if reuse := cfg.OneCall.Reuse(); reuse > 0 {
-		cached, err := model.FindVolcAssetUpload(userId, ob.EffectiveId(), ref.group, ref.assetType, urlHash)
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	reuse := cfg.OneCall.Reuse()
+	if reuse <= 0 {
+		return nil, nil
+	}
+	urlHash := hex.EncodeToString(common.Sha256Raw([]byte(ref.identity)))
+
+	// Taking the asset and the cleanup deciding nobody uses it exclude each
+	// other, so an asset handed out here is not deleted under the request.
+	gate.bookkeeping.Lock()
+	cached, err := model.FindVolcAssetUpload(userId, ob.EffectiveId(), ref.group, ref.assetType, urlHash)
+	if err != nil {
+		gate.bookkeeping.Unlock()
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			logger.LogWarn(c, "failed to read volc asset upload: "+err.Error())
 		}
-		if err == nil {
-			if time.Since(time.Unix(cached.CreatedAt, 0)) < reuse {
-				status, _, apiErr, callErr := readAssetStatus(c, ob, cached.AssetId)
-				if callErr != nil {
-					return nil, false, oneCallError(http.StatusBadGateway, "asset_library_failed", "asset library request failed: %v", callErr)
-				}
-				if apiErr == nil && (status == assetStatusActive || status == assetStatusProcessing) {
-					return &registeredAsset{id: cached.AssetId, index: ref.index, active: status == assetStatusActive}, false, nil
-				}
-			}
-			// Expired, refused or deleted upstream: the URL is registered again.
-			_ = model.DeleteVolcAssetUpload(cached.Id)
-		}
+		return nil, nil
 	}
+	if time.Since(time.Unix(cached.CreatedAt, 0)) >= reuse {
+		// Too old to hand out again; it goes once its tasks are done.
+		_ = model.ReleaseVolcAssetUpload(cached.Id)
+		gate.bookkeeping.Unlock()
+		return nil, nil
+	}
+	if err := model.AddVolcAssetUse(taskKey, userId, ob.EffectiveId(), cached.AssetId); err != nil {
+		gate.bookkeeping.Unlock()
+		logger.LogWarn(c, "failed to record volc asset use: "+err.Error())
+		return nil, nil
+	}
+	gate.bookkeeping.Unlock()
 
+	status, _, apiErr, callErr := readAssetStatus(c, ob, cached.AssetId)
+	if callErr != nil {
+		_ = model.DeleteVolcAssetUse(taskKey, ob.EffectiveId(), cached.AssetId)
+		return nil, oneCallError(http.StatusBadGateway, "asset_library_failed", "asset library request failed: %v", callErr)
+	}
+	if apiErr == nil && (status == assetStatusActive || status == assetStatusProcessing) {
+		return &registeredAsset{id: cached.AssetId, index: ref.index, active: status == assetStatusActive}, nil
+	}
+	// Refused or deleted upstream: the reference is registered again.
+	_ = model.DeleteVolcAssetUse(taskKey, ob.EffectiveId(), cached.AssetId)
+	_ = model.ReleaseVolcAssetUpload(cached.Id)
+	return nil, nil
+}
+
+// createPortrait registers a reference in the library and holds the new
+// asset for this submission.
+func createPortrait(c *gin.Context, ob system_setting.AssetOutbound, gate *assetGate, userId int, taskKey string, ref portraitReference) (*registeredAsset, *dto.TaskError) {
+	cfg := &system_setting.VolcAssetConfig
+	urlHash := hex.EncodeToString(common.Sha256Raw([]byte(ref.identity)))
 	cost := cfg.ActionPrice("CreateAsset")
 	if cost > 0 {
 		if shortfall := assetQuotaShortfall(c, userId, cost); shortfall != "" {
-			return nil, false, oneCallError(http.StatusPaymentRequired, "insufficient_quota", "%s", shortfall)
+			return nil, oneCallError(http.StatusPaymentRequired, "insufficient_quota", "%s", shortfall)
 		}
 	}
 	body, err := common.Marshal(CreateAssetRequest{GroupId: ref.group, URL: ref.url, AssetType: ref.assetType, ProjectName: ob.ProjectName})
 	if err != nil {
-		return nil, false, service.TaskErrorWrapperLocal(err, "build_request_failed", http.StatusInternalServerError)
+		return nil, service.TaskErrorWrapperLocal(err, "build_request_failed", http.StatusInternalServerError)
 	}
 	result, apiErr, _, callErr := callAssetAPI(c.Request.Context(), ob, "CreateAsset", body)
 	if callErr != nil {
-		return nil, false, oneCallError(http.StatusBadGateway, "asset_library_failed", "asset library request failed: %v", callErr)
+		return nil, oneCallError(http.StatusBadGateway, "asset_library_failed", "asset library request failed: %v", callErr)
 	}
 	if apiErr != nil {
-		return nil, false, oneCallError(http.StatusBadRequest, "asset_rejected", "content[%d] was refused by the asset library: %s %s", ref.index, apiErr.Code, apiErr.Message)
+		return nil, oneCallError(http.StatusBadRequest, "asset_rejected", "content[%d] was refused by the asset library: %s %s", ref.index, apiErr.Code, apiErr.Message)
 	}
 	assetId := extractAssetId(result)
 	if assetId == "" {
-		return nil, false, oneCallError(http.StatusBadGateway, "asset_library_failed", "the asset library returned no asset id")
+		return nil, oneCallError(http.StatusBadGateway, "asset_library_failed", "the asset library returned no asset id")
 	}
+	// The registration and this submission's hold on it are written
+	// together, so the cleanup never sees the asset without its user.
+	gate.bookkeeping.Lock()
 	if err := model.SaveVolcAssetUpload(&model.VolcAssetUpload{
 		UserId: userId, OutboundId: ob.EffectiveId(), GroupId: ref.group, AssetType: ref.assetType, URLHash: urlHash, AssetId: assetId,
 	}); err != nil {
 		logger.LogWarn(c, "failed to persist volc asset upload: "+err.Error())
 	}
+	if err := model.AddVolcAssetUse(taskKey, userId, ob.EffectiveId(), assetId); err != nil {
+		logger.LogWarn(c, "failed to record volc asset use: "+err.Error())
+	}
+	gate.bookkeeping.Unlock()
 	settleAssetBilling(c, ob, "CreateAsset", cost, result)
-	return &registeredAsset{id: assetId, index: ref.index}, true, nil
+	return &registeredAsset{id: assetId, index: ref.index}, nil
 }
 
 // readAssetStatus reads an asset's processing status and, for a refused

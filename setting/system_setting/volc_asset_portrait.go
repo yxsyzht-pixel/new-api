@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	defaultOneCallWaitSeconds = 120
-	defaultOneCallReuseHours  = 24
+	defaultOneCallWaitSeconds      = 120
+	defaultOneCallReuseHours       = 24
+	defaultOneCallQueueWaitSeconds = 600
 )
 
 // AssetOneCall configures registering a generation request's portrait
@@ -27,6 +28,103 @@ type AssetOneCall struct {
 	// ReuseHours is how long a registered URL keeps answering with the same
 	// asset; 0 means the default and a negative value registers every time.
 	ReuseHours int `json:"reuse_hours,omitempty"`
+	// DeleteAfterUse removes an asset a generation request registered once no
+	// unfinished task references it, so a small library does not fill up.
+	DeleteAfterUse bool `json:"delete_after_use,omitempty"`
+	// MaxAssets is how many assets the library of one outbound may hold; a
+	// request that needs more room waits for it. <=0 means no limit.
+	MaxAssets int `json:"max_assets,omitempty"`
+	// UploadsPerMinute bounds how many assets one outbound registers per
+	// minute; <=0 means no limit.
+	UploadsPerMinute int `json:"uploads_per_minute,omitempty"`
+	// QueueWaitSeconds bounds how long one request waits for room in the
+	// library or for an upload slot; <=0 means the default.
+	QueueWaitSeconds int `json:"queue_wait_seconds,omitempty"`
+}
+
+// QueueWait is how long one generation request waits for room in the library.
+func (o AssetOneCall) QueueWait() time.Duration {
+	if o.QueueWaitSeconds <= 0 {
+		return defaultOneCallQueueWaitSeconds * time.Second
+	}
+	return time.Duration(o.QueueWaitSeconds) * time.Second
+}
+
+const (
+	// MediaStorageQiniu is the Qiniu Kodo object storage provider.
+	MediaStorageQiniu = "qiniu"
+
+	defaultMediaStoragePrefix    = "gateway-media"
+	defaultMediaStorageMaxFileMB = 64
+	defaultMediaStorageURLHours  = 24
+)
+
+// AssetMediaStorage is the object storage that receives the files a
+// generation request carries inline (a data: URL or an uploaded file) and
+// hands back a URL the vendor can fetch.
+type AssetMediaStorage struct {
+	// Provider is the storage service; empty switches inline files off.
+	Provider  string `json:"provider,omitempty"`
+	AccessKey string `json:"access_key,omitempty"`
+	SecretKey string `json:"secret_key,omitempty"`
+	Bucket    string `json:"bucket,omitempty"`
+	// Domain is the address the bucket is served at, such as https://cdn.example.com.
+	Domain string `json:"domain,omitempty"`
+	// Prefix is put before every object key; empty means the default.
+	Prefix string `json:"prefix,omitempty"`
+	// UploadURL overrides the upload address; empty looks it up from the bucket.
+	UploadURL string `json:"upload_url,omitempty"`
+	// Private signs every file URL, for a bucket that is not public.
+	Private bool `json:"private,omitempty"`
+	// URLTTLHours is how long a signed URL stays valid; <=0 means the default.
+	URLTTLHours int `json:"url_ttl_hours,omitempty"`
+	// MaxFileMB bounds one inline file; <=0 means the default.
+	MaxFileMB int `json:"max_file_mb,omitempty"`
+}
+
+// Enabled reports whether inline files can be uploaded.
+func (s AssetMediaStorage) Enabled() bool {
+	return s.Provider == MediaStorageQiniu && s.AccessKey != "" && s.SecretKey != "" && s.Bucket != "" && s.BaseURL() != ""
+}
+
+// BaseURL is the address files are served at, without a trailing slash.
+func (s AssetMediaStorage) BaseURL() string {
+	domain := strings.TrimRight(strings.TrimSpace(s.Domain), "/")
+	if domain == "" {
+		return ""
+	}
+	lower := strings.ToLower(domain)
+	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+		domain = "https://" + domain
+	}
+	return domain
+}
+
+// KeyPrefix is the path every object key starts with, without slashes around it.
+func (s AssetMediaStorage) KeyPrefix() string {
+	prefix := strings.Trim(strings.TrimSpace(s.Prefix), "/")
+	if prefix == "" {
+		return defaultMediaStoragePrefix
+	}
+	return prefix
+}
+
+// MaxFileBytes is the largest inline file accepted.
+func (s AssetMediaStorage) MaxFileBytes() int64 {
+	limit := s.MaxFileMB
+	if limit <= 0 {
+		limit = defaultMediaStorageMaxFileMB
+	}
+	return int64(limit) << 20
+}
+
+// URLTTL is how long a signed file URL stays valid.
+func (s AssetMediaStorage) URLTTL() time.Duration {
+	hours := s.URLTTLHours
+	if hours <= 0 {
+		hours = defaultMediaStorageURLHours
+	}
+	return time.Duration(hours) * time.Hour
 }
 
 // Wait is how long one generation request waits for its assets.

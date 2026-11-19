@@ -813,7 +813,7 @@ export function parseTaskResult() { return {status:"SUCCESS"}; }
 	sqlDB, err := database.DB()
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, database.AutoMigrate(&model.VolcAssetUserGroup{}, &model.VolcAssetLivenessGroup{}, &model.VolcAssetUpload{}))
+	require.NoError(t, database.AutoMigrate(&model.VolcAssetUserGroup{}, &model.VolcAssetLivenessGroup{}, &model.VolcAssetUpload{}, &model.VolcAssetUse{}))
 	previousDB, previousAssets, previousLogging := model.DB, system_setting.VolcAssetConfig, common.LogConsumeEnabled
 	t.Cleanup(func() {
 		model.DB, system_setting.VolcAssetConfig, common.LogConsumeEnabled = previousDB, previousAssets, previousLogging

@@ -1226,6 +1226,85 @@ func TestDoubaoNativeOfficialBodies(t *testing.T) {
 		}}, descriptor["body"])
 	})
 
+	// A video request may upload its reference files. Each becomes a
+	// reference whose URL is the host's placeholder for the file, which the
+	// gateway inlines, stores and replaces by an address before Ark sees it.
+	t.Run("uploaded files become references", func(t *testing.T) {
+		upload := func(ref, field, mimeType string) map[string]any {
+			return map[string]any{"ref": ref, "field": field, "filename": "f", "mimeType": mimeType, "size": float64(10)}
+		}
+		placeholder := func(ref, mimeType string) map[string]any {
+			return map[string]any{"url": map[string]any{"__fileRef": ref, "encoding": "dataUrl", "mimeType": mimeType}}
+		}
+		submit := func(body map[string]any) (map[string]any, error) {
+			intent, err := call([]string{"protocols", "openai_video", "decodeRequest"}, map[string]any{"model": seedance, "body": body})
+			if err != nil {
+				return nil, err
+			}
+			assert.Equal(t, "image_to_video", intent["action"])
+			descriptor, err := call([]string{"buildSubmitRequest"}, map[string]any{"model": seedance, "upstreamModel": seedance, "requestBody": intent["requestBody"], "baseUrl": doubaoBaseURL, "apiKey": "key"})
+			if err != nil {
+				return nil, err
+			}
+			return descriptor["body"].(map[string]any), nil
+		}
+
+		// One image is the frame the video starts from, like an image URL.
+		body, err := submit(map[string]any{"kind": "multipart",
+			"fields": map[string][]string{"model": {seedance}, "prompt": {"she waves"}, "seconds": {"5"}, "metadata": {`{"portrait":true}`}},
+			"files":  []any{upload("request_file:input_reference", "input_reference", "image/jpeg")}})
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"model": seedance, "portrait": true, "duration": float64(5), "content": []any{
+			map[string]any{"type": "image_url", "image_url": placeholder("request_file:input_reference", "image/jpeg")},
+			map[string]any{"type": "text", "text": "she waves"},
+		}}, body)
+
+		// Several files are references, each of its own kind.
+		body, err = submit(map[string]any{"kind": "multipart",
+			"fields": map[string][]string{"model": {seedance}, "prompt": {"Image 1 wears Image 2"}},
+			"files": []any{
+				upload("request_file:images[]", "images[]", "image/png"),
+				upload("request_file:images[]#1", "images[]", ""),
+				upload("request_file:video", "video", "video/mp4"),
+				upload("request_file:audio", "audio", "application/octet-stream"),
+			}})
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{"model": seedance, "content": []any{
+			map[string]any{"type": "image_url", "image_url": placeholder("request_file:images[]", "image/png"), "role": "reference_image"},
+			map[string]any{"type": "image_url", "image_url": placeholder("request_file:images[]#1", "image/png"), "role": "reference_image"},
+			map[string]any{"type": "video_url", "video_url": placeholder("request_file:video", "video/mp4"), "role": "reference_video"},
+			map[string]any{"type": "audio_url", "audio_url": placeholder("request_file:audio", "audio/mpeg"), "role": "reference_audio"},
+			map[string]any{"type": "text", "text": "Image 1 wears Image 2"},
+		}}, body)
+
+		// image_role names what the uploaded images are.
+		body, err = submit(map[string]any{"kind": "multipart",
+			"fields": map[string][]string{"model": {seedance}, "prompt": {"she waves"}, "image_role": {"reference_image"}},
+			"files":  []any{upload("request_file:image", "image", "image/webp")}})
+		require.NoError(t, err)
+		assert.Equal(t, []any{
+			map[string]any{"type": "image_url", "image_url": placeholder("request_file:image", "image/webp"), "role": "reference_image"},
+			map[string]any{"type": "text", "text": "she waves"},
+		}, body["content"])
+		assert.NotContains(t, body, "image_role")
+
+		_, err = submit(map[string]any{"kind": "multipart",
+			"fields": map[string][]string{"model": {seedance}, "prompt": {"she waves"}},
+			"files":  []any{upload("request_file:mask", "mask", "image/png")}})
+		require.ErrorContains(t, err, "mask is not supported")
+
+		// An uploaded video is priced as a video reference, like a video URL.
+		for file, expected := range map[string]string{"video/mp4": "video", "image/png": "none"} {
+			intent, err := call([]string{"protocols", "openai_video", "decodeRequest"}, map[string]any{"model": seedance, "body": map[string]any{"kind": "multipart",
+				"fields": map[string][]string{"model": {seedance}, "prompt": {"she waves"}, "seconds": {"5"}},
+				"files":  []any{upload("request_file:input_reference", "input_reference", file)}}})
+			require.NoError(t, err)
+			facts, err := call([]string{"extractUsage"}, map[string]any{"model": seedance, "upstreamModel": seedance, "requestBody": intent["requestBody"]})
+			require.NoError(t, err)
+			assert.Equal(t, expected, facts["video_input"], file)
+		}
+	})
+
 	t.Run("query replies", func(t *testing.T) {
 		created, err := call([]string{"native", "taskStatus"}, map[string]any{}, map[string]any{"task_id": "task_pub", "status": "SUBMITTED", "data": map[string]any{"id": "task_pub"}})
 		require.NoError(t, err)
