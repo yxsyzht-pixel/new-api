@@ -194,6 +194,38 @@ func TestCreateAssetUsesTheCallersOwnGroup(t *testing.T) {
 	assert.Equal(t, []string{"CreateAsset"}, actions, "the remembered group is not provisioned again")
 }
 
+// The vendor refuses a list call without a page ("PageNumber must be greater
+// than 0"), so a request that names none reads the first page; a request that
+// names one keeps it.
+func TestListCallsReadTheFirstPageByDefault(t *testing.T) {
+	upstream := newAssetGateway(t, func(action string, body []byte) (int, string) {
+		switch action {
+		case "ListAssetGroups":
+			return http.StatusOK, `{"Items":[]}`
+		case "CreateAssetGroup":
+			return http.StatusOK, `{"Id":"group-user-7"}`
+		case "ListAssets":
+			return http.StatusOK, `{"Items":[],"TotalCount":0}`
+		}
+		return http.StatusNotFound, `{"error":"unknown action"}`
+	})
+	require.Equal(t, http.StatusOK, assetRequest(7, HandleListAssets, http.MethodPost, "/volc-asset/ListAssets", `{}`).Code)
+	require.Equal(t, http.StatusOK, assetRequest(7, HandleListAssets, http.MethodPost, "/volc-asset/ListAssets", `{"PageNumber":3,"PageSize":5}`).Code)
+	lists := upstream.bodies("ListAssets")
+	require.Len(t, lists, 2)
+	assert.Equal(t, int64(1), gjson.Get(lists[0], "PageNumber").Int())
+	assert.Equal(t, int64(10), gjson.Get(lists[0], "PageSize").Int())
+	assert.Equal(t, int64(3), gjson.Get(lists[1], "PageNumber").Int())
+	assert.Equal(t, int64(5), gjson.Get(lists[1], "PageSize").Int())
+
+	upstream.reset()
+	require.Equal(t, http.StatusOK, assetRequest(7, HandleListAssetGroups, http.MethodPost, "/volc-asset/ListAssetGroups", `{}`).Code)
+	groups := upstream.bodies("ListAssetGroups")
+	require.Len(t, groups, 1)
+	assert.Equal(t, int64(1), gjson.Get(groups[0], "PageNumber").Int())
+	assert.Equal(t, int64(10), gjson.Get(groups[0], "PageSize").Int())
+}
+
 func TestAssetBelongsToScope(t *testing.T) {
 	scope := &assetScope{groupId: "grp-1"}
 

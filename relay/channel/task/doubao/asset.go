@@ -161,6 +161,21 @@ func signVolcengineRequest(req *http.Request, bodyBytes []byte, accessKey, secre
 	req.Header.Set("Authorization", authorization)
 }
 
+// defaultListPageSize is the page a list call reads when the client names none.
+const defaultListPageSize = 10
+
+// listPaging fills in the paging a list call left out. The vendor refuses
+// page 0, which is what an empty request would otherwise carry.
+func listPaging(pageNumber, pageSize int64) (int64, int64) {
+	if pageNumber <= 0 {
+		pageNumber = 1
+	}
+	if pageSize <= 0 {
+		pageSize = defaultListPageSize
+	}
+	return pageNumber, pageSize
+}
+
 func filterEmptyStrings(s []string) []string {
 	var result []string
 	for _, v := range s {
@@ -539,6 +554,7 @@ func HandleListAssets(c *gin.Context) {
 	listReq.Filter.GroupIds, listReq.Filter.GroupType = scope.listGroups(listReq.Filter.GroupIds)
 	listReq.Filter.Statuses = filterEmptyStrings(listReq.Filter.Statuses)
 	listReq.ProjectName = scope.projectName
+	listReq.PageNumber, listReq.PageSize = listPaging(listReq.PageNumber, listReq.PageSize)
 
 	body, err := common.Marshal(listReq)
 	if err != nil {
@@ -790,6 +806,7 @@ func HandleListAssetGroups(c *gin.Context) {
 	}
 	req.Filter.GroupIds = filterEmptyStrings(req.Filter.GroupIds)
 	applyGroupDefaults(ob, &req.ProjectName, &req.Filter.GroupType)
+	req.PageNumber, req.PageSize = listPaging(req.PageNumber, req.PageSize)
 	body, err := common.Marshal(req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to marshal request"})
