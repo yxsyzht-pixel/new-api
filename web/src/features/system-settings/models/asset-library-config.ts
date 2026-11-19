@@ -40,6 +40,24 @@ export type AssetOneCall = {
   auto_register?: boolean
   wait_seconds?: number
   reuse_hours?: number
+  delete_after_use?: boolean
+  max_assets?: number
+  uploads_per_minute?: number
+  queue_wait_seconds?: number
+}
+
+/** Where the files a generation request carries inline are uploaded. */
+export type AssetMediaStorage = {
+  provider?: string
+  access_key?: string
+  secret_key?: string
+  bucket?: string
+  domain?: string
+  prefix?: string
+  upload_url?: string
+  private?: boolean
+  url_ttl_hours?: number
+  max_file_mb?: number
 }
 
 export type AssetLibraryConfig = {
@@ -52,6 +70,7 @@ export type AssetLibraryConfig = {
   rate_limit_count?: number
   rate_limit_duration_seconds?: number
   one_call?: AssetOneCall
+  media_storage?: AssetMediaStorage
 }
 
 export type AssetLibraryFormValues = {
@@ -63,6 +82,18 @@ export type AssetLibraryFormValues = {
   autoRegister: boolean
   waitSeconds: number
   reuseHours: number
+  deleteAfterUse: boolean
+  maxAssets: number
+  uploadsPerMinute: number
+  queueWaitSeconds: number
+  storageEnabled: boolean
+  storageAccessKey: string
+  storageSecretKey: string
+  storageBucket: string
+  storageDomain: string
+  storagePrefix: string
+  storagePrivate: boolean
+  storageMaxFileMb: number
   rateLimitCount: number
   rateLimitDurationSeconds: number
   actionPrices: string
@@ -93,6 +124,11 @@ export const ASSET_PRICED_ACTIONS = [
 
 export const ASSET_ONE_CALL_DEFAULT_WAIT_SECONDS = 120
 export const ASSET_ONE_CALL_DEFAULT_REUSE_HOURS = 24
+export const ASSET_ONE_CALL_DEFAULT_QUEUE_WAIT_SECONDS = 600
+
+export const ASSET_MEDIA_STORAGE_QINIU = 'qiniu'
+export const ASSET_MEDIA_STORAGE_DEFAULT_PREFIX = 'gateway-media'
+export const ASSET_MEDIA_STORAGE_DEFAULT_MAX_FILE_MB = 64
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -148,6 +184,7 @@ export function assetLibraryFormValues(
   config: AssetLibraryConfig
 ): AssetLibraryFormValues {
   const oneCall = config.one_call ?? {}
+  const storage = config.media_storage ?? {}
   return {
     outbounds: JSON.stringify(config.outbounds ?? [], null, 2),
     defaultOutbound: config.default_outbound ?? '',
@@ -157,6 +194,18 @@ export function assetLibraryFormValues(
     autoRegister: Boolean(oneCall.auto_register),
     waitSeconds: wholeNumber(oneCall.wait_seconds),
     reuseHours: wholeNumber(oneCall.reuse_hours),
+    deleteAfterUse: Boolean(oneCall.delete_after_use),
+    maxAssets: wholeNumber(oneCall.max_assets),
+    uploadsPerMinute: wholeNumber(oneCall.uploads_per_minute),
+    queueWaitSeconds: wholeNumber(oneCall.queue_wait_seconds),
+    storageEnabled: storage.provider === ASSET_MEDIA_STORAGE_QINIU,
+    storageAccessKey: storage.access_key ?? '',
+    storageSecretKey: storage.secret_key ?? '',
+    storageBucket: storage.bucket ?? '',
+    storageDomain: storage.domain ?? '',
+    storagePrefix: storage.prefix ?? '',
+    storagePrivate: Boolean(storage.private),
+    storageMaxFileMb: wholeNumber(storage.max_file_mb),
     rateLimitCount: wholeNumber(config.rate_limit_count),
     rateLimitDurationSeconds: wholeNumber(config.rate_limit_duration_seconds),
     actionPrices: JSON.stringify(config.action_prices ?? {}),
@@ -210,6 +259,22 @@ export function buildAssetLibraryConfig(
       auto_register: values.autoRegister,
       wait_seconds: Math.max(0, wholeNumber(values.waitSeconds)),
       reuse_hours: wholeNumber(values.reuseHours),
+      delete_after_use: values.deleteAfterUse,
+      max_assets: Math.max(0, wholeNumber(values.maxAssets)),
+      uploads_per_minute: Math.max(0, wholeNumber(values.uploadsPerMinute)),
+      queue_wait_seconds: Math.max(0, wholeNumber(values.queueWaitSeconds)),
+    },
+    media_storage: {
+      ...stored.media_storage,
+      provider: values.storageEnabled ? ASSET_MEDIA_STORAGE_QINIU : '',
+      access_key: values.storageAccessKey.trim(),
+      // An empty secret keeps the one the server holds.
+      secret_key: values.storageSecretKey.trim(),
+      bucket: values.storageBucket.trim(),
+      domain: values.storageDomain.trim(),
+      prefix: values.storagePrefix.trim(),
+      private: values.storagePrivate,
+      max_file_mb: Math.max(0, wholeNumber(values.storageMaxFileMb)),
     },
   }
 }

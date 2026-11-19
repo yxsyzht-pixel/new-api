@@ -54,6 +54,9 @@ import { useUpdateOption } from '../hooks/use-update-option'
 import { safeNumberFieldProps } from '../utils/numeric-field'
 import { AssetActionPricesEditor } from './asset-action-prices-editor'
 import {
+  ASSET_MEDIA_STORAGE_DEFAULT_MAX_FILE_MB,
+  ASSET_MEDIA_STORAGE_DEFAULT_PREFIX,
+  ASSET_ONE_CALL_DEFAULT_QUEUE_WAIT_SECONDS,
   ASSET_ONE_CALL_DEFAULT_REUSE_HOURS,
   ASSET_ONE_CALL_DEFAULT_WAIT_SECONDS,
   assetLibraryFormValues,
@@ -84,6 +87,18 @@ const assetLibrarySchema = z.object({
   autoRegister: z.boolean(),
   waitSeconds: z.number().int().min(0),
   reuseHours: z.number().int(),
+  deleteAfterUse: z.boolean(),
+  maxAssets: z.number().int().min(0),
+  uploadsPerMinute: z.number().int().min(0),
+  queueWaitSeconds: z.number().int().min(0),
+  storageEnabled: z.boolean(),
+  storageAccessKey: z.string(),
+  storageSecretKey: z.string(),
+  storageBucket: z.string(),
+  storageDomain: z.string(),
+  storagePrefix: z.string(),
+  storagePrivate: z.boolean(),
+  storageMaxFileMb: z.number().int().min(0),
   rateLimitCount: z.number().int().min(0),
   rateLimitDurationSeconds: z.number().int().min(0),
   actionPrices: z.string(),
@@ -125,6 +140,7 @@ export function AssetLibrarySection(props: AssetLibrarySectionProps) {
   const outboundsJson = form.watch('outbounds')
   const customFormatsJson = form.watch('customFormats')
   const oneCallEnabled = form.watch('oneCallEnabled')
+  const storageEnabled = form.watch('storageEnabled')
   const outboundIds = useMemo(
     () => parseAssetOutbounds(outboundsJson).map((outbound) => outbound.id),
     [outboundsJson]
@@ -153,6 +169,7 @@ export function AssetLibrarySection(props: AssetLibrarySectionProps) {
         secret_key: '',
         access_token: '',
       })),
+      media_storage: { ...next.media_storage, secret_key: '' },
     }
     setStored(saved)
     form.reset(assetLibraryFormValues(saved))
@@ -385,6 +402,287 @@ export function AssetLibrarySection(props: AssetLibrarySectionProps) {
                 </FormDescription>
                 <FormMessage />
               </FormItem>
+            )}
+          />
+
+          <SubsectionHeading
+            title={t('Room in the asset library')}
+            description={t(
+              'A vendor account holds a limited number of assets and takes a limited number of uploads a minute. The limits below apply to each outbound on its own.'
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='deleteAfterUse'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>
+                    {t('Delete assets once their tasks finish')}
+                  </FormLabel>
+                  <FormDescription>
+                    {t(
+                      'An asset the gateway registered for a generation request is deleted from the library as soon as no unfinished task uses it. Assets users register themselves are never deleted.'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='maxAssets'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Assets the library holds')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    min={0}
+                    step={1}
+                    {...safeNumberFieldProps(field)}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'A request that needs room waits in line until an asset is deleted. 0 means no limit.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='uploadsPerMinute'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Uploads per minute')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    min={0}
+                    step={1}
+                    {...safeNumberFieldProps(field)}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'How many assets one outbound registers a minute; further uploads wait. 0 means no limit.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='queueWaitSeconds'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Longest wait in line (seconds)')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    min={0}
+                    step={1}
+                    placeholder={String(
+                      ASSET_ONE_CALL_DEFAULT_QUEUE_WAIT_SECONDS
+                    )}
+                    {...safeNumberFieldProps(field)}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'A request that waits longer is refused with asset_library_full or asset_upload_rate_limited and can be sent again. 0 uses {{seconds}} seconds.',
+                    { seconds: ASSET_ONE_CALL_DEFAULT_QUEUE_WAIT_SECONDS }
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <SubsectionHeading
+            title={t('Files sent with a request')}
+            description={t(
+              'A request can carry a reference as a base64 data URL, or as an uploaded file on /v1/videos. The gateway uploads the file to the storage below and sends the vendor its URL.'
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='storageEnabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t('Store request files in Qiniu')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'When off, an inline image goes to the vendor as it is and an inline portrait is refused.'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='storageAccessKey'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Qiniu Access Key')}</FormLabel>
+                <FormControl>
+                  <Input
+                    autoComplete='off'
+                    disabled={!storageEnabled}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='storageSecretKey'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Qiniu Secret Key')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='password'
+                    autoComplete='new-password'
+                    disabled={!storageEnabled}
+                    {...field}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Stored on the server and never shown. Leave empty to keep the stored key.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='storageBucket'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Qiniu bucket')}</FormLabel>
+                <FormControl>
+                  <Input disabled={!storageEnabled} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='storageDomain'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Bucket domain')}</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder='https://cdn.example.com'
+                    disabled={!storageEnabled}
+                    {...field}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'The address the bucket is served at. The vendor fetches the files from here, so it has to be reachable from the internet.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='storagePrefix'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Key prefix')}</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder={ASSET_MEDIA_STORAGE_DEFAULT_PREFIX}
+                    disabled={!storageEnabled}
+                    {...field}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Files are stored under this path and named by their content, so the same file is stored once. {{prefix}} when empty.',
+                    { prefix: ASSET_MEDIA_STORAGE_DEFAULT_PREFIX }
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='storageMaxFileMb'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Largest file (MB)')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    min={0}
+                    step={1}
+                    placeholder={String(
+                      ASSET_MEDIA_STORAGE_DEFAULT_MAX_FILE_MB
+                    )}
+                    disabled={!storageEnabled}
+                    {...safeNumberFieldProps(field)}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t('0 uses {{size}} MB.', {
+                    size: ASSET_MEDIA_STORAGE_DEFAULT_MAX_FILE_MB,
+                  })}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='storagePrivate'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t('Private bucket')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Sign every file URL, so that a bucket that is not public can be read.'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    disabled={!storageEnabled}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
             )}
           />
 

@@ -63,7 +63,13 @@ describe('asset library settings', () => {
       wait_seconds: 90,
       disabled: false,
       reuse_hours: 0,
+      delete_after_use: false,
+      max_assets: 0,
+      uploads_per_minute: 0,
+      queue_wait_seconds: 0,
     })
+    // A storage that was never set up stays switched off.
+    expect(built.media_storage).toMatchObject({ provider: '', bucket: '' })
     expect((built as Record<string, unknown>).some_future_field).toEqual({
       kept: true,
     })
@@ -137,5 +143,80 @@ describe('asset library settings', () => {
         base_url: 'https://gateway.example/volc-asset',
       })
     ).toBe('https://gateway.example/volc-asset')
+  })
+
+  test('storage, cleanup and queue settings are read and stored', () => {
+    const config = parseAssetLibraryConfig(
+      JSON.stringify({
+        outbounds: [],
+        one_call: {
+          delete_after_use: true,
+          max_assets: 50,
+          uploads_per_minute: 3,
+          queue_wait_seconds: 900,
+        },
+        media_storage: {
+          provider: 'qiniu',
+          access_key: 'AK',
+          bucket: 'media',
+          domain: 'cdn.example.com',
+          upload_url: 'https://up.example.com',
+          url_ttl_hours: 6,
+        },
+      })
+    )
+    const values = assetLibraryFormValues(config)
+    expect(values).toMatchObject({
+      deleteAfterUse: true,
+      maxAssets: 50,
+      uploadsPerMinute: 3,
+      queueWaitSeconds: 900,
+      storageEnabled: true,
+      storageAccessKey: 'AK',
+      storageSecretKey: '',
+      storageBucket: 'media',
+      storageDomain: 'cdn.example.com',
+      storagePrefix: '',
+      storagePrivate: false,
+      storageMaxFileMb: 0,
+    })
+
+    const built = buildAssetLibraryConfig(
+      {
+        ...values,
+        maxAssets: 40,
+        storageSecretKey: ' SK ',
+        storagePrefix: ' uploads ',
+        storagePrivate: true,
+      },
+      config
+    )
+    expect(built.one_call).toMatchObject({
+      delete_after_use: true,
+      max_assets: 40,
+      uploads_per_minute: 3,
+      queue_wait_seconds: 900,
+    })
+    // What the page does not edit rides along.
+    expect(built.media_storage).toEqual({
+      provider: 'qiniu',
+      access_key: 'AK',
+      secret_key: 'SK',
+      bucket: 'media',
+      domain: 'cdn.example.com',
+      prefix: 'uploads',
+      upload_url: 'https://up.example.com',
+      url_ttl_hours: 6,
+      private: true,
+      max_file_mb: 0,
+    })
+
+    // Switching the storage off keeps its settings for the next time.
+    const off = buildAssetLibraryConfig(
+      { ...values, storageEnabled: false },
+      config
+    )
+    expect(off.media_storage?.provider).toBe('')
+    expect(off.media_storage?.bucket).toBe('media')
   })
 })
