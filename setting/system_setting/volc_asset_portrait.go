@@ -1,6 +1,7 @@
 package system_setting
 
 import (
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -48,30 +49,66 @@ func (o AssetOneCall) Reuse() time.Duration {
 	return time.Duration(o.ReuseHours) * time.Hour
 }
 
+// AssetVendorOfChannel names the direct vendor format whose account a
+// channel's key belongs to, read from the channel's address: Volcengine Ark
+// serves mainland China, BytePlus ModelArk everywhere else. Empty when the
+// address is neither vendor's own, such as a proxy or another gateway.
+func AssetVendorOfChannel(channelBaseURL string) string {
+	host := strings.ToLower(strings.TrimSpace(channelBaseURL))
+	if parsed, err := url.Parse(host); err == nil && parsed.Hostname() != "" {
+		host = parsed.Hostname()
+	}
+	for suffix, vendor := range map[string]string{
+		"bytepluses.com":    AssetFormatBytePlus,
+		"byteplusapi.com":   AssetFormatBytePlus,
+		"volces.com":        AssetFormatVolcengine,
+		"volcengineapi.com": AssetFormatVolcengine,
+	} {
+		if host == suffix || strings.HasSuffix(host, "."+suffix) {
+			return vendor
+		}
+	}
+	return ""
+}
+
 // OutboundForChannel returns the usable outbound whose assets a channel can
-// reference: one bound to the channel first, then the default outbound and
-// the remaining ones when they serve every channel.
-func (v *VolcAssetSettings) OutboundForChannel(channelId int) (AssetOutbound, bool) {
+// reference. An outbound bound to the channel comes first. Among those that
+// serve every channel, the two vendors' accounts are kept apart: a mainland
+// channel never registers in a BytePlus account, nor the other way round, and
+// the outbound of the channel's own vendor is preferred. The default outbound
+// breaks the remaining ties.
+func (v *VolcAssetSettings) OutboundForChannel(channelId int, channelBaseURL string) (AssetOutbound, bool) {
+	vendor := AssetVendorOfChannel(channelBaseURL)
 	var unbound []AssetOutbound
 	for _, o := range v.EffectiveOutbounds() {
 		if !v.OutboundConfigured(o) {
 			continue
 		}
-		if len(o.ChannelIds) == 0 {
-			unbound = append(unbound, o)
+		if len(o.ChannelIds) > 0 {
+			if slices.Contains(o.ChannelIds, channelId) {
+				return o, true
+			}
 			continue
 		}
-		if slices.Contains(o.ChannelIds, channelId) {
-			return o, true
+		format := o.EffectiveFormat()
+		direct := format == AssetFormatVolcengine || format == AssetFormatBytePlus
+		if vendor != "" && direct && format != vendor {
+			continue
 		}
+		unbound = append(unbound, o)
 	}
-	for _, o := range unbound {
-		if o.EffectiveId() == v.DefaultOutbound {
-			return o, true
+	for _, sameVendor := range []bool{true, false} {
+		for _, isDefault := range []bool{true, false} {
+			for _, o := range unbound {
+				if sameVendor && (vendor == "" || o.EffectiveFormat() != vendor) {
+					continue
+				}
+				if isDefault && o.EffectiveId() != v.DefaultOutbound {
+					continue
+				}
+				return o, true
+			}
 		}
-	}
-	if len(unbound) > 0 {
-		return unbound[0], true
 	}
 	return AssetOutbound{}, false
 }

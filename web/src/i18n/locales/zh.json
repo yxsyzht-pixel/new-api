@@ -8008,8 +8008,8 @@
     "Custom outbound formats": "自定义出口格式",
     "A JSON array of request and response templates for upstreams that speak neither the vendor protocol nor this gateway’s. An outbound uses one by its id.": "一个 JSON 数组，为既不使用厂商协议、也不使用本网关协议的上游定义请求和响应模板。出口通过 id 引用。",
     "Custom formats must be a JSON array": "自定义格式必须是 JSON 数组",
-    "BytePlus ModelArk": "BytePlus ModelArk",
-    "Volcengine Ark": "火山方舟",
+    "BytePlus ModelArk (international)": "BytePlus ModelArk（海外）",
+    "Volcengine Ark (mainland China)": "火山方舟（中国大陆）",
     "Another New API gateway": "另一个 New API 网关",
     "Custom format: {{id}}": "自定义格式：{{id}}",
     "Edit outbound": "编辑出口",
@@ -8031,6 +8031,8 @@
     "Outbound ID is required": "请填写出口 ID",
     "Use letters, digits, dots, dashes and underscores only": "只能使用字母、数字、点、短横线和下划线",
     "No outbound yet. Add the vendor account that holds your assets to switch the asset library on.": "还没有出口。添加存放素材的厂商账号后，素材库才会启用。",
-    "Every channel": "所有渠道"
+    "Every channel": "所有渠道",
+    "For a Volcengine account. Its model IDs start with doubao- and its channels use ark.cn-beijing.volces.com.": "用于火山引擎账号。它的模型 ID 以 doubao- 开头，渠道地址是 ark.cn-beijing.volces.com。",
+    "For a BytePlus account. Its model IDs start with dreamina- and its channels use ark.ap-southeast.bytepluses.com.": "用于 BytePlus 账号。它的模型 ID 以 dreamina- 开头，渠道地址是 ark.ap-southeast.bytepluses.com。"
   }
 }

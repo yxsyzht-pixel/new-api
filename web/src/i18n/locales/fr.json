@@ -7992,8 +7992,8 @@
     "Custom outbound formats": "Formats de sortie personnalisés",
     "A JSON array of request and response templates for upstreams that speak neither the vendor protocol nor this gateway’s. An outbound uses one by its id.": "Un tableau JSON de modèles de requête et de réponse pour les services amont qui ne parlent ni le protocole du fournisseur ni celui de cette passerelle. Une sortie en utilise un par son id.",
     "Custom formats must be a JSON array": "Les formats personnalisés doivent être un tableau JSON",
-    "BytePlus ModelArk": "BytePlus ModelArk",
-    "Volcengine Ark": "Volcengine Ark",
+    "BytePlus ModelArk (international)": "BytePlus ModelArk (international)",
+    "Volcengine Ark (mainland China)": "Volcengine Ark (Chine continentale)",
     "Another New API gateway": "Une autre passerelle New API",
     "Custom format: {{id}}": "Format personnalisé : {{id}}",
     "Edit outbound": "Modifier la sortie",
@@ -8015,6 +8015,8 @@
     "Outbound ID is required": "L’ID de la sortie est requis",
     "Use letters, digits, dots, dashes and underscores only": "Utilisez uniquement des lettres, chiffres, points, tirets et traits de soulignement",
     "No outbound yet. Add the vendor account that holds your assets to switch the asset library on.": "Aucune sortie pour l’instant. Ajoutez le compte fournisseur qui contient vos ressources pour activer la bibliothèque de ressources.",
-    "Every channel": "Tous les canaux"
+    "Every channel": "Tous les canaux",
+    "For a Volcengine account. Its model IDs start with doubao- and its channels use ark.cn-beijing.volces.com.": "Pour un compte Volcengine. Ses ID de modèle commencent par doubao- et ses canaux utilisent ark.cn-beijing.volces.com.",
+    "For a BytePlus account. Its model IDs start with dreamina- and its channels use ark.ap-southeast.bytepluses.com.": "Pour un compte BytePlus. Ses ID de modèle commencent par dreamina- et ses canaux utilisent ark.ap-southeast.bytepluses.com."
   }
 }

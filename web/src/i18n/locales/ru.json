@@ -7992,8 +7992,8 @@
     "Custom outbound formats": "Пользовательские форматы подключений",
     "A JSON array of request and response templates for upstreams that speak neither the vendor protocol nor this gateway’s. An outbound uses one by its id.": "JSON-массив шаблонов запроса и ответа для вышестоящих сервисов, которые не используют ни протокол поставщика, ни протокол этого шлюза. Подключение ссылается на шаблон по id.",
     "Custom formats must be a JSON array": "Пользовательские форматы должны быть JSON-массивом",
-    "BytePlus ModelArk": "BytePlus ModelArk",
-    "Volcengine Ark": "Volcengine Ark",
+    "BytePlus ModelArk (international)": "BytePlus ModelArk (международный)",
+    "Volcengine Ark (mainland China)": "Volcengine Ark (материковый Китай)",
     "Another New API gateway": "Другой шлюз New API",
     "Custom format: {{id}}": "Пользовательский формат: {{id}}",
     "Edit outbound": "Изменить подключение",
@@ -8015,6 +8015,8 @@
     "Outbound ID is required": "Требуется ID подключения",
     "Use letters, digits, dots, dashes and underscores only": "Используйте только буквы, цифры, точки, дефисы и подчёркивания",
     "No outbound yet. Add the vendor account that holds your assets to switch the asset library on.": "Подключений пока нет. Добавьте аккаунт поставщика, где хранятся ваши ресурсы, чтобы включить библиотеку ресурсов.",
-    "Every channel": "Все каналы"
+    "Every channel": "Все каналы",
+    "For a Volcengine account. Its model IDs start with doubao- and its channels use ark.cn-beijing.volces.com.": "Для аккаунта Volcengine. ID его моделей начинаются с doubao-, а каналы используют ark.cn-beijing.volces.com.",
+    "For a BytePlus account. Its model IDs start with dreamina- and its channels use ark.ap-southeast.bytepluses.com.": "Для аккаунта BytePlus. ID его моделей начинаются с dreamina-, а каналы используют ark.ap-southeast.bytepluses.com."
   }
 }

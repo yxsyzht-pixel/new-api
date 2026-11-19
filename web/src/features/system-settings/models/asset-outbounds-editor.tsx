@@ -71,10 +71,13 @@ export function AssetOutboundsEditor(props: AssetOutboundsEditorProps) {
   )
 
   const formatLabel = (format: string) => {
-    if (format === ASSET_FORMAT_BYTEPLUS) return t('BytePlus ModelArk')
+    if (format === ASSET_FORMAT_BYTEPLUS) {
+      return t('BytePlus ModelArk (international)')
+    }
     if (format === ASSET_FORMAT_NEWAPI) return t('Another New API gateway')
-    if (!format || format === ASSET_FORMAT_VOLCENGINE)
-      return t('Volcengine Ark')
+    if (!format || format === ASSET_FORMAT_VOLCENGINE) {
+      return t('Volcengine Ark (mainland China)')
+    }
     return t('Custom format: {{id}}', { id: format })
   }
 

@@ -7992,8 +7992,8 @@
     "Custom outbound formats": "カスタムアウトバウンド形式",
     "A JSON array of request and response templates for upstreams that speak neither the vendor protocol nor this gateway’s. An outbound uses one by its id.": "ベンダーのプロトコルにもこのゲートウェイのプロトコルにも対応しないアップストリーム向けの、リクエストとレスポンスのテンプレートの JSON 配列です。アウトバウンドは id で参照します。",
     "Custom formats must be a JSON array": "カスタム形式は JSON 配列である必要があります",
-    "BytePlus ModelArk": "BytePlus ModelArk",
-    "Volcengine Ark": "Volcengine Ark",
+    "BytePlus ModelArk (international)": "BytePlus ModelArk（海外）",
+    "Volcengine Ark (mainland China)": "Volcengine Ark（中国本土）",
     "Another New API gateway": "別の New API ゲートウェイ",
     "Custom format: {{id}}": "カスタム形式：{{id}}",
     "Edit outbound": "アウトバウンドを編集",
@@ -8015,6 +8015,8 @@
     "Outbound ID is required": "アウトバウンド ID は必須です",
     "Use letters, digits, dots, dashes and underscores only": "英数字、ドット、ハイフン、アンダースコアのみ使用できます",
     "No outbound yet. Add the vendor account that holds your assets to switch the asset library on.": "アウトバウンドがまだありません。素材を保管するベンダーアカウントを追加すると、アセットライブラリが有効になります。",
-    "Every channel": "すべてのチャネル"
+    "Every channel": "すべてのチャネル",
+    "For a Volcengine account. Its model IDs start with doubao- and its channels use ark.cn-beijing.volces.com.": "Volcengine アカウント用です。モデル ID は doubao- で始まり、チャネルは ark.cn-beijing.volces.com を使います。",
+    "For a BytePlus account. Its model IDs start with dreamina- and its channels use ark.ap-southeast.bytepluses.com.": "BytePlus アカウント用です。モデル ID は dreamina- で始まり、チャネルは ark.ap-southeast.bytepluses.com を使います。"
   }
 }

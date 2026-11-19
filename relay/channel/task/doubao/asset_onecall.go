@@ -152,11 +152,11 @@ func prepareSubmitAssets(c *gin.Context, info *relaycommon.RelayInfo, raw []byte
 	if !root.IsObject() || !content.IsArray() {
 		return raw, nil
 	}
-	channelId, channelType := 0, 0
+	channelId, channelType, channelBaseURL := 0, 0, ""
 	if info.HasChannelMeta() {
-		channelId, channelType = info.ChannelId, info.ChannelType
+		channelId, channelType, channelBaseURL = info.ChannelId, info.ChannelType, info.ChannelBaseUrl
 	}
-	ob, served := cfg.OutboundForChannel(channelId)
+	ob, served := cfg.OutboundForChannel(channelId, channelBaseURL)
 	// A gateway upstream reads the marks itself when this gateway has no
 	// asset account for the channel.
 	if !served && channelType == constant.ChannelTypeNewAPI {

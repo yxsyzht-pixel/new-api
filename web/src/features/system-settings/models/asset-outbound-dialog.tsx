@@ -168,8 +168,14 @@ export function AssetOutboundDialog(props: AssetOutboundDialogProps) {
   const custom = !signed && !gateway
 
   const formatItems = [
-    { value: ASSET_FORMAT_BYTEPLUS, label: t('BytePlus ModelArk') },
-    { value: ASSET_FORMAT_VOLCENGINE, label: t('Volcengine Ark') },
+    {
+      value: ASSET_FORMAT_BYTEPLUS,
+      label: t('BytePlus ModelArk (international)'),
+    },
+    {
+      value: ASSET_FORMAT_VOLCENGINE,
+      label: t('Volcengine Ark (mainland China)'),
+    },
     { value: ASSET_FORMAT_NEWAPI, label: t('Another New API gateway') },
     ...props.customFormatIds.map((id) => ({
       value: id,
@@ -289,6 +295,20 @@ export function AssetOutboundDialog(props: AssetOutboundDialogProps) {
                     </SelectGroup>
                   </SelectContent>
                 </Select>
+                {format === ASSET_FORMAT_VOLCENGINE && (
+                  <FormDescription>
+                    {t(
+                      'For a Volcengine account. Its model IDs start with doubao- and its channels use ark.cn-beijing.volces.com.'
+                    )}
+                  </FormDescription>
+                )}
+                {format === ASSET_FORMAT_BYTEPLUS && (
+                  <FormDescription>
+                    {t(
+                      'For a BytePlus account. Its model IDs start with dreamina- and its channels use ark.ap-southeast.bytepluses.com.'
+                    )}
+                  </FormDescription>
+                )}
                 <FormMessage />
               </FormItem>
             )}

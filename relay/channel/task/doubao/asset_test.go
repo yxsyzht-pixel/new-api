@@ -606,3 +606,48 @@ func TestOneCallAutoRegistersSeedance2References(t *testing.T) {
 	assert.False(t, gjson.Get(prepared, "portrait").Exists())
 	assert.Empty(t, upstream.actions(), "a request can still say its references show nobody")
 }
+
+// Mainland China (Volcengine Ark) and the rest of the world (BytePlus
+// ModelArk) are separate accounts. With a BytePlus account configured, an
+// international channel registers its portraits there; a mainland channel is
+// refused instead of registering in an account its key cannot read.
+func TestOneCallKeepsMainlandAndInternationalAccountsApart(t *testing.T) {
+	newAssetGateway(t, func(action string, body []byte) (int, string) {
+		return http.StatusNotFound, `{"error":"unexpected"}`
+	})
+	var actions []string
+	vendor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		action := r.URL.Query().Get("Action")
+		actions = append(actions, action)
+		result := map[string]string{
+			"ListAssetGroups":  `{"Items":[]}`,
+			"CreateAssetGroup": `{"Id":"group-user-7"}`,
+			"CreateAsset":      `{"Id":"asset-1"}`,
+			"GetAsset":         `{"Id":"asset-1","Status":"Active"}`,
+		}[action]
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ResponseMetadata":{},"Result":` + result + `}`))
+	}))
+	t.Cleanup(vendor.Close)
+	system_setting.VolcAssetConfig.Outbounds = []system_setting.AssetOutbound{{
+		Id: "byteplus", Format: system_setting.AssetFormatBytePlus, BaseURL: vendor.URL, AccessKey: "ak", SecretKey: "sk",
+	}}
+	const body = `{"model":"MODEL","portrait":true,"content":[{"type":"image_url","image_url":{"url":"https://cdn.example/face.png"}}]}`
+
+	international := oneCallInfo(7)
+	international.OriginModelName = "dreamina-seedance-2-5-flash-261115"
+	international.ChannelBaseUrl = "https://ark.ap-southeast.bytepluses.com"
+	prepared, code, _ := prepareBody(t, international, strings.Replace(body, "MODEL", international.OriginModelName, 1))
+	require.Empty(t, code)
+	assert.Equal(t, "asset://asset-1", gjson.Get(prepared, "content.0.image_url.url").String())
+	assert.Equal(t, []string{"ListAssetGroups", "CreateAssetGroup", "CreateAsset", "GetAsset"}, actions)
+
+	actions = nil
+	mainland := oneCallInfo(7)
+	mainland.OriginModelName = "doubao-seedance-2-5-flash-261115"
+	mainland.ChannelBaseUrl = "https://ark.cn-beijing.volces.com"
+	_, code, status := prepareBody(t, mainland, strings.Replace(body, "MODEL", mainland.OriginModelName, 1))
+	assert.Equal(t, "asset_library_unavailable", code)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Empty(t, actions)
+}

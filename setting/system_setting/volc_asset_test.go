@@ -204,20 +204,63 @@ func TestOutboundForChannel(t *testing.T) {
 		DefaultOutbound: "shared-b",
 	}
 	for channel, want := range map[int]string{5: "bound", 6: "bound", 7: "shared-b", 9: "shared-b"} {
-		ob, ok := cfg.OutboundForChannel(channel)
+		ob, ok := cfg.OutboundForChannel(channel, "")
 		require.True(t, ok)
 		assert.Equal(t, want, ob.EffectiveId(), "channel %d", channel)
 	}
 	cfg.DefaultOutbound = "bound"
-	ob, ok := cfg.OutboundForChannel(7)
+	ob, ok := cfg.OutboundForChannel(7, "")
 	require.True(t, ok)
 	assert.Equal(t, "shared-a", ob.EffectiveId(), "a bound default serves its own channels only")
 
 	onlyBound := VolcAssetSettings{Outbounds: []AssetOutbound{usable("bound", 5)}}
-	_, ok = onlyBound.OutboundForChannel(7)
+	_, ok = onlyBound.OutboundForChannel(7, "")
 	assert.False(t, ok)
-	_, ok = (&VolcAssetSettings{}).OutboundForChannel(7)
+	_, ok = (&VolcAssetSettings{}).OutboundForChannel(7, "")
 	assert.False(t, ok)
+}
+
+// Mainland China and the rest of the world are two vendors with separate
+// accounts: Volcengine Ark and BytePlus ModelArk. With both configured, a
+// channel's address decides whose library its requests register in.
+func TestOutboundForChannelKeepsTheTwoVendorsApart(t *testing.T) {
+	const mainland, international = "https://ark.cn-beijing.volces.com", "https://ark.ap-southeast.bytepluses.com"
+	assert.Equal(t, AssetFormatVolcengine, AssetVendorOfChannel(mainland))
+	assert.Equal(t, AssetFormatVolcengine, AssetVendorOfChannel("https://ark.cn-beijing.volces.com/api/v3/"))
+	assert.Equal(t, AssetFormatBytePlus, AssetVendorOfChannel(international))
+	assert.Equal(t, "", AssetVendorOfChannel("https://proxy.example/ark"))
+	assert.Equal(t, "", AssetVendorOfChannel("https://notvolces.com"))
+	assert.Equal(t, "", AssetVendorOfChannel(""))
+
+	volc := AssetOutbound{Id: "volc", Format: AssetFormatVolcengine, AccessKey: "ak", SecretKey: "sk"}
+	byteplus := AssetOutbound{Id: "byteplus", Format: AssetFormatBytePlus, AccessKey: "ak", SecretKey: "sk"}
+	relay := AssetOutbound{Id: "relay", Format: AssetFormatNewAPI, BaseURL: "https://gateway.example/volc-asset", AccessToken: "t"}
+	pick := func(cfg VolcAssetSettings, baseURL string) string {
+		ob, ok := cfg.OutboundForChannel(1, baseURL)
+		if !ok {
+			return ""
+		}
+		return ob.EffectiveId()
+	}
+
+	both := VolcAssetSettings{Outbounds: []AssetOutbound{byteplus, volc}, DefaultOutbound: "byteplus"}
+	assert.Equal(t, "volc", pick(both, mainland), "the default outbound does not pull a mainland channel into BytePlus")
+	assert.Equal(t, "byteplus", pick(both, international))
+	assert.Equal(t, "byteplus", pick(both, "https://proxy.example/ark"), "an address of neither vendor falls back to the default")
+
+	onlyByteplus := VolcAssetSettings{Outbounds: []AssetOutbound{byteplus}}
+	assert.Equal(t, "", pick(onlyByteplus, mainland), "no library at all beats the wrong vendor's library")
+	assert.Equal(t, "byteplus", pick(onlyByteplus, international))
+
+	// An outbound that is neither vendor's direct account, such as another
+	// gateway, may front either; the vendor's own outbound still comes first.
+	withRelay := VolcAssetSettings{Outbounds: []AssetOutbound{relay, byteplus}}
+	assert.Equal(t, "relay", pick(withRelay, mainland))
+	assert.Equal(t, "byteplus", pick(withRelay, international))
+
+	// Binding a channel is the administrator's own word and overrides the address.
+	bound := VolcAssetSettings{Outbounds: []AssetOutbound{{Id: "volc", Format: AssetFormatVolcengine, AccessKey: "ak", SecretKey: "sk", ChannelIds: []int{1}}, byteplus}}
+	assert.Equal(t, "volc", pick(bound, international))
 }
 
 func TestOneCallDefaults(t *testing.T) {

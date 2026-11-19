@@ -7874,8 +7874,8 @@
     "Custom outbound formats": "Định dạng đầu ra tùy chỉnh",
     "A JSON array of request and response templates for upstreams that speak neither the vendor protocol nor this gateway’s. An outbound uses one by its id.": "Một mảng JSON gồm các mẫu yêu cầu và phản hồi cho upstream không dùng giao thức của nhà cung cấp lẫn của cổng này. Đầu ra dùng mẫu theo id.",
     "Custom formats must be a JSON array": "Định dạng tùy chỉnh phải là một mảng JSON",
-    "BytePlus ModelArk": "BytePlus ModelArk",
-    "Volcengine Ark": "Volcengine Ark",
+    "BytePlus ModelArk (international)": "BytePlus ModelArk (quốc tế)",
+    "Volcengine Ark (mainland China)": "Volcengine Ark (Trung Quốc đại lục)",
     "Another New API gateway": "Một cổng New API khác",
     "Custom format: {{id}}": "Định dạng tùy chỉnh: {{id}}",
     "Edit outbound": "Sửa đầu ra",
@@ -7897,6 +7897,8 @@
     "Outbound ID is required": "Cần nhập ID đầu ra",
     "Use letters, digits, dots, dashes and underscores only": "Chỉ dùng chữ cái, chữ số, dấu chấm, gạch ngang và gạch dưới",
     "No outbound yet. Add the vendor account that holds your assets to switch the asset library on.": "Chưa có đầu ra nào. Hãy thêm tài khoản nhà cung cấp chứa tài nguyên của bạn để bật thư viện tài nguyên.",
-    "Every channel": "Mọi kênh"
+    "Every channel": "Mọi kênh",
+    "For a Volcengine account. Its model IDs start with doubao- and its channels use ark.cn-beijing.volces.com.": "Dành cho tài khoản Volcengine. ID mô hình bắt đầu bằng doubao- và các kênh dùng ark.cn-beijing.volces.com.",
+    "For a BytePlus account. Its model IDs start with dreamina- and its channels use ark.ap-southeast.bytepluses.com.": "Dành cho tài khoản BytePlus. ID mô hình bắt đầu bằng dreamina- và các kênh dùng ark.ap-southeast.bytepluses.com."
   }
 }
