@@ -4,7 +4,8 @@
 // it accepts reference video input (Seedance 2.x prices video-to-video tokens
 // separately) and whether audio output is priced separately (Seedance 1.5 pro;
 // generate_audio defaults to true). Seedance 1.0 lite is no longer listed and
-// keeps the 1.0 pro tiers. BytePlus ModelArk serves Seedance 2.5 under its
+// keeps the 1.0 pro tiers. Volcengine Ark (mainland China) names the models
+// doubao-; BytePlus ModelArk (international) serves Seedance 2.5 under its
 // dreamina- model IDs with the same wire format.
 const VIDEO_MODELS = {
   "doubao-seedance-1-0-pro-250528": { resolutions: ["480p", "720p", "1080p"], maxDuration: 12 },
@@ -15,6 +16,7 @@ const VIDEO_MODELS = {
   "doubao-seedance-2-0-fast-260128": { resolutions: ["480p", "720p"], maxDuration: 15, videoInput: true },
   "doubao-seedance-2-0-mini-260615": { resolutions: ["480p", "720p"], maxDuration: 15, videoInput: true },
   "doubao-seedance-2-5-260628": { resolutions: ["480p", "720p", "1080p", "4k"], maxDuration: 30, videoInput: true },
+  "doubao-seedance-2-5-flash-261115": { resolutions: ["480p", "720p"], maxDuration: 30, videoInput: true },
   "dreamina-seedance-2-5-260628": { resolutions: ["480p", "720p", "1080p", "4k"], maxDuration: 30, videoInput: true },
   "dreamina-seedance-2-5-flash-261115": { resolutions: ["480p", "720p"], maxDuration: 30, videoInput: true },
 };
@@ -328,7 +330,7 @@ export const meta = {
     en: "Volcengine Doubao Seedance video generation and Seedream image generation",
     zh: "火山引擎豆包 Seedance 视频生成与 Seedream 图片生成",
   },
-  version: "1.6.0",
+  version: "1.7.0",
   author: { name: "QuantumNous" },
   channelTypes: [54, 45], // VolcEngine-type channels serve Ark video models with the same wire format
   models: Object.keys(VIDEO_MODELS).concat(Object.keys(IMAGE_MODELS)),
@@ -474,6 +476,7 @@ function videoInputRatio(model, resolution, content) {
     if (res === "4k") return video ? 19 / 70 : 31 / 70;
     return video ? 42 / 70 : 1;
   }
+  if (model === "doubao-seedance-2-5-flash-261115") return video ? 28 / 46 : 1;
   // BytePlus ModelArk token prices relative to the 480p/720p price without video input.
   if (model === "dreamina-seedance-2-5-260628") {
     if (res === "1080p") return video ? 7.0 / 10.7 : 11.7 / 10.7;
