@@ -40,10 +40,19 @@ import (
 
 const (
 	dataURLScheme = "data:"
-	// A file uploaded once is not uploaded again while the process remembers it.
+	// A file uploaded once is not uploaded again while the process remembers
+	// it: without looking for uploadedMediaTrust, and after a look at the
+	// storage for the rest of uploadedMediaMemory, since a file can be deleted
+	// there (by hand, or by a lifecycle rule) while the process still runs.
+	uploadedMediaTrust  = 10 * time.Minute
 	uploadedMediaMemory = 12 * time.Hour
 	qiniuTokenLifetime  = time.Hour
 	qiniuHostLifetime   = time.Hour
+	// mediaUploadConcurrency is how many files of one request are uploaded
+	// at the same time.
+	mediaUploadConcurrency = 4
+	mediaUploadTimeout     = 5 * time.Minute
+	mediaLookupTimeout     = 10 * time.Second
 )
 
 // qiniuRegionQueryURL answers which upload address serves a bucket.
@@ -66,11 +75,10 @@ type inlineMedia struct {
 
 // parseDataURL reads a base64 data: URL of an image, a video or a sound.
 func parseDataURL(raw string, maxBytes int64) (*inlineMedia, error) {
-	body, found := strings.CutPrefix(raw, dataURLScheme)
-	if !found {
+	if !isDataURL(raw) {
 		return nil, errors.New("not a data URL")
 	}
-	header, payload, found := strings.Cut(body, ",")
+	header, payload, found := strings.Cut(raw[len(dataURLScheme):], ",")
 	if !found {
 		return nil, errors.New("the data URL has no content")
 	}
@@ -107,6 +115,12 @@ func parseDataURL(raw string, maxBytes int64) (*inlineMedia, error) {
 	return &inlineMedia{data: data, mimeType: mimeType}, nil
 }
 
+// isDataURL reports whether a reference carries its file inline; the scheme
+// is matched in any case.
+func isDataURL(raw string) bool {
+	return len(raw) >= len(dataURLScheme) && strings.EqualFold(raw[:len(dataURLScheme)], dataURLScheme)
+}
+
 // mediaObjectKey names a file by its content, so the same file always lands
 // at the same address and is recognised as the same reference.
 func mediaObjectKey(prefix string, media *inlineMedia) string {
@@ -122,6 +136,9 @@ type uploadedMedia struct {
 var (
 	uploadedMediaMu sync.Mutex
 	uploadedMediaAt = map[string]uploadedMedia{}
+	// uploadedMediaSweepAt is the size at which forgotten uploads are swept
+	// out of the memory; it moves up when the live ones alone reach it.
+	uploadedMediaSweepAt = 1024
 
 	qiniuHostMu sync.Mutex
 	qiniuHosts  = map[string]qiniuHost{}
@@ -139,36 +156,80 @@ func mediaHTTPClient() *http.Client {
 	return http.DefaultClient
 }
 
-// storeInlineMedia uploads a file unless this process already did, and
+// storeInlineMedia uploads a file unless the storage already holds it, and
 // returns the address it is stored at (without any signature) and the URL to
 // hand to the vendor.
 func storeInlineMedia(ctx context.Context, storage system_setting.AssetMediaStorage, media *inlineMedia) (address, fetchURL string, err error) {
 	key := mediaObjectKey(storage.KeyPrefix(), media)
 	memory := storage.Provider + "\n" + storage.Bucket + "\n" + key
+	address = storage.BaseURL() + "/" + key
+	fetchURL = address
+	if storage.Private {
+		fetchURL = qiniuSignedURL(storage, address, time.Now())
+	}
 
 	uploadedMediaMu.Lock()
 	previous, known := uploadedMediaAt[memory]
 	uploadedMediaMu.Unlock()
-	if !known || time.Since(previous.at) > uploadedMediaMemory {
+	stored := false
+	if known {
+		switch age := time.Since(previous.at); {
+		case age <= uploadedMediaTrust:
+			stored = true
+		case age <= uploadedMediaMemory:
+			stored = mediaStillStored(ctx, fetchURL)
+		}
+	}
+	if !stored {
+		uploadCtx, cancel := context.WithTimeout(ctx, mediaUploadTimeout)
+		defer cancel()
 		switch storage.Provider {
 		case system_setting.MediaStorageQiniu:
-			err = qiniuUpload(ctx, storage, key, media)
+			err = qiniuUpload(uploadCtx, storage, key, media)
 		default:
 			err = fmt.Errorf("media storage provider %q is not supported", storage.Provider)
 		}
 		if err != nil {
 			return "", "", err
 		}
-		uploadedMediaMu.Lock()
-		uploadedMediaAt[memory] = uploadedMedia{at: time.Now()}
-		uploadedMediaMu.Unlock()
 	}
-	address = storage.BaseURL() + "/" + key
-	fetchURL = address
-	if storage.Private {
-		fetchURL = qiniuSignedURL(storage, address, time.Now())
-	}
+	rememberUploadedMedia(memory)
 	return address, fetchURL, nil
+}
+
+// mediaStillStored looks whether a file uploaded a while ago is still served.
+// Anything but a plain yes uploads the file again, which is always safe.
+func mediaStillStored(ctx context.Context, fetchURL string) bool {
+	ctx, cancel := context.WithTimeout(ctx, mediaLookupTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, fetchURL, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := mediaHTTPClient().Do(req)
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+// rememberUploadedMedia notes that the storage holds a file now, and sweeps
+// out the uploads too old to be remembered once the memory has grown.
+func rememberUploadedMedia(memory string) {
+	now := time.Now()
+	uploadedMediaMu.Lock()
+	defer uploadedMediaMu.Unlock()
+	uploadedMediaAt[memory] = uploadedMedia{at: now}
+	if len(uploadedMediaAt) < uploadedMediaSweepAt {
+		return
+	}
+	for name, upload := range uploadedMediaAt {
+		if now.Sub(upload.at) > uploadedMediaMemory {
+			delete(uploadedMediaAt, name)
+		}
+	}
+	uploadedMediaSweepAt = max(1024, 2*len(uploadedMediaAt))
 }
 
 func qiniuSign(secretKey string, data []byte) string {
@@ -254,8 +315,10 @@ func qiniuUpload(ctx context.Context, storage system_setting.AssetMediaStorage, 
 	if err != nil {
 		return err
 	}
-	var form bytes.Buffer
-	writer := multipart.NewWriter(&form)
+	// The form is its head, the file as it is, and its tail: the file is
+	// not copied into the form.
+	var head bytes.Buffer
+	writer := multipart.NewWriter(&head)
 	if err = writer.WriteField("token", token); err != nil {
 		return err
 	}
@@ -265,20 +328,19 @@ func qiniuUpload(ctx context.Context, storage system_setting.AssetMediaStorage, 
 	header := textproto.MIMEHeader{}
 	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, key[strings.LastIndex(key, "/")+1:]))
 	header.Set("Content-Type", media.mimeType)
-	part, err := writer.CreatePart(header)
+	if _, err = writer.CreatePart(header); err != nil {
+		return err
+	}
+	tail := "\r\n--" + writer.Boundary() + "--\r\n"
+	form := func() io.Reader {
+		return io.MultiReader(bytes.NewReader(head.Bytes()), bytes.NewReader(media.data), strings.NewReader(tail))
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, address, form())
 	if err != nil {
 		return err
 	}
-	if _, err = part.Write(media.data); err != nil {
-		return err
-	}
-	if err = writer.Close(); err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, address, &form)
-	if err != nil {
-		return err
-	}
+	req.ContentLength = int64(head.Len() + len(media.data) + len(tail))
+	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(form()), nil }
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	resp, err := mediaHTTPClient().Do(req)
 	if err != nil {
@@ -292,17 +354,31 @@ func qiniuUpload(ctx context.Context, storage system_setting.AssetMediaStorage, 
 	return nil
 }
 
+// inlineReference is one inline file of a submit body.
+type inlineReference struct {
+	index int
+	path  string
+	media *inlineMedia
+	key   string
+}
+
+// storedMedia is where one file ended up.
+type storedMedia struct {
+	address, fetchURL string
+	err               error
+}
+
 // uploadInlineReferences moves every inline file of a submit body to the
 // media storage and returns the body that references the files by URL,
 // together with the stable address of each rewritten reference, by its path.
+// The files are uploaded side by side, and a file the body carries twice is
+// uploaded once.
 func uploadInlineReferences(c *gin.Context, storage system_setting.AssetMediaStorage, raw []byte) ([]byte, map[string]string, *dto.TaskError) {
 	content := gjson.GetBytes(raw, "content")
 	if !content.IsArray() {
 		return raw, nil, nil
 	}
-	prepared := raw
-	addresses := map[string]string{}
-	uploaded := 0
+	var references []inlineReference
 	for index, item := range content.Array() {
 		if !item.IsObject() {
 			continue
@@ -312,27 +388,60 @@ func uploadInlineReferences(c *gin.Context, storage system_setting.AssetMediaSto
 			continue
 		}
 		mediaURL := strings.TrimSpace(item.Get(field + ".url").String())
-		if len(mediaURL) < len(dataURLScheme) || !strings.EqualFold(mediaURL[:len(dataURLScheme)], dataURLScheme) {
+		if !isDataURL(mediaURL) {
 			continue
 		}
-		media, err := parseDataURL(dataURLScheme+mediaURL[len(dataURLScheme):], storage.MaxFileBytes())
+		media, err := parseDataURL(mediaURL, storage.MaxFileBytes())
 		if err != nil {
 			return nil, nil, oneCallError(http.StatusBadRequest, "invalid_inline_media", "content[%d]: %s", index, err.Error())
 		}
-		address, fetchURL, err := storeInlineMedia(c.Request.Context(), storage, media)
-		if err != nil {
-			return nil, nil, oneCallError(http.StatusBadGateway, "media_storage_failed", "content[%d] could not be stored: %v", index, err)
+		references = append(references, inlineReference{
+			index: index, path: fmt.Sprintf("content.%d.%s.url", index, field),
+			media: media, key: mediaObjectKey(storage.KeyPrefix(), media),
+		})
+	}
+	if len(references) == 0 {
+		return raw, nil, nil
+	}
+
+	stored := make(map[string]*storedMedia, len(references))
+	var uploads sync.WaitGroup
+	slots := make(chan struct{}, mediaUploadConcurrency)
+	for _, reference := range references {
+		if _, seen := stored[reference.key]; seen {
+			continue
 		}
-		path := fmt.Sprintf("content.%d.%s.url", index, field)
-		prepared, err = sjson.SetBytes(prepared, path, fetchURL)
+		result := &storedMedia{}
+		stored[reference.key] = result
+		uploads.Add(1)
+		go func(media *inlineMedia) {
+			defer uploads.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					result.err = fmt.Errorf("the upload panicked: %v", r)
+				}
+			}()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			result.address, result.fetchURL, result.err = storeInlineMedia(c.Request.Context(), storage, media)
+		}(reference.media)
+	}
+	uploads.Wait()
+
+	prepared := raw
+	addresses := make(map[string]string, len(references))
+	for _, reference := range references {
+		result := stored[reference.key]
+		if result.err != nil {
+			return nil, nil, oneCallError(http.StatusBadGateway, "media_storage_failed", "content[%d] could not be stored: %v", reference.index, result.err)
+		}
+		var err error
+		prepared, err = sjson.SetBytes(prepared, reference.path, result.fetchURL)
 		if err != nil {
 			return nil, nil, service.TaskErrorWrapperLocal(err, "build_request_failed", http.StatusInternalServerError)
 		}
-		addresses[path] = address
-		uploaded++
+		addresses[reference.path] = result.address
 	}
-	if uploaded > 0 {
-		logger.LogInfo(c, fmt.Sprintf("inline media stored: provider=%s files=%d", storage.Provider, uploaded))
-	}
+	logger.LogInfo(c, fmt.Sprintf("inline media stored: provider=%s references=%d files=%d", storage.Provider, len(references), len(stored)))
 	return prepared, addresses, nil
 }

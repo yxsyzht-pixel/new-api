@@ -128,10 +128,14 @@ func ReleaseVolcAssetUpload(id int) error {
 }
 
 // ListVolcAssetUploads returns the registrations a cleanup pass looks at,
-// oldest first.
-func ListVolcAssetUploads(limit int) ([]VolcAssetUpload, error) {
+// oldest first: all of them, or only those released for deletion.
+func ListVolcAssetUploads(releasedOnly bool, limit int) ([]VolcAssetUpload, error) {
 	var rows []VolcAssetUpload
-	err := DB.Order("id asc").Limit(limit).Find(&rows).Error
+	query := DB.Order("id asc").Limit(limit)
+	if releasedOnly {
+		query = query.Where("released_at > 0")
+	}
+	err := query.Find(&rows).Error
 	return rows, err
 }
 
@@ -178,6 +182,26 @@ func ListVolcAssetUses(limit int) ([]VolcAssetUse, error) {
 	var rows []VolcAssetUse
 	err := DB.Order("id asc").Limit(limit).Find(&rows).Error
 	return rows, err
+}
+
+// VolcAssetRef names one asset of one outbound.
+type VolcAssetRef struct {
+	OutboundId string
+	AssetId    string
+}
+
+// VolcAssetsInUse returns the assets some task still references, in one
+// query, so that a cleanup pass does not ask about each asset in turn.
+func VolcAssetsInUse() (map[VolcAssetRef]bool, error) {
+	var rows []VolcAssetUse
+	if err := DB.Model(&VolcAssetUse{}).Distinct("outbound_id", "asset_id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	inUse := make(map[VolcAssetRef]bool, len(rows))
+	for _, row := range rows {
+		inUse[VolcAssetRef{OutboundId: row.OutboundId, AssetId: row.AssetId}] = true
+	}
+	return inUse, nil
 }
 
 // CountVolcAssetUses returns how many tasks still reference an asset.

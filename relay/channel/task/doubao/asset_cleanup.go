@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -28,7 +29,51 @@ var (
 	assetUseSubmitMargin = 5 * time.Minute
 	assetCleanupBatch    = 5000
 	assetCleanupTimeout  = 60 * time.Second
+	// A deletion the vendor keeps refusing is tried again after a growing
+	// pause, not on every pass.
+	assetDeleteRetryMin = 30 * time.Second
+	assetDeleteRetryMax = 10 * time.Minute
 )
+
+// assetDeleteRetry remembers, per registration, when a failed deletion may
+// be tried again.
+type assetDeleteRetry struct {
+	next  time.Time
+	pause time.Duration
+}
+
+var (
+	assetDeleteRetriesMu sync.Mutex
+	assetDeleteRetries   = map[int]assetDeleteRetry{}
+)
+
+// deletionDue reports whether a registration's deletion may be tried now.
+func deletionDue(uploadId int) bool {
+	assetDeleteRetriesMu.Lock()
+	defer assetDeleteRetriesMu.Unlock()
+	retry, failedBefore := assetDeleteRetries[uploadId]
+	return !failedBefore || !time.Now().Before(retry.next)
+}
+
+// deletionFailed pushes the next try of a registration's deletion back.
+func deletionFailed(uploadId int) {
+	assetDeleteRetriesMu.Lock()
+	defer assetDeleteRetriesMu.Unlock()
+	pause := min(max(2*assetDeleteRetries[uploadId].pause, assetDeleteRetryMin), assetDeleteRetryMax)
+	assetDeleteRetries[uploadId] = assetDeleteRetry{next: time.Now().Add(pause), pause: pause}
+}
+
+// forgetDeletionRetries keeps the retry notes of the registrations that
+// still exist.
+func forgetDeletionRetries(existing map[int]bool) {
+	assetDeleteRetriesMu.Lock()
+	defer assetDeleteRetriesMu.Unlock()
+	for uploadId := range assetDeleteRetries {
+		if !existing[uploadId] {
+			delete(assetDeleteRetries, uploadId)
+		}
+	}
+}
 
 // StartAssetCleanup runs the cleanup until the process ends.
 func StartAssetCleanup() {
@@ -54,19 +99,40 @@ func CleanUpAssets(ctx context.Context) int {
 	cfg := &system_setting.VolcAssetConfig
 	releaseFinishedUses(cfg)
 
-	uploads, err := model.ListVolcAssetUploads(assetCleanupBatch)
+	// While assets are kept there is nothing to delete at the vendor; only
+	// the registrations released for good are looked at, to be forgotten.
+	uploads, err := model.ListVolcAssetUploads(!cfg.OneCall.DeleteAfterUse, assetCleanupBatch)
 	if err != nil {
 		common.SysError("failed to list volc asset uploads: " + err.Error())
 		return 0
 	}
+	if len(uploads) == 0 {
+		forgetDeletionRetries(nil)
+		return 0
+	}
+	// One query says which assets are in use; only the others are looked at
+	// one by one, and those are few.
+	inUse, err := model.VolcAssetsInUse()
+	if err != nil {
+		common.SysError("failed to read volc asset uses: " + err.Error())
+		return 0
+	}
 	deleted := 0
+	existing := make(map[int]bool, len(uploads))
 	for _, upload := range uploads {
+		existing[upload.Id] = true
 		if ctx.Err() != nil {
 			break
+		}
+		if inUse[model.VolcAssetRef{OutboundId: upload.OutboundId, AssetId: upload.AssetId}] || !deletionDue(upload.Id) {
+			continue
 		}
 		if deleteUnusedAsset(ctx, cfg, upload) {
 			deleted++
 		}
+	}
+	if len(uploads) < assetCleanupBatch && ctx.Err() == nil {
+		forgetDeletionRetries(existing)
 	}
 	return deleted
 }
@@ -157,16 +223,21 @@ func deleteUnusedAsset(ctx context.Context, cfg *system_setting.VolcAssetSetting
 	}
 	_, apiErr, _, callErr := callAssetAPI(ctx, ob, "DeleteAsset", body)
 	if callErr != nil {
+		deletionFailed(upload.Id)
 		common.SysError(fmt.Sprintf("volc asset cleanup: deleting %s on %s failed: %v", upload.AssetId, upload.OutboundId, callErr))
 		return false
 	}
 	if apiErr != nil && !assetAlreadyGone(apiErr) {
+		deletionFailed(upload.Id)
 		common.SysError(fmt.Sprintf("volc asset cleanup: deleting %s on %s was refused: %s %s", upload.AssetId, upload.OutboundId, apiErr.Code, apiErr.Message))
 		return false
 	}
 	if err := model.DeleteVolcAssetUpload(upload.Id); err != nil {
 		common.SysError("failed to forget volc asset upload: " + err.Error())
 	}
+	assetDeleteRetriesMu.Lock()
+	delete(assetDeleteRetries, upload.Id)
+	assetDeleteRetriesMu.Unlock()
 	gate.changed()
 	common.SysLog(fmt.Sprintf("volc asset cleanup: deleted %s on %s", upload.AssetId, upload.OutboundId))
 	return apiErr == nil

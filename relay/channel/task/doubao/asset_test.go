@@ -124,10 +124,14 @@ func resetAssetState() {
 	})
 	uploadedMediaMu.Lock()
 	uploadedMediaAt = map[string]uploadedMedia{}
+	uploadedMediaSweepAt = 1024
 	uploadedMediaMu.Unlock()
 	qiniuHostMu.Lock()
 	qiniuHosts = map[string]qiniuHost{}
 	qiniuHostMu.Unlock()
+	assetDeleteRetriesMu.Lock()
+	assetDeleteRetries = map[int]assetDeleteRetry{}
+	assetDeleteRetriesMu.Unlock()
 }
 
 // assetRequest runs one asset gateway handler as a user.

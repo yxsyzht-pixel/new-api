@@ -28,6 +28,9 @@ var (
 	assetCountLifetime = 5 * time.Second
 	// assetUploadWindow is the span the upload rate is counted over.
 	assetUploadWindow = time.Minute
+	// assetUnlistedWarnEvery spaces the warnings about a library the vendor
+	// will not list.
+	assetUnlistedWarnEvery = 10 * time.Minute
 )
 
 // assetGroupTypes are the kinds of asset group whose assets fill the library.
@@ -46,6 +49,9 @@ type assetGate struct {
 	count      int64
 	countAt    time.Time
 	countKnown bool
+	// unlistedWarnedAt is when the log last said the vendor would not list
+	// the library.
+	unlistedWarnedAt time.Time
 
 	// bookkeeping serialises handing an existing asset to a request against
 	// deciding that nobody uses it any more.
@@ -78,8 +84,11 @@ func (g *assetGate) changed() {
 	g.signal()
 }
 
-// libraryCount is how many assets the library of an outbound holds: what the
-// vendor reports, and never fewer than the gateway registered itself.
+// libraryCount is how many assets the library of an outbound holds. The
+// vendor's own count is the answer: it also covers what users registered
+// themselves. The gateway's records stand in when the vendor cannot be
+// asked, and while the gateway deletes what it registers they are exact, so
+// then they also cover a vendor list that trails a registration by a moment.
 func (g *assetGate) libraryCount(ctx context.Context, ob system_setting.AssetOutbound) int64 {
 	g.mu.Lock()
 	if g.countKnown && time.Since(g.countAt) < assetCountLifetime {
@@ -93,36 +102,94 @@ func (g *assetGate) libraryCount(ctx context.Context, ob system_setting.AssetOut
 	if err != nil {
 		common.SysError("failed to count volc asset uploads: " + err.Error())
 	}
-	count := tracked
-	// The vendor's own count also covers assets users registered themselves.
-	// A kind of group the vendor will not list is left out; when nothing can
-	// be listed the gateway's own count stands.
-	var reported int64
-	for _, groupType := range assetGroupTypes {
-		body, err := common.Marshal(ListAssetsRequest{
-			Filter: &AssetFilter{GroupType: groupType}, PageNumber: 1, PageSize: 1, ProjectName: ob.ProjectName,
-		})
-		if err != nil {
-			continue
-		}
-		result, apiErr, _, callErr := callAssetAPI(ctx, ob, "ListAssets", body)
-		if callErr != nil || apiErr != nil {
-			continue
-		}
-		var page ListAssetsResponse
-		if err := common.Unmarshal(result, &page); err != nil {
-			continue
-		}
-		reported += page.TotalCount
+	count, listed, reason := vendorAssetCount(ctx, ob)
+	if !listed && ctx.Err() != nil {
+		// The request went away while the vendor was asked: that says
+		// nothing about the library, so nothing is remembered.
+		return tracked
 	}
-	if reported > count {
-		count = reported
+	switch {
+	case !listed:
+		count = tracked
+		g.warnUnlisted(ob, reason)
+	case system_setting.VolcAssetConfig.OneCall.DeleteAfterUse && tracked > count:
+		count = tracked
 	}
 
 	g.mu.Lock()
 	g.count, g.countAt, g.countKnown = count, time.Now(), true
 	g.mu.Unlock()
 	return count
+}
+
+// vendorAssetCount asks the vendor how many assets the library holds, one
+// kind of asset group beside the other. A kind the vendor will not list is
+// left out; listed is false when none could be listed, with the reason.
+func vendorAssetCount(ctx context.Context, ob system_setting.AssetOutbound) (count int64, listed bool, reason string) {
+	type answer struct {
+		total  int64
+		reason string
+		ok     bool
+	}
+	answers := make([]answer, len(assetGroupTypes))
+	var calls sync.WaitGroup
+	for index, groupType := range assetGroupTypes {
+		calls.Add(1)
+		go func(index int, groupType string) {
+			defer calls.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					answers[index] = answer{reason: fmt.Sprintf("panic: %v", r)}
+				}
+			}()
+			body, err := common.Marshal(ListAssetsRequest{
+				Filter: &AssetFilter{GroupType: groupType}, PageNumber: 1, PageSize: 1, ProjectName: ob.ProjectName,
+			})
+			if err != nil {
+				answers[index] = answer{reason: err.Error()}
+				return
+			}
+			result, apiErr, _, callErr := callAssetAPI(ctx, ob, "ListAssets", body)
+			if callErr != nil {
+				answers[index] = answer{reason: callErr.Error()}
+				return
+			}
+			if apiErr != nil {
+				answers[index] = answer{reason: apiErr.Code + " " + apiErr.Message}
+				return
+			}
+			var page ListAssetsResponse
+			if err := common.Unmarshal(result, &page); err != nil {
+				answers[index] = answer{reason: err.Error()}
+				return
+			}
+			answers[index] = answer{total: page.TotalCount, ok: true}
+		}(index, groupType)
+	}
+	calls.Wait()
+	for _, each := range answers {
+		if each.ok {
+			count += each.total
+			listed = true
+		} else if reason == "" {
+			reason = each.reason
+		}
+	}
+	return count, listed, reason
+}
+
+// warnUnlisted says, now and then, that the library's size is only what the
+// gateway registered itself.
+func (g *assetGate) warnUnlisted(ob system_setting.AssetOutbound, reason string) {
+	g.mu.Lock()
+	due := time.Since(g.unlistedWarnedAt) > assetUnlistedWarnEvery
+	if due {
+		g.unlistedWarnedAt = time.Now()
+	}
+	g.mu.Unlock()
+	if due {
+		common.SysError(fmt.Sprintf("volc asset gate: the library of %s cannot be listed (%s); counting only the assets the gateway registered", ob.EffectiveId(), truncate(reason, 200)))
+	}
 }
 
 // acquire waits in line until the library has room for need more assets and

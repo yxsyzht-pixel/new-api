@@ -198,12 +198,17 @@ func TestInlineFilesAreStoredAndSentAsURLs(t *testing.T) {
 	require.Empty(t, code)
 	assert.JSONEq(t, expected, prepared)
 
+	// The files are uploaded side by side, in no particular order.
 	objects := storage.uploads()
 	require.Len(t, objects, 2)
+	if objects[0].Key != objectKey(face, "png") {
+		objects[0], objects[1] = objects[1], objects[0]
+	}
 	assert.Equal(t, objectKey(face, "png"), objects[0].Key)
 	assert.Equal(t, "image/png", objects[0].ContentType)
 	assert.Equal(t, face, objects[0].Data)
 	assert.Equal(t, objectKey(street, "jpg"), objects[1].Key)
+	assert.Equal(t, street, objects[1].Data)
 	// The upload token is the access key, the policy's signature and the
 	// policy, which allows exactly this object.
 	token := strings.Split(objects[0].Token, ":")
@@ -347,7 +352,7 @@ func TestRegisteredAssetsAreDeletedOnceTheirTasksFinish(t *testing.T) {
 	assert.Equal(t, 1, CleanUpAssets(ctx))
 	assert.Zero(t, library.size())
 	assert.Equal(t, []string{"asset-1"}, library.deleted)
-	uploads, err := model.ListVolcAssetUploads(10)
+	uploads, err := model.ListVolcAssetUploads(false, 10)
 	require.NoError(t, err)
 	assert.Empty(t, uploads)
 	uses, err := model.ListVolcAssetUses(10)
@@ -419,7 +424,7 @@ func TestCleanupForgetsAnAssetTheVendorNoLongerHas(t *testing.T) {
 	library.mu.Unlock()
 
 	assert.Zero(t, CleanUpAssets(context.Background()), "nothing was left to delete")
-	uploads, err := model.ListVolcAssetUploads(10)
+	uploads, err := model.ListVolcAssetUploads(false, 10)
 	require.NoError(t, err)
 	assert.Empty(t, uploads)
 }
