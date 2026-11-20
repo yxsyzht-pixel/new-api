@@ -1,6 +1,7 @@
 package model
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -168,4 +169,54 @@ func TestTheCountAppliesTheSameConstraintsAsSelection(t *testing.T) {
 	}}
 	assert.Equal(t, 2, CountSelectableChannels("default", "m", filters),
 		"the task-plugin channel cannot serve this request and must not be counted")
+}
+
+func channelIDs(channels []*Channel) []int {
+	ids := make([]int, 0, len(channels))
+	for _, channel := range channels {
+		ids = append(ids, channel.Id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// The list is what the count counts, so that a caller walking the candidates
+// sees the channels selection could hand out and no others.
+func TestSelectableChannelsAreTheOnesCounted(t *testing.T) {
+	candidateFixture(t)
+	require.True(t, MarkChannelQuotaExhausted(3, "", "spent"))
+	require.NoError(t, DB.Model(&Ability{}).Where("channel_id = ?", 4).Update("enabled", false).Error)
+
+	assert.Equal(t, []int{2}, channelIDs(SelectableChannels("default", "kimi-k3", nil)))
+	assert.Equal(t, []int{9}, channelIDs(SelectableChannels("vip", "kimi-k3", nil)))
+	assert.Empty(t, SelectableChannels("default", "not-served", nil))
+	assert.Len(t, SelectableChannels("default", "kimi-k3", nil), CountSelectableChannels("default", "kimi-k3", nil))
+
+	// A key limited to chosen channels draws from them in any group.
+	keyChannels := []dto.ChannelFilter{{Kind: dto.FilterKeyChannels, ChannelIDs: []int{2, 9}}}
+	assert.Equal(t, []int{2, 9}, channelIDs(SelectableChannels(AllGroups, "kimi-k3", keyChannels)))
+}
+
+// With the memory cache the list comes from the same candidates selection
+// draws from, parked channels left out.
+func TestSelectableChannelsFromTheMemoryCache(t *testing.T) {
+	previousCache := common.MemoryCacheEnabled
+	previousIDM, previousMap := channelsIDM, group2model2channels
+	common.MemoryCacheEnabled = true
+	channelsIDM = map[int]*Channel{
+		11: {Id: 11, Status: common.ChannelStatusEnabled},
+		12: {Id: 12, Status: common.ChannelStatusQuotaExhausted},
+		13: {Id: 13, Status: common.ChannelStatusEnabled},
+	}
+	group2model2channels = map[string]map[string][]int{
+		"default": {"kimi-k3": {11, 12, 13}},
+	}
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = previousCache
+		channelsIDM, group2model2channels = previousIDM, previousMap
+	})
+
+	assert.Equal(t, []int{11, 13}, channelIDs(SelectableChannels("default", "kimi-k3", nil)))
+	assert.Len(t, SelectableChannels("default", "kimi-k3", nil), CountSelectableChannels("default", "kimi-k3", nil))
+	assert.Empty(t, SelectableChannels("vip", "kimi-k3", nil))
 }

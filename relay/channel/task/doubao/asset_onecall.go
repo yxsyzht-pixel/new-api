@@ -262,8 +262,12 @@ func prepareSubmitAssets(c *gin.Context, info *relaycommon.RelayInfo, raw []byte
 	}
 	livenessGroups := loadLivenessGroups(c, userId, ob.EffectiveId())
 	virtualGroup := ""
+	// A verified person's group exists in one account only: a request that
+	// names one cannot be served by another account.
+	tiedToAccount := false
 	for i := range references {
 		if references[i].group != "" {
+			tiedToAccount = true
 			if !slices.Contains(livenessGroups, references[i].group) {
 				return nil, oneCallError(http.StatusBadRequest, "portrait_group_not_found",
 					"content[%d]: %q is not the asset group of a person you verified", references[i].index, references[i].group)
@@ -322,6 +326,16 @@ func prepareSubmitAssets(c *gin.Context, info *relaycommon.RelayInfo, raw []byte
 		if oneCall.MaxAssets > 0 && len(fresh) > oneCall.MaxAssets {
 			return nil, oneCallError(http.StatusBadRequest, "asset_request_too_large",
 				"the request needs %d new assets and the asset library holds %d at most", len(fresh), oneCall.MaxAssets)
+		}
+		// Another account that can take the request right away is better
+		// than waiting in line for this one.
+		if !tiedToAccount {
+			if next := accountWithRoom(c, info, cfg, ob, gate, channelId, len(fresh), len(assets)); next != nil {
+				ProposeAccountMove(c, next)
+				logger.LogInfo(c, fmt.Sprintf("volc asset one-call: outbound=%s has no room for %d assets right now, moving to channel #%d", ob.EffectiveId(), len(fresh), next.Id))
+				return nil, oneCallError(http.StatusTooManyRequests, assetAccountBusyCode,
+					"the asset library of this account has no room right now; the request runs on another account")
+			}
 		}
 		deadline := time.Now().Add(oneCall.QueueWait())
 		queuedAt := time.Now()

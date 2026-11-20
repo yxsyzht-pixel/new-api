@@ -1,8 +1,11 @@
 package model
 
 import (
+	"slices"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 // unknownCandidateCount is what a failed count answers. It is not zero: zero
@@ -71,4 +74,51 @@ func countSelectableFromDB(group string, modelName string, filters []dto.Channel
 	// which overcounts rather than undercounts — the safe direction, since an
 	// overlarge budget is spent by selection running out of channels.
 	return len(dropParkedChannels(channelIDs, parkedChannelIDs()))
+}
+
+// SelectableChannels lists the channels CountSelectableChannels counts: the
+// ones selection could hand a request for this model in this group right now.
+// It serves a caller that has to look at each of them, such as moving a
+// request to the account whose asset library has room. The channels of the
+// memory cache are shared; treat them as read-only.
+func SelectableChannels(group string, modelName string, filters []dto.ChannelFilter) []*Channel {
+	if common.MemoryCacheEnabled {
+		channelSyncLock.RLock()
+		defer channelSyncLock.RUnlock()
+		ids := candidateChannelIDsLocked(group, modelName, filters)
+		channels := make([]*Channel, 0, len(ids))
+		for _, id := range ids {
+			if channel, ok := channelsIDM[id]; ok && channel != nil && !IsChannelParked(channel.Status) {
+				channels = append(channels, channel)
+			}
+		}
+		return channels
+	}
+	// The same steps as GetChannel, the selection path without the cache.
+	abilities, err := enabledAbilities(group, modelName, filters)
+	if err != nil {
+		return nil
+	}
+	abilities = filterAbilitiesByConstraints(abilities, modelName, filters)
+	if normalized := ratio_setting.RoutingMatchModelName(modelName); len(abilities) == 0 && normalized != "" && normalized != modelName {
+		if abilities, err = enabledAbilities(group, normalized, filters); err != nil {
+			return nil
+		}
+		abilities = filterAbilitiesByConstraints(abilities, modelName, filters)
+	}
+	parked := parkedChannelIDs()
+	ids := make([]int, 0, len(abilities))
+	for _, ability := range abilities {
+		if !parked[ability.ChannelId] && !slices.Contains(ids, ability.ChannelId) {
+			ids = append(ids, ability.ChannelId)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	var channels []*Channel
+	if err := DB.Where("id IN ?", ids).Find(&channels).Error; err != nil {
+		return nil
+	}
+	return channels
 }

@@ -19,6 +19,7 @@ import (
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
 	"github.com/QuantumNous/new-api/relay"
+	"github.com/QuantumNous/new-api/relay/channel/task/doubao"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -627,6 +628,23 @@ func executeTaskSubmission(c *gin.Context, relayInfo *relaycommon.RelayInfo) (*t
 
 type taskSubmitAttempt func(*gin.Context, *relaycommon.RelayInfo) (*relay.TaskSubmitResult, *taskdto.TaskError)
 
+// maxTaskAccountMoves bounds how often one attempt is carried to the channel
+// of a sibling vendor account whose asset library has room.
+const maxTaskAccountMoves = 8
+
+// taskAccountMoveAllowed reports whether the attempt about to run may be
+// carried to another channel when its account's asset library is full. A
+// request tied to its channel stays: the follow-up of an earlier task, a pin
+// that allows a single attempt, a session bound to its channel.
+func taskAccountMoveAllowed(c *gin.Context, relayInfo *relaycommon.RelayInfo) bool {
+	if relayInfo.TaskRelayInfo != nil {
+		if locked, ok := relayInfo.LockedChannel.(*model.Channel); ok && locked != nil {
+			return false
+		}
+	}
+	return !service.GetChannelConstraints(c).SuppressesRetry() && !service.ShouldSkipRetryAfterChannelAffinityFailure(c)
+}
+
 func executeTaskSubmissionWith(
 	c *gin.Context,
 	relayInfo *relaycommon.RelayInfo,
@@ -737,7 +755,37 @@ func executeTaskSubmissionWith(
 		c.Request.Body = io.NopCloser(bodyStorage)
 
 		stage = "submit"
+		mayMove := taskAccountMoveAllowed(c, relayInfo)
+		doubao.AllowAccountMove(c, mayMove)
 		result, taskErr = submit(c, relayInfo)
+		// The asset library of the attempt's account could not take the
+		// request right away and a sibling account's can: the submission runs
+		// on that account's channel instead of waiting in line. Nothing
+		// failed, so no retry is spent and nothing is held against the
+		// channel it left. Every move lands on a channel the request has not
+		// been on, which bounds them.
+		for moves := 0; mayMove && taskErr != nil && moves < maxTaskAccountMoves; moves++ {
+			next := doubao.TakeAccountMove(c)
+			if next == nil {
+				break
+			}
+			diagnostics.attemptFailed(retryParam.GetRetry()+1, channel, taskErr, true)
+			policy.BeginAttempt(next, relayInfo.UsingGroup)
+			if setupErr := middleware.SetupContextForSelectedChannel(c, next, relayInfo.OriginModelName); setupErr != nil {
+				taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_asset_account_channel_failed", http.StatusInternalServerError)
+				break
+			}
+			channel = next
+			diagnostics.attempt(retryParam.GetRetry()+1, channel, false)
+			service.AppendUsedChannel(c, channel.Id)
+			movedBody, movedBodyErr := common.GetBodyStorage(c)
+			if movedBodyErr != nil {
+				taskErr = service.TaskErrorWrapperLocal(movedBodyErr, "read_request_body_failed", http.StatusBadRequest)
+				break
+			}
+			c.Request.Body = io.NopCloser(movedBody)
+			result, taskErr = submit(c, relayInfo)
+		}
 		if requestErr := c.Request.Context().Err(); requestErr != nil {
 			diagnostics.cancelled("after_submit", retryParam.GetRetry()+1)
 			taskErr = service.TaskErrorWrapperLocal(requestErr, "request_cancelled", http.StatusRequestTimeout)
